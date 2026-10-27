@@ -179,7 +179,7 @@ export class Speech {
     if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
     const buffer = ctx.createBuffer(1, made.samples.length, made.sampleRate);
     buffer.copyToChannel(made.samples, 0);
-    await this.play(ctx, buffer, mood, token, { rate: 1 }); // (the pace is already in it)
+    await this.play(ctx, buffer, mood, token, { rate: 1, soft: true }); // (the pace is already in it; the voice is already soft)
     return true;
   }
 
@@ -210,14 +210,16 @@ export class Speech {
 
   // Through her effect: a gentle high-pass and presence, a chorus of two copies of her a few
   // milliseconds behind, wavering (the other minds), and a little drive when she's angry.
-  play(ctx, buffer, mood, token, { rate = this.rate } = {}) {
+  // soft: her own voice, which is already warm: no presence lift (it is what makes a voice bite), the
+  // other minds quieter, and a little less gain, so nothing clips on the way out.
+  play(ctx, buffer, mood, token, { rate = this.rate, soft = false } = {}) {
     return new Promise((resolve) => {
       const src = ctx.createBufferSource();
       src.buffer = buffer;
       src.playbackRate.value = rate;
       this.source = src;
       const out = ctx.createGain();
-      out.gain.value = 1.4;
+      out.gain.value = soft ? 1.2 : 1.4;
       out.connect(this.voice.master);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
@@ -231,7 +233,7 @@ export class Speech {
         const presence = ctx.createBiquadFilter();
         presence.type = 'peaking';
         presence.frequency.value = 3200;
-        presence.gain.value = 3;
+        presence.gain.value = soft ? 0 : 3;
         let chain = src.connect(hp).connect(presence);
         if (mood === 'angry') {
           const drive = ctx.createWaveShaper();
@@ -245,7 +247,7 @@ export class Speech {
         }
         chain.connect(out);
         // the other minds: two delayed copies, their delay wavering slowly, a little thinner
-        for (const [delayMs, depth, rate, level] of [[13, 4, 0.23, 0.32], [22, 6, 0.31, 0.2]]) {
+        for (const [delayMs, depth, rate, level] of [[13, 4, 0.23, soft ? 0.22 : 0.32], [22, 6, 0.31, soft ? 0.14 : 0.2]]) {
           const d = ctx.createDelay(0.1);
           d.delayTime.value = delayMs / 1000;
           const lfo = ctx.createOscillator();

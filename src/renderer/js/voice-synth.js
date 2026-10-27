@@ -4,9 +4,10 @@
 // sounds and bursts for stops. No model, no recording, no service: the numbers below are all of it, so
 // it is small, works offline, and costs a few milliseconds a second of speech.
 //
-// Her voice is her own invention, young, quick and teasing, a little digital (a glitch now and then,
-// and the "many minds" chorus speech.js puts on every voice), and it changes with her mood: pitch,
-// range, pace, breathiness, roughness.
+// Her voice is her own invention, young and teasing, a little digital (a glitch now and then, and the
+// "many minds" chorus speech.js puts on every voice), but soft: an open, slowly closing voice box (no
+// buzz), a gently falling spectrum, hardly any wobble, hiss and clicks that fade in and out instead of
+// starting at once. It changes with her mood: pitch, range, pace, breathiness, roughness.
 //
 // synthesize(text, { lang, mood, rate, pitch, seed }) -> { samples: Float32Array, sampleRate, duration }
 
@@ -16,6 +17,7 @@ export const SYNTH_RATE = 22050;
 const FRAME = 5;                          // ms per control frame
 const SR = SYNTH_RATE;
 const FRAME_SAMPLES = Math.round((FRAME / 1000) * SR);
+const LEVEL = 0.12;                       // the loudness of her speech (RMS), like a recorded voice's
 
 // ---------- what each sound is made of ----------
 
@@ -40,12 +42,12 @@ const LOCUS = {
 };
 // noise for hissing sounds: [centre Hz, bandwidth Hz, loudness]
 const HISS = {
-  s: [6800, 2600, 0.62], z: [6600, 2600, 0.3], S: [2900, 1800, 0.66], Z: [2800, 1800, 0.34], C: [4400, 2200, 0.6],
-  f: [6000, 5000, 0.14], v: [5500, 5000, 0.07], x: [2600, 2600, 0.34], T: [6000, 5000, 0.12], D: [5500, 5000, 0.07], h: [1500, 3000, 0.0],
+  s: [6300, 2400, 0.46], z: [6100, 2400, 0.22], S: [2800, 1700, 0.52], Z: [2700, 1700, 0.26], C: [4200, 2100, 0.46],
+  f: [5600, 4600, 0.11], v: [5200, 4600, 0.05], x: [2500, 2500, 0.26], T: [5600, 4600, 0.09], D: [5200, 4600, 0.05], h: [1500, 3000, 0.0],
 };
 // bursts of stops: [centre, bandwidth, loudness]
 const BURST = {
-  p: [1400, 2500, 0.34], b: [1200, 2500, 0.22], t: [4300, 2600, 0.52], d: [4000, 2600, 0.34], k: [2200, 1600, 0.5], g: [2000, 1600, 0.34],
+  p: [1400, 2500, 0.28], b: [1200, 2500, 0.18], t: [3900, 2400, 0.4], d: [3700, 2400, 0.27], k: [2100, 1600, 0.4], g: [1900, 1600, 0.27],
 };
 const PLACE = { p: 'lab', b: 'lab', m: 'lab', f: 'lab', v: 'lab', t: 'alv', d: 'alv', n: 'alv', s: 'alv', z: 'alv', S: 'pal', Z: 'pal', C: 'pal', J: 'pal', k: 'vel', g: 'vel', x: 'vel', N: 'vel' };
 const NOTCH = { m: 1000, n: 1500, J: 1900, N: 2000 };
@@ -54,17 +56,17 @@ const NOTCH = { m: 1000, n: 1500, J: 1900, N: 2000 };
 // f0: middle of her pitch (Hz), range: how much the tune moves, rate: pace, breath: air in the voice,
 // rough: roughness, bright: sparkle in the high end, glitch: how often she stutters digitally
 const MOODS = {
-  calm: { f0: 218, range: 1.0, rate: 1.0, breath: 0.22, rough: 0.12, bright: 0.2, glitch: 0.1, gain: 1 },
-  happy: { f0: 240, range: 1.35, rate: 1.1, breath: 0.2, rough: 0.1, bright: 0.45, glitch: 0.08, gain: 1.05 },
-  laugh: { f0: 250, range: 1.55, rate: 1.14, breath: 0.4, rough: 0.2, bright: 0.4, glitch: 0.2, gain: 1.05 },
-  angry: { f0: 196, range: 0.8, rate: 1.12, breath: 0.05, rough: 0.5, bright: 0.65, glitch: 0.32, gain: 1.12 },
-  annoyed: { f0: 204, range: 0.7, rate: 0.96, breath: 0.1, rough: 0.28, bright: 0.25, glitch: 0.14, gain: 1 },
-  sad: { f0: 192, range: 0.65, rate: 0.86, breath: 0.45, rough: 0.12, bright: 0.0, glitch: 0.06, gain: 0.88 },
-  shy: { f0: 258, range: 1.1, rate: 0.95, breath: 0.6, rough: 0.08, bright: 0.1, glitch: 0.1, gain: 0.9 },
-  smug: { f0: 206, range: 1.4, rate: 0.93, breath: 0.2, rough: 0.14, bright: 0.3, glitch: 0.14, gain: 1 },
-  surprised: { f0: 262, range: 1.6, rate: 1.1, breath: 0.28, rough: 0.1, bright: 0.5, glitch: 0.1, gain: 1.05 },
-  dreamy: { f0: 214, range: 0.8, rate: 0.88, breath: 0.42, rough: 0.06, bright: 0.05, glitch: 0.08, gain: 0.9 },
-  bored: { f0: 196, range: 0.5, rate: 0.86, breath: 0.3, rough: 0.3, bright: 0.0, glitch: 0.06, gain: 0.9 },
+  calm: { f0: 212, range: 1.0, rate: 1.0, breath: 0.3, rough: 0.06, bright: 0.2, glitch: 0.1, gain: 1 },
+  happy: { f0: 234, range: 1.3, rate: 1.08, breath: 0.26, rough: 0.05, bright: 0.45, glitch: 0.08, gain: 1.05 },
+  laugh: { f0: 246, range: 1.5, rate: 1.1, breath: 0.42, rough: 0.1, bright: 0.4, glitch: 0.18, gain: 1.05 },
+  angry: { f0: 194, range: 0.8, rate: 1.08, breath: 0.12, rough: 0.28, bright: 0.65, glitch: 0.26, gain: 1.1 },
+  annoyed: { f0: 202, range: 0.7, rate: 0.96, breath: 0.16, rough: 0.16, bright: 0.25, glitch: 0.14, gain: 1 },
+  sad: { f0: 190, range: 0.65, rate: 0.88, breath: 0.5, rough: 0.07, bright: 0.0, glitch: 0.06, gain: 0.9 },
+  shy: { f0: 250, range: 1.1, rate: 0.95, breath: 0.62, rough: 0.04, bright: 0.1, glitch: 0.1, gain: 0.9 },
+  smug: { f0: 204, range: 1.35, rate: 0.94, breath: 0.26, rough: 0.07, bright: 0.3, glitch: 0.14, gain: 1 },
+  surprised: { f0: 256, range: 1.5, rate: 1.08, breath: 0.32, rough: 0.05, bright: 0.5, glitch: 0.1, gain: 1.05 },
+  dreamy: { f0: 210, range: 0.8, rate: 0.9, breath: 0.48, rough: 0.03, bright: 0.05, glitch: 0.08, gain: 0.9 },
+  bored: { f0: 194, range: 0.5, rate: 0.88, breath: 0.34, rough: 0.16, bright: 0.0, glitch: 0.06, gain: 0.9 },
 };
 
 // a small deterministic random source: the same text sounds the same
@@ -92,10 +94,10 @@ function seg(dur, o) {
   return { dur, f: SCHWA, b: [90, 130, 190], av: 0, af: 0, ah: 0, ff: 4000, fb: 3000, nz: 0, trill: 0, burst: false, ...o };
 }
 
-function expand(phrases, mood, rate, fs) {
+function expand(phrases, mood, rate, fs, rand) {
   const segs = [];
   const marks = []; // { word, start segment } for the glitches and the tune
-  const scale = (ms) => ms / rate;
+  const scale = (ms) => (ms / rate) * (0.94 + 0.12 * rand()); // (no two sounds exactly the same length)
   const flat = [];
   phrases.forEach((phrase, pi) => {
     phrase.words.forEach((word, wi) => {
@@ -130,7 +132,7 @@ function expand(phrases, mood, rate, fs) {
         segs.push(seg(scale(60), { kind: 'h', ah: 0.55 * amp, f: female(VOW.a), b: [140, 160, 220], ff: 1500, fb: 3000, laugh: true }));
         segs.push(seg(scale(95 - k * 3), { kind: 'v', av: 0.95 * amp, ah: 0.25, f: female(VOW.a), b: [110, 130, 200], laugh: true, accent: k === 0 }));
       }
-      if (u.phraseEnd) endPhrase(phrase);
+      if (u.phraseEnd) endPhrase(phrase, u.pi);
       marks.push({ pi: u.pi, wi: u.wi, seg: startIdx, end: segs.length });
       return;
     }
@@ -146,7 +148,7 @@ function expand(phrases, mood, rate, fs) {
       let f = female([f1, f2, f3]);
       if (!u.ph.stress && !short) f = f.map((x, k) => x * 0.88 + female(SCHWA)[k] * 0.12);
       const dur = len * (u.ph.stress ? 1.28 : short ? 0.5 : 0.82) * (u.phraseEnd ? 1.35 : 1) * (u.ph.long ? 1.4 : 1);
-      segs.push(seg(scale(dur), { kind: 'v', av: amp * (u.ph.stress ? 1.12 : 0.92), ah: 0, f, b: [95, 115, 175], accent: Boolean(u.ph.stress), vowel: true }));
+      segs.push(seg(scale(dur), { kind: 'v', av: amp * (u.ph.stress ? 1.12 : 0.92), ah: 0, f, b: [115, 140, 205], accent: Boolean(u.ph.stress), vowel: true }));
     } else if (sym === 'j' || sym === 'w') {
       const f = sym === 'j' ? female([280, 2250, 3000]) : female([300, 700, 2300]);
       segs.push(seg(scale(short ? 35 : 55), { kind: 'v', av: 0.55, f, b: [100, 130, 200] }));
@@ -211,12 +213,17 @@ function expand(phrases, mood, rate, fs) {
         kind: voiced ? 'v' : 'h', av: voiced ? 0.3 : 0, af: ha * (isSoft && 'sx'.includes(s) ? 0.9 : 1), ff: hf * fs * (isSoft && 'sx'.includes(s) ? 1.12 : 1), fb: hb, f, b: [120, 170, 240],
       }));
     }
-    if (u.phraseEnd) endPhrase(phrase);
+    if (u.phraseEnd) endPhrase(phrase, u.pi);
     marks.push({ pi: u.pi, wi: u.wi, seg: startIdx, end: segs.length, wordEnd: u.wordEnd });
   });
-  function endPhrase(phrase) {
+  function endPhrase(phrase, pi) {
     const pause = { '.': 430, '!': 400, '?': 450, '…': 620, ',': 230 }[phrase.end] ?? 120;
-    segs.push(seg(scale(pause), { kind: 's', pause: true, endMark: phrase.end }));
+    // after a full stop she takes a breath before the next sentence: a soft, short, quiet one
+    if (pause >= 400 && pi < phrases.length - 1) {
+      segs.push(seg(scale(pause - 170), { kind: 's', pause: true, endMark: phrase.end }));
+      segs.push(seg(scale(95), { kind: 'h', ah: 0.4, f: female([620, 1300, 2500]), b: [170, 220, 300], ff: 1500, fb: 3000 }));
+      segs.push(seg(scale(55), { kind: 'h', ah: 0.12, f: female([560, 1400, 2500]), b: [170, 220, 300], ff: 1500, fb: 3000 }));
+    } else segs.push(seg(scale(pause), { kind: 's', pause: true, endMark: phrase.end }));
   }
   return { segs, marks };
 }
@@ -225,7 +232,7 @@ function expand(phrases, mood, rate, fs) {
 
 // F0 (Hz) for every frame: where her pitch sits and moves. Stressed vowels get an accent, a phrase starts
 // high and settles, and its closing mark sets the end: a fall for '.', a rise for '?', and so on.
-function tune(segs, frames, voice, rate) {
+function tune(segs, frames, voice, marks, rand) {
   const f0 = new Float32Array(frames).fill(voice.f0);
   const starts = [];
   let t = 0;
@@ -258,25 +265,39 @@ function tune(segs, frames, voice, rate) {
     const range = voice.range;
     for (let fr = a; fr < b && fr < frames; fr++) {
       const x = (fr - a) / len; // 0..1 through the phrase
-      let v = 1 + 0.12 * range * (1 - x) - 0.09 * range * x; // starts high, settles
+      let v = 1 + 0.1 * range * (1 - x) - 0.08 * range * x; // starts high, settles
       for (let k = 0; k < accents.length; k++) {
         const d = (fr - accents[k]) * FRAME;
         // rise-fall bump, a touch earlier before the vowel's middle; the first accent is the strongest
-        const h = (0.22 + (excl ? 0.09 : 0)) * range * (k === 0 ? 1.15 : k === accents.length - 1 ? 1.0 : 0.85);
-        v += h * Math.exp(-((d + 12) * (d + 12)) / (2 * 75 * 75));
+        const h = (0.17 + (excl ? 0.07 : 0)) * range * (k === 0 ? 1.15 : k === accents.length - 1 ? 1.0 : 0.85);
+        v += h * Math.exp(-((d + 15) * (d + 15)) / (2 * 95 * 95));
       }
       // the end of the phrase
       const tail = Math.max(0, 1 - ((b - fr) * FRAME) / 260); // the last 260 ms
-      if (span.mark === '?') v += tail * tail * 0.5 * range;
-      else if (span.mark === '.' || span.mark === '!') v -= tail * 0.16 * Math.min(1.2, range + 0.2);
+      if (span.mark === '?') v += tail * tail * 0.4 * range;
+      else if (span.mark === '.' || span.mark === '!') v -= tail * 0.14 * Math.min(1.2, range + 0.2);
       else if (span.mark === ',') v += tail * 0.06 * range;
       else if (span.mark === '…') v -= tail * 0.1;
       f0[fr] = base * v;
     }
   }
-  // smooth the tune a little (about 25 ms)
+  // every word a hair higher or lower than the last, as people are (a flat tune sounds mechanical)
+  const words = new Map();
+  for (const m of marks) {
+    const key = `${m.pi}.${m.wi}`;
+    const w = words.get(key);
+    if (w) w.end = m.end;
+    else words.set(key, { seg: m.seg, end: m.end });
+  }
+  for (const w of words.values()) {
+    const a = starts[w.seg] ?? 0;
+    const b = starts[w.end] ?? frames;
+    const shift = 1 + (rand() - 0.5) * 0.03;
+    for (let fr = a; fr < b && fr < frames; fr++) f0[fr] *= shift;
+  }
+  // smooth the tune (about 40 ms), so it glides instead of stepping
   const out = new Float32Array(frames);
-  const w = 3;
+  const w = 4;
   for (let i = 0; i < frames; i++) {
     let sum = 0;
     let n = 0;
@@ -295,10 +316,10 @@ function resonator(f, bw) {
   return [1 - b - c, b, c];
 }
 
-function render(segs, voice, rand, opts) {
+function render(segs, voice, rand, opts, marks) {
   // frame count and the per-frame control tracks
   const frameCount = segs.reduce((n, s) => n + Math.max(1, Math.round(s.dur / FRAME)), 0) + 6;
-  const f0 = tune(segs, frameCount, voice, opts.rate);
+  const f0 = tune(segs, frameCount, voice, marks, rand);
   const track = (n) => new Float32Array(n);
   const F1 = track(frameCount); const F2 = track(frameCount); const F3 = track(frameCount);
   const B1 = track(frameCount); const B2 = track(frameCount); const B3 = track(frameCount);
@@ -309,8 +330,9 @@ function render(segs, voice, rand, opts) {
   let cf = [500, 1450, 2500];
   let cb = [90, 130, 190];
   let av = 0; let af = 0; let ah = 0; let ff = 4000; let fb = 3000; let nz = 0;
-  const kForm = 1 - Math.exp(-FRAME / 13);
-  const kAmp = 1 - Math.exp(-FRAME / 4.5);
+  const kForm = 1 - Math.exp(-FRAME / 15);
+  const kAmp = 1 - Math.exp(-FRAME / 7);   // voicing comes in and goes out over ~20 ms, not at once
+  const kHiss = 1 - Math.exp(-FRAME / 9);  // so does the hiss of "с" and "ш"
   let fr = 0;
   for (const s of segs) {
     const n = Math.max(1, Math.round(s.dur / FRAME));
@@ -321,8 +343,8 @@ function render(segs, voice, rand, opts) {
         cb[j] += (s.b[j] - cb[j]) * 0.5;
       }
       const ka = sharp ? 1 : kAmp;
-      av += (s.av - av) * (s.kind === 's' ? Math.min(1, ka * 1.6) : ka);
-      af += (s.af - af) * (sharp ? 1 : Math.min(1, ka * 1.3));
+      av += (s.av - av) * (s.kind === 's' ? Math.min(1, ka * 1.3) : ka);
+      af += (s.af - af) * (sharp ? 1 : kHiss);
       ah += (s.ah - ah) * ka;
       ff += (s.ff - ff) * 0.6;
       fb += (s.fb - fb) * 0.6;
@@ -337,10 +359,15 @@ function render(segs, voice, rand, opts) {
   const out = new Float32Array(total);
   const fs = opts.fs;
   // fixed upper formants (a younger, smaller voice has them higher)
-  const [a4, b4, c4] = resonator(3500 * fs, 260);
-  const [a5, b5, c5] = resonator(4600 * fs, 330);
-  const oq = 0.5 + voice.breath * 0.3; // how open the voice box is (open = breathy)
-  const tp = oq * 0.62;
+  const [a4, b4, c4] = resonator(3500 * fs, 330);
+  const [a5, b5, c5] = resonator(4600 * fs, 430);
+  // the voice box: open a good part of each round (the more open, the softer and breathier) and closing
+  // slowly. A pressed, quickly closing one is what makes a synthetic voice buzz and bite.
+  const oq = 0.6 + voice.breath * 0.2;
+  const tp = oq * 0.72;
+  // and the sharp edge of the close is rounded off (a low-pass, the "tilt": higher cut = brighter, sharper)
+  const kTilt = 1 - Math.exp((-2 * Math.PI * (1700 + voice.bright * 2600)) / SR);
+  let gl = 0;
   let phase = 0;
   let curF0 = voice.f0;
   let jitter = 1;
@@ -355,7 +382,7 @@ function render(segs, voice, rand, opts) {
   let zb0 = 1; let zb1 = 0; let zb2 = 0; let za1 = 0; let za2 = 0;
   const rough = voice.rough;
   const breath = voice.breath;
-  let vib = 0;
+  let drift = 0; let driftTo = 0; // her pitch wanders a little, slowly, as a person's does
   for (let i = 0; i < total; i++) {
     const f = Math.min(frameCount - 2, Math.floor(i / FRAME_SAMPLES));
     const u = (i - f * FRAME_SAMPLES) / FRAME_SAMPLES;
@@ -380,9 +407,10 @@ function render(segs, voice, rand, opts) {
       } else { zb0 = 1; zb1 = 0; zb2 = 0; za1 = 0; za2 = 0; }
     }
     // the pitch: the tune, a slow wobble, a little vibrato on long sounds, jitter
-    if (i % 110 === 0) vib = (rand() - 0.5) * 0.012;
-    const target = lerp(f0) * opts.pitch * (1 + vib + 0.006 * Math.sin((2 * Math.PI * 5.4 * i) / SR));
-    curF0 += (target - curF0) * 0.02;
+    if (i % 1500 === 0) driftTo = (rand() - 0.5) * 0.016;
+    drift += (driftTo - drift) * 0.0009;
+    const target = lerp(f0) * opts.pitch * (1 + drift + 0.003 * Math.sin((2 * Math.PI * 5.2 * i) / SR));
+    curF0 += (target - curF0) * 0.012;
     const av = Math.max(0, lerp(AV));
     const laugh = lerp(LA);
     const f0Now = curF0 * jitter * (laugh ? 1 - 0.1 * Math.min(1, (i % (SR * 0.155)) / (SR * 0.155)) : 1);
@@ -390,26 +418,30 @@ function render(segs, voice, rand, opts) {
     let glottal = 0;
     if (phase >= 1) {
       phase -= 1;
-      jitter = 1 + (rand() - 0.5) * (0.006 + rough * 0.03);
-      shimmer = 1 + (rand() - 0.5) * (0.05 + rough * 0.35);
-      // creaky roughness: now and then a pulse is skipped or doubled in a rough voice
-      if (rough > 0.25 && rand() < (rough - 0.2) * 0.12) shimmer *= 0.45;
+      jitter = 1 + (rand() - 0.5) * (0.002 + rough * 0.016);
+      shimmer = 1 + (rand() - 0.5) * (0.02 + rough * 0.2);
+      // a rough voice now and then drops a pulse a little (never a click)
+      if (rough > 0.2 && rand() < (rough - 0.15) * 0.06) shimmer *= 0.7;
     }
     // the pulse of air through the voice box (the shape that matters is its sudden close)
     if (phase < tp) glottal = (Math.PI / (2 * tp)) * Math.sin((Math.PI * phase) / tp);
     else if (phase < oq) glottal = -(Math.PI / (2 * (oq - tp))) * Math.sin((Math.PI / 2) * ((phase - tp) / (oq - tp)));
     glottal *= 0.55 * shimmer;
+    gl += (glottal - gl) * kTilt;
+    glottal = gl;
     // r: the tongue taps the roof of the mouth about 28 times a second
     let trill = 1;
     const tr = lerp(TR);
     if (tr > 0) {
       trillPhase += 28 / SR;
       const p = trillPhase % 1;
-      trill = 1 - 0.85 * tr * Math.exp(-((p - 0.5) * (p - 0.5)) / (2 * 0.12 * 0.12));
+      trill = 1 - 0.6 * tr * Math.exp(-((p - 0.5) * (p - 0.5)) / (2 * 0.15 * 0.15));
     }
     // sources
     const noise = rand() * 2 - 1;
-    const aspiration = noise * (lerp(AH) + breath * 0.07 * av + 0.012 * av + rough * 0.05 * av);
+    // the air of a breathy voice comes in puffs, with the open part of each round
+    const puff = phase < oq ? 0.55 + 0.45 * Math.sin((Math.PI * phase) / oq) : 0.55;
+    const aspiration = noise * (lerp(AH) + (breath * 0.1 + 0.018 + rough * 0.03) * av * puff);
     const voicedSrc = glottal * av * trill + aspiration;
     // the formant chain
     let y = a1 * voicedSrc + b1 * y11 + c1 * y12; y12 = y11; y11 = y;
@@ -431,10 +463,10 @@ function render(segs, voice, rand, opts) {
     n2 = n1; n1 = hy;
     const af = lerp(AF);
     // (the chain's output runs about 30 times the noise band's: the first is scaled down to meet it)
-    let s = y * 0.3 + hy * af * 1.8 * (1 + 0.15 * (rand() - 0.5));
-    // a bit of sparkle in the high end (more when she is excited or sharp)
+    let s = y * 0.3 + hy * af * 3.2 * (1 + 0.15 * (rand() - 0.5));
+    // a touch of sparkle in the high end (a little more when she is excited or sharp)
     lp += (s - lp) * 0.35;
-    s += (s - lp) * voice.bright * 0.9;
+    s += (s - lp) * voice.bright * 0.25;
     out[i] = s;
   }
   return { out, frameCount };
@@ -455,7 +487,7 @@ function glitch(out, marks, segs, voice, rand) {
   const result = [];
   let cursor = 0;
   for (const m of spots) {
-    if (rand() > voice.glitch * 0.45) continue;
+    if (rand() > voice.glitch * 0.38) continue;
     const at = (starts[m.end - 1] ?? 0) + Math.round(((segs[m.end - 1].dur / FRAME) * FRAME_SAMPLES) * 0.7);
     if (at < cursor + SR * 0.2 || at > out.length - SR * 0.1) continue;
     result.push(at);
@@ -470,18 +502,18 @@ function glitch(out, marks, segs, voice, rand) {
     const g = out.subarray(at - grain, at);
     const kind = rand();
     if (kind < 0.6) {
-      // a stutter: the last grain again, quieter, twice
+      // a stutter: the last grain again, quieter, twice, with soft edges
       for (let k = 0; k < 2; k++) {
         const c = new Float32Array(g.length);
-        for (let i = 0; i < g.length; i++) c[i] = g[i] * (0.8 - k * 0.25) * Math.min(1, i / 40) * Math.min(1, (g.length - i) / 40);
+        for (let i = 0; i < g.length; i++) c[i] = g[i] * (0.62 - k * 0.2) * Math.min(1, i / 110) * Math.min(1, (g.length - i) / 110);
         pieces.push(c);
       }
     } else {
-      // a bitcrush: the grain thinned to a few levels, held for a few samples
+      // a bitcrush: the grain thinned to a few levels and held a few samples (a soft digital shimmer)
       const c = new Float32Array(g.length * 2);
-      for (let i = 0; i < c.length; i += 4) {
-        const v = Math.round((g[Math.min(g.length - 1, i >> 1)] ?? 0) * 6) / 6;
-        for (let k = 0; k < 4 && i + k < c.length; k++) c[i + k] = v * 0.7 * Math.min(1, i / 60) * Math.min(1, (c.length - i) / 60);
+      for (let i = 0; i < c.length; i += 3) {
+        const v = Math.round((g[Math.min(g.length - 1, i >> 1)] ?? 0) * 18) / 18;
+        for (let k = 0; k < 3 && i + k < c.length; k++) c[i + k] = v * 0.55 * Math.min(1, i / 160) * Math.min(1, (c.length - i) / 160);
       }
       pieces.push(c);
     }
@@ -502,24 +534,30 @@ export function synthesize(text, { lang = 'ru', mood = 'calm', rate = 1, pitch =
   const voice = { ...base };
   const phrases = phonemize(text, lang);
   if (!phrases.length) return { samples: new Float32Array(0), sampleRate: SR, duration: 0 };
-  const speed = Math.max(0.5, Math.min(2, rate)) * base.rate * 1.15; // she is quick
+  const speed = Math.max(0.5, Math.min(2, rate)) * base.rate * 1.1; // she is quick, not hurried
   const fs = 1.16; // a young woman's vocal tract: formants about 16% above a man's
   const rand = rng(seed ?? hash(`${text}|${mood}`));
-  const { segs, marks } = expand(phrases, mood, speed, fs);
+  const { segs, marks } = expand(phrases, mood, speed, fs, rand);
   while (segs.length && segs[segs.length - 1].pause) segs.pop(); // no silence at the end
-  const { out } = render(segs, voice, rand, { rate: speed, fs, pitch: Math.max(0.5, Math.min(2, pitch)) });
+  const { out } = render(segs, voice, rand, { fs, pitch: Math.max(0.5, Math.min(2, pitch)) }, marks);
   let samples = glitch(out, marks, segs, voice, rand);
-  // level: a gentle limiter, then loudness by mood
-  let peak = 0;
-  for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
-  const gain = peak > 0 ? (0.82 / peak) * base.gain : 1;
-  samples = samples.map((v) => Math.tanh(v * gain * 1.25) / Math.tanh(1.25));
-  // a short fade at both ends (no click)
-  const fade = Math.min(200, Math.floor(samples.length / 4));
-  for (let i = 0; i < fade; i++) {
-    samples[i] *= i / fade;
-    samples[samples.length - 1 - i] *= i / fade;
-  }
+  // level: speech-like (RMS about -19 dBFS, by mood), then a soft knee so a loud click never bites
+  let sum = 0;
+  let n = 0;
+  for (let i = 0; i < samples.length; i++) if (Math.abs(samples[i]) > 0.002) { sum += samples[i] * samples[i]; n++; }
+  const rms = n ? Math.sqrt(sum / n) : 0;
+  const gain = rms > 0 ? (LEVEL / rms) * base.gain : 1;
+  const KNEE = 0.55;
+  samples = samples.map((v) => {
+    const x = v * gain;
+    const a = Math.abs(x);
+    return a <= KNEE ? x : Math.sign(x) * (KNEE + (1 - KNEE) * Math.tanh((a - KNEE) / (1 - KNEE)));
+  });
+  // a soft fade in and out (no click, no sudden start)
+  const fadeIn = Math.min(Math.round(SR * 0.025), Math.floor(samples.length / 4));
+  const fadeOut = Math.min(Math.round(SR * 0.04), Math.floor(samples.length / 4));
+  for (let i = 0; i < fadeIn; i++) samples[i] *= Math.sin((Math.PI / 2) * (i / fadeIn));
+  for (let i = 0; i < fadeOut; i++) samples[samples.length - 1 - i] *= Math.sin((Math.PI / 2) * (i / fadeOut));
   return { samples, sampleRate: SR, duration: samples.length / SR };
 }
 

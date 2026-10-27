@@ -162,8 +162,9 @@ test('she speaks: a plausible, finite, repeatable waveform in a young female ran
   assert.ok(a.duration > 1.5 && a.duration < 5, `duration ${a.duration}`);
   assert.ok(a.samples.every(Number.isFinite), 'no NaN');
   const peak = a.samples.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-  assert.ok(peak > 0.5 && peak <= 1, `peak ${peak}`);
-  assert.ok(rms(a.samples) > 0.05, 'not a whisper');
+  assert.ok(peak > 0.3 && peak < 0.85, `peak ${peak}: loud enough, and far from clipping`);
+  const level = rms(a.samples);
+  assert.ok(level > 0.06 && level < 0.16, `speech-like level ${level.toFixed(3)} (RMS)`);
   const f0 = median(pitches(a.samples, a.sampleRate));
   assert.ok(f0 > 190 && f0 < 290, `median pitch ${Math.round(f0)} Hz`);
   const b = synthesize('Привет, я Капри. Ну что, чумба?', { lang: 'ru' });
@@ -221,19 +222,78 @@ test('vowels are where their formants should be (so "и" and "у" and "а" are t
   assert.ok(i.find((p) => p > 1800) > a.find((p) => p > 1000) + 700, 'и has its F2 far above а');
 });
 
-test('hissing sounds hiss where they should: "с" high, "ш" lower, and louder than silence but not than a vowel', async () => {
+test('hissing sounds hiss where they should: "с" high, "ш" lower, quieter than the vowels around them', async () => {
   const { synthesize } = await load('voice-synth.js');
   const say = (t) => synthesize(t, { lang: 'ru' });
   const s = say('с');
   const sh = say('ш');
-  const a = say('а');
   const cs = centroid(middle(s.samples, s.sampleRate, 0.3, 0.05), s.sampleRate);
   const csh = centroid(middle(sh.samples, sh.sampleRate, 0.3, 0.05), sh.sampleRate);
   assert.ok(cs > 5200, `с centroid ${Math.round(cs)} Hz`);
   assert.ok(csh > 2000 && csh < 4800, `ш centroid ${Math.round(csh)} Hz`);
   assert.ok(cs > csh + 1200, 'с is higher than ш');
-  assert.ok(rms(s.samples) > 0.02, 'audible');
-  assert.ok(rms(a.samples) > rms(s.samples) * 1.2, 'a vowel is louder than its hiss');
+  // in a word: the hiss is heard (not lost) but sits well below the vowels, 10 to 22 dB
+  const word = say('асаса');
+  const sr = word.sampleRate;
+  const win = Math.round(0.02 * sr);
+  let loudest = 0;
+  let hissiest = 0;
+  for (let i = 0; i + win <= word.samples.length; i += win) {
+    const w = word.samples.subarray(i, i + win);
+    const level = rms(w);
+    // share of the energy above ~3 kHz: a hiss has most of it there, a vowel a tenth
+    let lo = 0;
+    let hi = 0;
+    let a = 0;
+    let b = 0;
+    for (let k = 0; k < w.length; k++) { a += (w[k] - a) * 0.55; b += (a - b) * 0.55; hi += (w[k] - b) ** 2; lo += w[k] ** 2; }
+    const share = hi / (lo || 1);
+    if (share < 0.2) loudest = Math.max(loudest, level);
+    if (share > 0.5) hissiest = Math.max(hissiest, level);
+  }
+  assert.ok(hissiest > 0, 'a hiss is there');
+  const gap = 20 * Math.log10(loudest / hissiest);
+  assert.ok(gap > 10 && gap < 22, `the vowels are ${gap.toFixed(1)} dB above the hiss`);
+});
+
+test('her voice is soft, not harsh: no clipping, hiss comes in gradually, she takes a breath between sentences', async () => {
+  const { synthesize, MOOD_NAMES } = await load('voice-synth.js');
+  const env = (x, ms) => {
+    const k = Math.round((ms / 1000) * 22050);
+    const out = [];
+    for (let i = 0; i + k <= x.length; i += k) out.push(rms(x.subarray(i, i + k)));
+    return out;
+  };
+  // no mood goes near the top: a soft knee, and nearly nothing above 0.6
+  for (const mood of MOOD_NAMES) {
+    const r = synthesize('Ну что, чумба, опять взламываешь лёд? Я бы на твоём месте не стала!', { lang: 'ru', mood });
+    const loud = r.samples.filter((v) => Math.abs(v) > 0.6).length / r.samples.length;
+    assert.ok(loud < 0.01, `${mood}: ${(loud * 100).toFixed(2)}% of the samples above 0.6`);
+    assert.ok(r.samples.reduce((m, v) => Math.max(m, Math.abs(v)), 0) < 0.9, `${mood} peaks below 0.9`);
+  }
+  // a hiss starts over 20 ms or more (it used to start in 8), a vowel takes its time too
+  for (const word of ['сссс', 'шшшш', 'ааа']) {
+    const e = env(synthesize(word, { lang: 'ru' }).samples, 2);
+    const top = Math.max(...e);
+    const ms = (e.findIndex((v) => v > 0.9 * top) - e.findIndex((v) => v > 0.1 * top)) * 2;
+    assert.ok(ms >= 20, `${word}: from 10% to 90% in ${ms} ms`);
+  }
+  // her breath: a quiet stretch (not silence, not speech) of 80 ms or more between two sentences, and none inside one
+  const quietRun = (text) => {
+    const e = env(synthesize(text, { lang: 'ru' }).samples, 20);
+    let run = 0;
+    let best = 0;
+    for (const v of e) { run = v > 0.0008 && v < 0.012 ? run + 1 : 0; best = Math.max(best, run); }
+    return best;
+  };
+  assert.ok(quietRun('Привет. Как дела? Всё хорошо.') >= 4, 'a breath between sentences');
+  assert.ok(quietRun('Привет как дела у тебя сегодня') < 4, 'no breath in the middle of a sentence');
+  // she does not wobble: the same vowel twice in a row is not a different pitch each time
+  const { synthesize: syn } = await load('voice-synth.js');
+  const f = pitches(syn('аааааа', { lang: 'ru', mood: 'calm' }).samples, 22050);
+  const sorted = [...f].sort((x, y) => x - y);
+  const spread = 12 * Math.log2(sorted[Math.floor(sorted.length * 0.9)] / sorted[Math.floor(sorted.length * 0.1)]);
+  assert.ok(spread < 5, `a held vowel moves ${spread.toFixed(1)} semitones (10-90%)`);
 });
 
 test('every language, every mood: finite sound, and a text with no sounds is silence, not a crash', async () => {
