@@ -74,6 +74,10 @@ const TINY = /[:-](0\.5b|1b|1\.5b|135m|270m|360m)\b/i;
 const MOOD_TAG = /\[\[?\s*(?:mood|настроение)\s*:\s*([a-z]+)\s*\]\]?/i;
 // her face while she reads your message, from her reaction to it (heart.js)
 const REACTION_FACE = { rage: 'many', huff: 'look', hurt: 'aside', pout: 'aside', forgive: 'calm', shy: 'aside', giggle: 'laugh', care: 'look', startle: 'wide', dreamy: 'aside' };
+// you asked about what's on your screen (eyes.js): she takes a fresh look before answering
+const SCREEN_Q = /(?:что|чё|чо|какой|кто|where|what|which|who).{0,30}(?:на\s+(?:моём\s+)?экран|у\s+меня\s+на\s+экран|на\s+скрине|screen|écran|pantalla|tela)|посмотр\w*\s+(?:на\s+)?(?:мой\s+)?экран|глян\w*\s+(?:на\s+)?экран|look\s+at\s+(?:my\s+)?screen|видишь\s+(?:ли\s+)?(?:что|это)|что\s+(?:я\s+)?(?:смотрю|делаю|читаю|играю)/i;
+// you did ask her to write/send something (so an AI [[msg:...]] tag isn't acted on out of nowhere)
+const WRITE_ASK = /напиш\w*|напеч\w*|отправ\w*|сообщ\w*|передай|skaž|write|send|message|text|écris|envoie|escribe|manda/i;
 
 export class Chat {
   constructor({ capri, panel, voice, host, brain }) {
@@ -92,6 +96,9 @@ export class Chat {
     this.heart = null;   // heart.js: how she feels (app.js)
     this.life = null;    // life.js: what she's up to on her own
     this.speech = null;  // speech.js: her voice
+    this.hands = null;   // hands.js: her hands on the PC (windows, messages)
+    this.eyes = null;    // eyes.js: what's on your screen
+    this.screenNow = ''; // what she saw this turn, if you asked about the screen
     this.onSetup = null; // (status) => void: she can't answer yet (app.js hands it to setup.js)
     this.onBetterModel = null; // () => void: a bigger model than the tiny one she's on (setup.js)
     host.onChatDelta(({ id, text }) => this.onDelta(id, text));
@@ -205,7 +212,13 @@ export class Chat {
     // what you asked for plainly happens right away (the music, the volume, an app you named): her
     // line about it comes under her answer (Claude Code, answering her chat, does things its own way)
     const asked = this.agent ? null : this.asked(text);
-    const early = asked && asked.kind !== 'close' ? this.doNow(asked) : null;
+    const early = asked && !['close', 'hands'].includes(asked.kind) ? this.doNow(asked)
+      : asked?.kind === 'hands' && asked.intent.kind !== 'message' ? this.hands.op(asked.intent) : null;
+    // you asked about the screen: she takes a quiet look first, so her answer is about what's really there
+    this.screenNow = '';
+    if (!this.agent && this.eyes?.enabled && SCREEN_Q.test(text)) {
+      this.screenNow = (await this.eyes.look({ silent: true }).catch(() => '')) || '';
+    }
     await Promise.race([this.appsReady, new Promise((r) => setTimeout(r, 1500))]);
     const messages = [{ role: 'system', content: this.persona() }, ...this.history.slice(-REMEMBER)];
     // nothing yet after a few seconds: Ollama is still loading the model (the first answer after a start),
@@ -265,6 +278,9 @@ export class Chat {
     if (memo) return { kind: 'memo', text: memo };
     const theme = askedTheme(text);
     if (theme) return { kind: 'theme', theme };
+    // her hands on the PC (windows, a message): what you asked, read plainly (hands.js)
+    const intent = this.hands?.parse(text);
+    if (intent) return { kind: 'hands', intent };
     const media = MEDIA_ASK.find(([, re]) => re.test(text))?.[0];
     if (media && (count <= 5 || MUSIC_WORD.test(text))) return { kind: 'media', action: media };
     const song = SPOTIFY_ASK.exec(text)?.[1];
@@ -323,6 +339,15 @@ export class Chat {
     const done = early && (await early);
     if (done) return this.addLine(answer, done.line, done.face);
     if (asked?.kind === 'close') return this.offerClose(asked.name, answer);
+    // a message in a messenger: she typed it out, now she waits for your yes (hands.js)
+    if (asked?.kind === 'hands' && asked.intent.kind === 'message') {
+      return this.hands.message(asked.intent, { addLine: (a, l, f) => this.addLine(a, l, f), setActions: (acts, on) => this.panel.setActions(acts, on), answer });
+    }
+    // her AI asked to send one with a tag, and you did say to write something
+    const msgTag = this.hands?.parseTag(raw);
+    if (msgTag && WRITE_ASK.test(text)) {
+      return this.hands.message(msgTag, { addLine: (a, l, f) => this.addLine(a, l, f), setActions: (acts, on) => this.panel.setActions(acts, on), answer });
+    }
     if (asked && asked.kind !== 'open') return undefined; // music that didn't work out: nothing more to offer
     const closeTag = tagged(raw);
     if (closeTag) return wanted('close', text) ? this.offerClose(closeTag, answer) : undefined;
@@ -467,7 +492,13 @@ export class Chat {
       const open = this.apps.map(({ name, label }) => (label && label !== name ? `${name} (${label})` : name)).join(', ');
       lines.push(`You can also close an app that's open, only when they ask you to: end your answer with [[close: NAME]], NAME being the exact name from this list (the part before the parentheses). They get a button to confirm it. Apps open right now: ${open}.`);
     }
-    lines.push('Apart from that, you can\'t see the user\'s screen or files, and you can\'t touch anything else on their PC (settings, files): if asked, say plainly that you can\'t, in character, and don\'t pretend to.');
+    // her hands, if she's allowed them (hands.js): arranging windows, writing messages
+    lines.push(...(this.hands?.powers() || []));
+    const canSee = this.eyes?.enabled;
+    const canHands = this.hands?.enabled;
+    const cant = ['their files'];
+    if (!canSee) cant.push('their screen');
+    lines.push(`Apart from that, you can't see ${cant.join(' or ')}, and you can't touch anything else on their PC (settings, files${canHands ? '' : ', windows'})${canSee ? '' : ''}: if asked for something you can't do, say plainly that you can't, in character, and don't pretend to.`);
     return lines;
   }
 
@@ -481,6 +512,12 @@ export class Chat {
     }
     const life = this.life?.context();
     if (life) lines.push(life);
+    // what she can see on the screen right now (eyes.js): a fresh look this turn, or the last one
+    if (this.screenNow) lines.push(`You just looked at the user's screen. It shows: ${this.screenNow}. React to it.`);
+    else {
+      const seen = this.eyes?.context();
+      if (seen) lines.push(seen);
+    }
     const d = new Date();
     lines.push(`It is ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')} on the user's PC.`);
     return lines;

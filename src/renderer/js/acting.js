@@ -168,6 +168,20 @@ export const ACTS = {
     ],
   },
 
+  // dancing to the real beat (rhythm.js): a two-beat groove, hips and mane swinging side to side,
+  // arms up. capri.beat() restarts this on each detected kick, so the down-beat lands on the kick.
+  dance: {
+    loop: true,
+    keys: [
+      [1, { bob: 4, sy: 0.94, sx: 1.04, hair: -3, mane: 0.05, head: 0.1, tilt: 2, arms: 0.1 }, 'beat'],
+      [2, { bob: -5, sy: 1.04, sx: 0.98, hair: -1, mane: 0.2, head: 0.02, tilt: 2.5, arms: 0.3 }],
+      [3, { bob: -2, hair: 2, mane: 0.1, head: -0.08, tilt: 1, arms: 0.18 }],
+      [1, { bob: 4, sy: 0.94, sx: 1.04, hair: 3, mane: 0.05, head: -0.1, tilt: -2, arms: 0.1 }, 'beat'],
+      [2, { bob: -5, sy: 1.04, sx: 0.98, hair: 1, mane: 0.2, head: -0.02, tilt: -2.5, arms: 0.3 }],
+      [3, { bob: -2, hair: -2, mane: 0.1, head: 0.08, tilt: -1, arms: 0.18 }],
+    ],
+  },
+
   // hands up in front of her, fingers going (hacking, playing, reading): head down at her work
   tinker: {
     loop: true,

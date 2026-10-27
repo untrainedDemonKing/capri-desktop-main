@@ -17,6 +17,12 @@
   <canvas id="chip" class="chip" hidden aria-label="Capri’s biochip"></canvas>
   <canvas id="mask" class="chip" hidden aria-label="Capri, asleep"></canvas>
 
+  <!-- while a sense is live (she can see your screen, or the mic is open), a small badge says so -->
+  <div id="senses" class="senses" hidden aria-live="polite">
+    <span class="senses__item senses__eye" hidden>◉ <span class="senses__label"></span></span>
+    <span class="senses__item senses__mic" hidden>● <span class="senses__label"></span></span>
+  </div>
+
   <aside id="panel" class="panel" data-kind="info" hidden aria-live="polite">
     <div class="panel__frame">
       <div class="panel__plate">

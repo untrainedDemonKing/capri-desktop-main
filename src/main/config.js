@@ -44,6 +44,19 @@ const DEFAULTS = {
   ttsUrl: '',        // 'custom': an OpenAI-compatible speech server (http://127.0.0.1:8880/v1)
   ttsFx: true,       // her "many minds" effect on a speech service's voice
   ttsRate: 1,        // how fast she talks
+  // her senses and her hands (all off by default: each one is a permission you turn on)
+  vision: false,     // she can take a picture of your screen and react to it (screen.js, eyes.js)
+  visionModel: '',   // the vision model (empty: her chat model if it can see, else a default)
+  visionEvery: 45,   // at most once this many seconds she glances on her own (0: only when asked)
+  rhythm: false,     // she moves to your music, from the real sound (loopback audio, rhythm.js)
+  hands: false,      // she can work your windows and type for you when you ask (control.js, hands.js)
+  handsType: true,   // she may type (messages, text); off: only open/close/arrange windows
+  ears: false,       // she listens to your microphone and writes down what you say (stt.js, ears.js)
+  sttEngine: 'groq', // who turns your voice into text: 'groq', 'openai' or 'custom' (OpenAI-compatible)
+  sttUrl: '',        // 'custom': http://127.0.0.1:8000/v1 (whisper.cpp, faster-whisper…)
+  sttModel: '',      // its model (empty: the engine's default)
+  pushToTalk: 'Control+Alt+Space', // hold it to talk to her
+  converse: false,   // conversation mode: she keeps listening and you talk back and forth
 };
 
 let cache = null;

@@ -63,4 +63,16 @@ contextBridge.exposeInMainWorld('host', {
   onMedia: on('media:now'),
   onPresence: on('presence'),
   moodState: (state) => ipcRenderer.send('mood:state', state),
+  // her senses and her hands (vision, voice-in, window and messenger control)
+  see: (request) => ipcRenderer.invoke('eyes:see', request),
+  transcribe: (request) => ipcRenderer.invoke('stt:transcribe', request),
+  sttSetup: (choice) => ipcRenderer.invoke('stt:setup', choice),
+  sttKeyPage: (engine) => ipcRenderer.send('stt:keyPage', engine),
+  hands: true, // the control bridge exists in main; hands.js checks the setting
+  windowOp: (op, name) => ipcRenderer.invoke('hands:window', { op, name }),
+  showDesktop: () => ipcRenderer.invoke('hands:desktop'),
+  typeInto: (text, into) => ipcRenderer.invoke('hands:type', { text, into }),
+  prepareMessage: (request) => ipcRenderer.invoke('hands:prepare', request),
+  sendMessage: (prepared) => ipcRenderer.invoke('hands:send', prepared),
+  senseState: (state) => ipcRenderer.send('sense:state', state),
 });

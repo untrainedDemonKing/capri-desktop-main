@@ -919,3 +919,37 @@ html[data-motion='reduced'] .panel[data-kind='alert'] .panel__state {
 [data-motion='reduced'] .panel[data-mood='angry'] .panel__mood {
   animation: none;
 }
+
+/* ---------- live-sense badge (eyes.js, ears.js) ----------
+   Always visible while she can see your screen or the mic is open, so a sense is never silently on. */
+
+.senses {
+  position: fixed;
+  left: 14px;
+  bottom: 12px;
+  z-index: 4;
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.senses__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px 1px;
+  color: var(--paper);
+  background: var(--ink);
+  box-shadow: 2px 2px 0 var(--violet);
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+}
+
+.senses__eye { color: var(--green); }
+.senses__mic { color: var(--red); }
+.senses__mic.is-live { animation: blink 900ms steps(2, jump-none) infinite; }
+
+[data-motion='reduced'] .senses__mic.is-live { animation: none; }

@@ -357,7 +357,8 @@ export class Life {
     }
     if (!this.phones) {
       this.phones = marks.prop(this.fx, 'headphones', () => this.propAt('headphones'), { scale: this.capri.scale * 1.15 });
-      this.capri.setActivity('bop');
+      // if she's dancing to the real beat (rhythm.js), that groove wins over the plain bob
+      if (!this.capri.dancing) this.capri.setActivity('bop');
     }
     const t = this.t.music;
     const track = this.track;
@@ -394,7 +395,7 @@ export class Life {
     if (!this.phones) return;
     this.phones.stop();
     this.phones = null;
-    if (this.capri.activityAct === 'bop') this.capri.setActivity(null);
+    if (this.capri.activityAct === 'bop' && !this.capri.dancing) this.capri.setActivity(null);
   }
 
   // What's going on in her life, for her chat (English, like her prompt).

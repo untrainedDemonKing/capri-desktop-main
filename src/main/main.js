@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const {
   app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage,
+  desktopCapturer, session,
   clipboard, ClipboardItem, dialog, powerMonitor,
 } = require('electron');
 
@@ -18,6 +19,9 @@ const setup = require('./setup');
 const apps = require('./apps');
 const launch = require('./launch');
 const tts = require('./tts');
+const stt = require('./stt');
+const vision = require('./screen');
+const control = require('./control');
 const { startMediaWatch } = require('./media');
 const { ASSISTANTS, assistant } = require('./assistants');
 const activeAssistant = () => assistant(config.load().assistant); // Claude Code or Codex
@@ -34,6 +38,7 @@ const OLLAMA_SITE = 'https://ollama.com';
 const THEMES = ['classic', 'netrunner', 'toxic', 'violet', 'gold', 'sakura', 'ghost', 'mood'];
 // which saved key each voice engine uses (OpenAI's is the same one as her chat's)
 const TTS_KEYS = { openai: 'openai', elevenlabs: 'elevenlabs', custom: 'tts' };
+const STT_KEYS = { groq: 'groq', openai: 'openai', custom: 'stt' };
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'capri', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
@@ -53,6 +58,8 @@ const chats = new Map(); // id -> AbortController of an answer being streamed
 let moodState = null;   // how she feels (the overlay says), for her menu's top line
 let mediaWatch = null;  // what's playing (media.js), while she's allowed to know
 let presenceTimer = null;
+let senseState = {};    // which senses are live right now (the overlay says): { eyes, ears, listening }
+let pttKey = null;      // the push-to-talk shortcut currently registered
 
 const userSoundsDir = () => path.join(app.getPath('userData'), 'sounds');
 
@@ -259,6 +266,7 @@ function updateConfig(patch) {
   config.save(patch);
   if ('rest' in patch) fitOverlay(); // the taskbar in her window or not
   if ('musicAware' in patch) watchMedia();
+  if ('ears' in patch || 'pushToTalk' in patch) registerPushToTalk();
   const cfg = rendererConfig();
   overlay?.webContents.send('capri:config', cfg);
   rebuildTray();
@@ -333,6 +341,33 @@ function rebuildTray() {
         { label: t.life, type: 'checkbox', checked: cfg.life !== false, click: (item) => updateConfig({ life: item.checked }) },
         { label: t.musicAware, type: 'checkbox', checked: cfg.musicAware !== false, enabled: process.platform === 'win32', click: (item) => updateConfig({ musicAware: item.checked }) },
         { label: t.dj, type: 'checkbox', checked: cfg.dj !== false, enabled: process.platform === 'win32' && cfg.musicAware !== false, click: (item) => updateConfig({ dj: item.checked }) },
+      ],
+    },
+    // her senses: she can see your screen, move to your music, and listen to your voice. All off
+    // until you turn them on here, and each one is a live use of your screen, sound or microphone.
+    {
+      label: t.senses,
+      submenu: [
+        { label: t.vision, type: 'checkbox', checked: cfg.vision === true, click: (item) => updateConfig({ vision: item.checked }) },
+        { label: t.lookNow, enabled: cfg.vision === true, click: () => sendCommand('lookNow') },
+        { type: 'separator' },
+        { label: t.rhythm, type: 'checkbox', checked: cfg.rhythm === true, click: (item) => updateConfig({ rhythm: item.checked }) },
+        { type: 'separator' },
+        { label: t.ears, type: 'checkbox', checked: cfg.ears === true, click: (item) => updateConfig({ ears: item.checked }) },
+        { label: t.converse, type: 'checkbox', checked: cfg.converse === true, enabled: cfg.ears === true, click: (item) => updateConfig({ converse: item.checked }) },
+        { label: `${t.pushToTalk}: ${prettyKey(cfg.pushToTalk)}`, enabled: false },
+        { type: 'separator' },
+        { label: t.visionSetup, click: () => sendCommand('setupVision') },
+        { label: t.earsSetup, click: () => sendCommand('setupEars') },
+      ],
+    },
+    // her hands: she can arrange your windows and type messages for you, only when you ask and,
+    // for anything she types, only after you say yes. Windows only.
+    {
+      label: t.hands,
+      submenu: [
+        { label: t.handsOn, type: 'checkbox', checked: cfg.hands === true, enabled: process.platform === 'win32', click: (item) => updateConfig({ hands: item.checked }) },
+        { label: t.handsType, type: 'checkbox', checked: cfg.handsType !== false, enabled: process.platform === 'win32' && cfg.hands === true, click: (item) => updateConfig({ handsType: item.checked }) },
       ],
     },
     {
@@ -556,6 +591,57 @@ function watchMedia() {
   }
 }
 
+// An accelerator as a person reads it (Control+Alt+Space -> Ctrl+Alt+Space).
+function prettyKey(key) {
+  return String(key || 'Control+Alt+Space').replace(/\bControl\b/g, 'Ctrl').replace(/\bCommandOrControl\b/g, 'Ctrl');
+}
+
+// Her window out of the shot while she looks at your screen, so she isn't seeing her own reflection.
+// Returns a function that brings her back. On a system that won't fade a transparent window cleanly
+// it's a no-op, so she might see a faint copy of herself; harmless.
+async function hideOverlayForShot() {
+  if (!overlay || overlay.isDestroyed()) return () => {};
+  try {
+    overlay.setOpacity(0);
+  } catch {
+    return () => {};
+  }
+  await new Promise((r) => setTimeout(r, 120));
+  return () => {
+    try {
+      overlay?.setOpacity(1);
+    } catch {
+      // comes back on the next draw regardless
+    }
+  };
+}
+
+// So she can hear the system's sound (rhythm.js) without a screen-share picker: when the overlay
+// asks for display media, hand it a screen source with the audio set to loopback.
+function allowLoopbackAudio() {
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      callback({ video: sources[0], audio: 'loopback' });
+    }).catch(() => callback({}));
+  }, { useSystemPicker: false });
+}
+
+// Hold-to-talk (her menu, Senses): the shortcut tells the overlay to listen (ears.js).
+function registerPushToTalk() {
+  if (pttKey) {
+    globalShortcut.unregister(pttKey);
+    pttKey = null;
+  }
+  const cfg = config.load();
+  if (!cfg.ears) return;
+  const key = cfg.pushToTalk || 'Control+Alt+Space';
+  try {
+    if (globalShortcut.register(key, () => sendCommand('pushToTalk'))) pttKey = key;
+  } catch (err) {
+    console.error('[capri] could not set push-to-talk:', err.message);
+  }
+}
+
 // How long since the keyboard or the mouse were last touched: she notices you're away, and back.
 function watchPresence() {
   clearInterval(presenceTimer);
@@ -742,6 +828,53 @@ function registerIpc() {
     return updateConfig(patch);
   });
   ipcMain.on('tts:keyPage', (_e, engine) => tts.KEY_PAGES[engine] && shell.openExternal(tts.KEY_PAGES[engine]));
+  // ---- her senses and her hands ----
+  // her eyes: a picture of your screen (screen.js), read by the vision model (llm.js)
+  ipcMain.handle('eyes:see', async (_e, { prompt }) => {
+    const cfg = config.load();
+    if (!cfg.vision) return { ok: false, error: 'off', code: 'off' };
+    try {
+      const image = await vision.grab({ displayId: cfg.displayId, hideOverlay: hideOverlayForShot });
+      if (!image) return { ok: false, error: 'no picture', code: 'nocapture' };
+      const text = await llm.see(cfg.provider, llmConfig(cfg), { image, prompt });
+      return { ok: true, text };
+    } catch (err) {
+      return { ok: false, error: err.message, code: err.code || null };
+    }
+  });
+  // her ears: your voice (ears.js) turned into text by the speech service (stt.js)
+  ipcMain.handle('stt:transcribe', async (_e, { audio, mime, lang }) => {
+    const cfg = config.load();
+    try {
+      const text = await stt.transcribe(cfg, setup.openKeys(cfg.apiKeys), { audio: Buffer.from(audio), mime, lang });
+      return { ok: true, text };
+    } catch (err) {
+      return { ok: false, error: err.message, code: err.code || null };
+    }
+  });
+  ipcMain.on('stt:keyPage', (_e, engine) => stt.KEY_PAGES[engine] && shell.openExternal(stt.KEY_PAGES[engine]));
+  // which speech-to-text service, and its key or address (the key kept encrypted, like her chat's)
+  ipcMain.handle('stt:setup', (_e, { engine, key, url }) => {
+    const before = config.load();
+    const patch = {};
+    if (engine && stt.ENGINES[engine]) patch.sttEngine = engine;
+    const slot = STT_KEYS[patch.sttEngine || before.sttEngine];
+    if (key && slot) patch.apiKeys = { ...before.apiKeys, [slot]: setup.sealKey(String(key).trim()) };
+    if (typeof url === 'string' && url.trim()) patch.sttUrl = url.trim();
+    return updateConfig(patch);
+  });
+  // her hands (control.js): all gated on the setting here too, so the overlay can't reach past it
+  const handsOn = () => config.load().hands === true;
+  ipcMain.handle('hands:window', (_e, { op, name }) => (handsOn() ? control.windowOp(op, name).then((n) => n, (err) => ({ error: { message: err.message, code: err.code } })) : { error: { code: 'off' } }));
+  ipcMain.handle('hands:desktop', () => (handsOn() ? control.showDesktop().then(() => true, () => false) : false));
+  ipcMain.handle('hands:type', (_e, { text, into }) => (handsOn() && config.load().handsType ? control.type(text, into).then(() => true, (err) => ({ error: { message: err.message, code: err.code } })) : { error: { code: 'off' } }));
+  ipcMain.handle('hands:prepare', async (_e, request) => {
+    if (!handsOn() || !config.load().handsType) throw Object.assign(new Error('off'), { code: 'off' });
+    return control.prepareMessage(request);
+  });
+  ipcMain.handle('hands:send', (_e, prepared) => control.sendPrepared(prepared).then(() => true, (err) => ({ error: { message: err.message, code: err.code } })));
+  // her senses' indicator by the clock (an eye, a mic, a note): only the tray line cares
+  ipcMain.on('sense:state', (_e, state) => { senseState = state || {}; });
   // how she feels, for her menu's top line (only when the mood itself changes)
   ipcMain.on('mood:state', (_e, state) => {
     const changed = state?.mood !== moodState?.mood;
@@ -886,6 +1019,8 @@ function main() {
     llm.restoreClaude(readMemory().claude);
     watchMedia();
     watchPresence();
+    allowLoopbackAudio();
+    registerPushToTalk();
     refreshModels(); // for her menu's model list
     setTimeout(() => launch.launchables().catch(() => {}), 20000); // what she can open, before you ask
     screen.on('display-metrics-changed', fitOverlay);
@@ -901,6 +1036,11 @@ function main() {
     windowWatch?.stop();
     mediaWatch?.stop();
     clearInterval(presenceTimer);
+    try {
+      session.defaultSession.setDisplayMediaRequestHandler(null);
+    } catch {
+      // nothing to clear
+    }
   });
   app.on('window-all-closed', (e) => e.preventDefault());
 }

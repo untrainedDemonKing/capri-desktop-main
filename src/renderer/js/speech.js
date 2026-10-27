@@ -50,6 +50,7 @@ export class Speech {
     this.current = null;
     this.source = null;
     this.onTalk = null;  // () => void, a beat of her talking (her body nods)
+    this.onDone = null;  // () => void, she stopped talking (ears.js: it can listen again)
     this.onError = null; // (message) => void, the speech service failed (she falls back to the system voice)
     this.systemVoices = [];
     if (typeof speechSynthesis !== 'undefined') {
@@ -98,11 +99,13 @@ export class Speech {
       if (this.current === token) {
         this.current = null;
         this.voice.speaking = false;
+        this.onDone?.();
       }
     }
   }
 
   stop() {
+    const was = this.current;
     this.current = null;
     this.voice.speaking = false;
     try {
@@ -112,6 +115,7 @@ export class Speech {
     }
     this.source = null;
     if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+    if (was) this.onDone?.();
   }
 
   // ---------- the system's voice ----------

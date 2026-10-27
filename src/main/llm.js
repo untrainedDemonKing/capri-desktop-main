@@ -215,6 +215,46 @@ async function chat(id, cfg, { model, messages }, onDelta, signal) {
   return openaiChat(p, { model, messages }, onDelta, signal);
 }
 
+// A default vision model to try when you haven't picked one, per provider.
+const VISION_MODELS = {
+  ollama: 'qwen2.5vl',
+  openai: 'gpt-4o-mini',
+  openrouter: 'google/gemini-2.0-flash-exp:free',
+  gemini: 'gemini-2.0-flash',
+  groq: 'meta-llama/llama-4-scout-17b-16e-instruct',
+  mistral: 'pixtral-12b-latest',
+  pollinations: 'openai',
+};
+
+// Her eyes: one look at a picture (base64 JPEG), answered in one go (not streamed). `prompt` is
+// what to make of it; `model` the vision model, or the provider's default. Returns the text.
+// Claude Code and plain local servers with no vision model throw; the caller falls back.
+async function see(id, cfg, { image, prompt, model = null }) {
+  const p = endpoint(id, cfg);
+  const use = model || cfg.visionModel || VISION_MODELS[id];
+  if (p.kind === 'claude') throw Object.assign(new Error('Claude Code has no eyes here'), { code: 'noeyes' });
+  if (p.kind === 'ollama') {
+    if (!use) throw Object.assign(new Error('no vision model set'), { code: 'novision' });
+    return ollama.once({ model: use, messages: [{ role: 'user', content: prompt, images: [image] }] }, AbortSignal.timeout(40000));
+  }
+  if (!p.url) throw Object.assign(new Error('no address for this server'), { code: 'nourl' });
+  if (p.env && !p.key) throw Object.assign(new Error(`no API key (or ${p.env})`), { code: 'nokey' });
+  if (!use) throw Object.assign(new Error('no vision model set'), { code: 'novision' });
+  const content = [
+    { type: 'text', text: prompt },
+    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image}` } },
+  ];
+  const res = await fetch(`${p.url}/chat/completions`, {
+    method: 'POST',
+    headers: headers(p.key),
+    body: JSON.stringify({ model: use, messages: [{ role: 'user', content }], max_tokens: 300, stream: false }),
+    signal: AbortSignal.timeout(40000),
+  });
+  if (!res.ok) throw await failure(res);
+  const body = await res.json();
+  return body.choices?.[0]?.message?.content || '';
+}
+
 // Whether her answers stay on this PC: a server on this machine.
 function isLocal(id, cfg) {
   if (id === 'ollama') return /^(https?:\/\/)?(127\.0\.0\.1|localhost|0\.0\.0\.0|\[?::1\]?)(:|\/|$)/.test(process.env.OLLAMA_HOST || '127.0.0.1');
@@ -222,4 +262,4 @@ function isLocal(id, cfg) {
   return Boolean(PROVIDERS[id].local);
 }
 
-module.exports = { isLocal, PROVIDERS, CLAUDE_MODES, models, warm, chat, resetClaude, isChatSession, claudeMemory, restoreClaude };
+module.exports = { isLocal, PROVIDERS, CLAUDE_MODES, VISION_MODELS, models, warm, chat, see, resetClaude, isChatSession, claudeMemory, restoreClaude };
