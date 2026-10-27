@@ -42,7 +42,7 @@ const DEFAULTS = {
   ttsEngine: 'system', // 'system' (Windows' voices, offline), 'capri' (her own, built in, offline), 'openai', 'elevenlabs' or 'custom' (tts.js)
   ttsVoice: '',      // the speech service's voice (empty: tts.js DEFAULTS)
   ttsModel: '',      // its model (empty: tts.js DEFAULTS)
-  ttsUrl: '',        // 'custom': an OpenAI-compatible speech server (http://127.0.0.1:8880/v1)
+  ttsUrl: '',        // 'custom': an OpenAI-compatible speech server (http://127.0.0.1:8000/v1)
   ttsFx: true,       // her "many minds" effect on a speech service's voice
   ttsRate: 1,        // how fast she talks (her own voice and the system's: 0.5..2)
   ttsPitch: 1,       // her own voice: how high (0.8..1.3)

@@ -6,7 +6,7 @@
 //
 // OpenAI (gpt-4o-mini-tts takes instructions: her tone and mood), ElevenLabs (any voice of your
 // library; with an eleven_v3 model her mood goes in as an audio tag), or any OpenAI-compatible
-// server (a local one like Kokoro-FastAPI or openedai-speech: /v1/audio/speech).
+// server (a local one like Chatterbox-TTS-Server or openedai-speech: /v1/audio/speech).
 
 const ENGINES = {
   system: { label: 'System (offline)' },

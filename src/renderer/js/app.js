@@ -574,7 +574,7 @@ async function boot() {
       }
       const choice = { engine };
       if (engine === 'custom') {
-        const got = await guide.askText({ face: 'look', line: tv.url, quote: tv.urlHow, placeholder: cfg.ttsUrl || 'http://127.0.0.1:8880/v1', actions: cfg.ttsUrl ? [{ id: 'skip', label: tv.skip }] : [] });
+        const got = await guide.askText({ face: 'look', line: tv.url, quote: tv.urlHow, placeholder: cfg.ttsUrl || 'http://127.0.0.1:8000/v1', actions: cfg.ttsUrl ? [{ id: 'skip', label: tv.skip }] : [] });
         if (!got) return;
         if (got.text) choice.url = got.text;
       } else {
