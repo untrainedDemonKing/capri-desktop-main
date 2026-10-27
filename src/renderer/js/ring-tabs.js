@@ -397,6 +397,44 @@ const voice = {
     root.append(heading(v.engine));
     root.append(pick(['system', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: v.engines[id] })), cfg.ttsEngine || 'system', (id) => c.set({ ttsEngine: id })));
     root.append(buttons(go(c, v.setup, 'setupVoice'), go(c, v.test, 'testVoice')));
+
+    // where it comes out: speakers, headphones... (and your own mic there, to check)
+    const { voice: sound, ears, state } = c;
+    root.append(heading(v.outH));
+    root.append(note(sound?.canPickOutput === false ? v.outNone : `${v.outNote}${cfg.ttsEngine === 'system' || !cfg.ttsEngine ? ` ${v.outSystem}` : ''}`, true));
+    if (sound?.canPickOutput !== false) {
+      const list = el('div');
+      root.append(list);
+      let alive = true;
+      c.onLeave(() => { alive = false; });
+      sound?.outputs().then((outs) => {
+        if (!alive) return;
+        const items = outs.map((d) => ({ id: d.id, label: d.id ? d.label : v.outDefault }));
+        list.replaceChildren(pick(items, cfg.audioOut || '', (id) => {
+          c.set({ audioOut: id });
+          setTimeout(() => sound.test(), 350); // a sound on it, to hear it's the right one
+        }));
+      }).catch(() => {});
+      if (sound?.sinkError) root.append(note(v.outFailed));
+    }
+    root.append(buttons(button(v.outTest, () => sound?.test())));
+    root.append(toggle(v.monitor, state.monitor === true, (on) => {
+      state.monitor = on;
+      state.monitorFailed = false;
+      if (on) {
+        c.hold('monitor', () => ears.monitor(true).then((ok) => {
+          if (!ok) {
+            state.monitor = false;
+            state.monitorFailed = true;
+            c.unhold('monitor');
+            c.refresh();
+          }
+          return ok;
+        }), () => ears.monitor(false));
+      } else c.unhold('monitor');
+      c.refresh();
+    }, { disabled: !cfg.ears, hint: cfg.ears ? '' : v.monitorNeeds }));
+    root.append(note(state.monitorFailed ? v.monitorFailed : v.monitorHint, !state.monitorFailed));
     return root;
   },
 };

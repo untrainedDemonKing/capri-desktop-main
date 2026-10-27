@@ -176,6 +176,93 @@ test('a mic that will not open for the meter says nothing in a panel and stays o
   }
 });
 
+test('her sounds go to the output picked, and fall back to the default if it is gone', async () => {
+  const { Voice } = await load('voice.js');
+  const real = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        enumerateDevices: async () => [
+          { kind: 'audiooutput', deviceId: 'default', label: 'Default - Speakers' },
+          { kind: 'audiooutput', deviceId: 'spk', label: 'Speakers (Realtek)' },
+          { kind: 'audiooutput', deviceId: 'hp', label: 'Headphones' },
+          { kind: 'audiooutput', deviceId: 'communications', label: 'Comms' },
+          { kind: 'audioinput', deviceId: 'mic', label: 'Mic' },
+        ],
+      },
+    },
+  });
+  try {
+    const v = new Voice();
+    assert.deepEqual(await v.outputs(), [{ id: '', label: '' }, { id: 'spk', label: 'Speakers (Realtek)' }, { id: 'hp', label: 'Headphones' }]);
+    const set = [];
+    v.ctx = { setSinkId: async (id) => { set.push(id); if (id === 'gone') throw new Error('device not found'); } };
+    assert.equal(await v.setSink('hp'), true);
+    assert.equal(v.sink, 'hp');
+    assert.equal(v.sinkError, '');
+    assert.equal(await v.setSink('gone'), false);
+    assert.deepEqual(set, ['hp', 'gone', ''], 'and the default instead');
+    assert.match(v.sinkError, /not found/);
+    // from her settings
+    v.configure({ audioOut: 'spk' });
+    await new Promise((r) => setTimeout(r, 5));
+    assert.equal(v.sink, 'spk');
+    v.configure({ muted: true });
+    assert.equal(v.muted, true);
+  } finally {
+    if (real) Object.defineProperty(globalThis, 'navigator', real);
+    else delete globalThis.navigator;
+  }
+});
+
+test('hearing your own mic on the output picked: needs the mic on, keeps it open until let go', async () => {
+  const { Ears } = await load('ears.js');
+  const real = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let stopped = 0;
+  const sinks = [];
+  let contexts = 0;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop: () => { stopped += 1; } }] }) } },
+  });
+  globalThis.AudioContext = class {
+    constructor() { contexts += 1; }
+    setSinkId(id) { sinks.push(id); return Promise.resolve(); }
+    createMediaStreamSource() { return { connect() {} }; }
+    createAnalyser() { return { fftSize: 0, getByteTimeDomainData() {} }; }
+    createGain() { return { gain: {}, connect() {} }; }
+    get destination() { return {}; }
+    close() { return Promise.resolve(); }
+  };
+  try {
+    const ears = new Ears({ host: {}, capri: {}, panel: { say() {} }, voice: {}, brain: { lang: 'ru' }, speech: {} });
+    assert.equal(await ears.monitor(true), false, 'the mic is off: nothing to hear');
+    assert.equal(ears.monitorHeld, false);
+    assert.equal(ears.watchers, 0, 'nothing left held');
+    ears.configure({ ears: true, audioOut: 'hp' });
+    assert.equal(await ears.monitor(true), true);
+    assert.ok(ears.monitorCtx);
+    assert.equal(ears.state, 'metering');
+    assert.ok(sinks.includes('hp'), 'on the headphones');
+    ears.configure({ ears: true, audioOut: 'spk' });
+    assert.equal(sinks.at(-1), 'spk', 'and the output changes under it');
+    // another microphone: the same job on it, and still heard
+    ears.configure({ ears: true, audioOut: 'spk', micDevice: 'usb' });
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(ears.monitorCtx, 'monitor resumed on the new mic');
+    assert.equal(await ears.monitor(false), true);
+    assert.equal(ears.monitorCtx, null);
+    assert.equal(ears.state, 'off');
+    assert.equal(ears.watchers, 0);
+    assert.ok(stopped >= 1);
+  } finally {
+    if (real) Object.defineProperty(globalThis, 'navigator', real);
+    else delete globalThis.navigator;
+    delete globalThis.AudioContext;
+  }
+});
+
 test('where you stand in the bond: the next level, how far, and what is missing', async () => {
   const { progressOf, LEVEL_AT } = await load('bond.js');
   assert.equal(LEVEL_AT.length, 5);

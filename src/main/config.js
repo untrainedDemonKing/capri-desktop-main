@@ -61,6 +61,7 @@ const DEFAULTS = {
   micDevice: '',     // which microphone ('' the system's default; an id from her ring menu › Microphone)
   micSensitivity: 0.4, // 0..1: how quietly you can speak and still be heard (ears.js micThreshold)
   micMeter: true,    // the live level in the mic badge by the clock
+  audioOut: '',      // where her sounds and voice go ('' the system's default; her ring menu › Voice › Output)
 };
 
 let cache = null;

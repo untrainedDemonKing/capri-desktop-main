@@ -146,9 +146,12 @@ sector is a tab, shown as a card beside the ring (arrow keys switch, Esc or a cl
 - **Mic**: on/off, which microphone (it reopens on the new one), how sensitive (the line on the meter is where "voice"
   starts), a live waveform and level (the mic is open only while this tab is on screen and the badge by the clock blinks
   to say so), press-to-talk or conversation mode, and whether the badge shows the level too.
-- **Senses**, **Character**, **Colours**, **Voice**, **More** (size, language, where she rests, teleport, the
-  satellite, put her away): the same settings as the tray menu, which is still there (More › System menu…). **Talk**
-  opens her chat.
+- **Voice**: when she talks, her engine, volume and mute, and **where the sound goes**: pick the speakers or the
+  headphones (her blips, sounds and a speech service's voice follow; Windows' own voice always plays on the default
+  device), with a test sound, and **hear my microphone** to check it on the device you picked (the mic stays open, with
+  the badge blinking, only while that tab is on screen; use headphones, speakers can whistle).
+- **Senses**, **Character**, **Colours**, **More** (size, language, where she rests, teleport, the satellite, put her
+  away): the same settings as the tray menu, which is still there (More › System menu…). **Talk** opens her chat.
 
 ### She rests lightly
 

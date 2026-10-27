@@ -51,6 +51,9 @@ export class Ears {
     this.deviceId = '';     // the microphone picked (''= the system's)
     this.voiceLevel = VOICE_LEVEL;
     this.level = 0;         // how loud it is now, 0..1 (the meter in her ring menu and the badge)
+    this.audioOut = '';     // where "hear yourself" plays (the output device picked in her ring menu › Voice)
+    this.monitorHeld = false; // "hear yourself" is on (it keeps one watcher)
+    this.monitorCtx = null;
     this.watchers = 0;      // how many things want to see the level (her ring menu's Microphone tab)
     this.metering = false;  // the mic is open only to show the level
     this.onTranscript = null; // (text) => void (chat.js sends it as if typed)
@@ -69,6 +72,11 @@ export class Ears {
     this.enabled = cfg.ears === true;
     this.lang = cfg.lang === 'auto' ? '' : (cfg.lang || 'ru');
     this.voiceLevel = micThreshold(cfg.micSensitivity);
+    const out = typeof cfg.audioOut === 'string' ? cfg.audioOut : '';
+    if (out !== this.audioOut) {
+      this.audioOut = out;
+      this.monitorCtx?.setSinkId?.(out).catch(() => {});
+    }
     const device = typeof cfg.micDevice === 'string' ? cfg.micDevice : '';
     if (device !== this.deviceId) {
       this.deviceId = device;
@@ -179,6 +187,7 @@ export class Ears {
         this.metering = true;
         this.setState('metering');
       }
+      if (this.monitorHeld && !this.monitorCtx) await this.startMonitor(); // (the mic was reopened: it goes on)
       return true;
     }
     if (this.watchers === 0 && this.metering) {
@@ -187,6 +196,44 @@ export class Ears {
       else this.setState(this.recording ? 'listening' : 'idle');
     }
     return true;
+  }
+
+  // Her ring menu › Voice › hear yourself: your mic straight to the output picked, to check where
+  // the sound goes (headphones, speakers). It keeps the mic open (the badge says so) until it's let
+  // go; with speakers it can whistle, so it's for a check. Resolves false if the mic won't open.
+  async monitor(on) {
+    if (on) {
+      if (this.monitorHeld) return Boolean(this.monitorCtx);
+      this.monitorHeld = true;
+      if (!(await this.watch(true)) || !this.monitorCtx) {
+        await this.monitor(false);
+        return false;
+      }
+      return true;
+    }
+    this.dropMonitor();
+    if (this.monitorHeld) {
+      this.monitorHeld = false;
+      await this.watch(false);
+    }
+    return true;
+  }
+
+  async startMonitor() {
+    if (!this.stream || this.monitorCtx) return;
+    const ctx = new AudioContext();
+    if (this.audioOut && ctx.setSinkId) await ctx.setSinkId(this.audioOut).catch(() => {});
+    const src = ctx.createMediaStreamSource(this.stream);
+    const gain = ctx.createGain();
+    gain.gain.value = 0.7;
+    src.connect(gain);
+    gain.connect(ctx.destination);
+    this.monitorCtx = ctx;
+  }
+
+  dropMonitor() {
+    this.monitorCtx?.close().catch(() => {});
+    this.monitorCtx = null;
   }
 
   // The microphones there are: [{ id, label }], the system's default first. (A name only shows once
@@ -198,6 +245,7 @@ export class Ears {
   }
 
   shutMic() {
+    this.dropMonitor();
     clearInterval(this.vadTimer);
     this.vadTimer = 0;
     this.metering = false;
