@@ -283,6 +283,20 @@ const brain = {
     // what's special about the one that answers now
     if (provider === 'claude') root.append(note(state.codeFound === false ? b.codeMissing : b.codeNote, true));
     if (provider === 'ollama' && info && !models.length) root.append(note(b.ollamaDown, true));
+    // Ollama, started by her from its folder: how it is doing, and the preparation window for what is missing
+    if (provider === 'ollama' && host.ollamaStatus) {
+      const box = el('div');
+      root.append(box);
+      const paint = (st) => {
+        const text = st.phase === 'ready' ? b.ollReady.replace('{model}', st.model ? `: ${st.model}` : '')
+          : st.phase === 'starting' ? b.ollStarting
+          : st.phase === 'failed' ? b.ollFailed.replace('{error}', String(st.error || '').slice(0, 140))
+          : b.ollOff;
+        box.replaceChildren(note(text, st.phase !== 'failed'), buttons(button(b.ollPrepare, () => host.prepareShow?.())));
+      };
+      host.ollamaStatus().then(paint).catch(() => {});
+      c.onLeave(host.onOllama(paint));
+    }
     if (isLocal(provider)) root.append(note(b.localNote, true));
     else if (provider !== 'claude') root.append(note(b.cloudNote, true));
     if (keys.includes(provider) && needsKey(provider) && state.pick !== provider) {
@@ -560,20 +574,29 @@ const voice = {
       onChange: () => c.drop(),
     }));
     root.append(heading(v.engine));
-    root.append(pick(['system', 'capri', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: v.engines[id] })), cfg.ttsEngine || 'system', (id) => c.set({ ttsEngine: id })));
-    // her own voice, to taste: pace, pitch, softness (a line is said with it when a slider is let go)
-    if (cfg.ttsEngine === 'capri') {
-      const tune = (key, left, min, max, step, dflt, show) => root.append(slider({
-        left, min, max, step, value: cfg[key] ?? dflt, show,
-        onInput: (x) => c.drag({ [key]: x }),
-        onChange: () => {
-          c.drop();
-          setTimeout(() => c.actions.run?.('tuneVoice'), 350); // (once it is saved)
-        },
-      }));
-      tune('ttsRate', v.rate, 0.6, 1.8, 0.05, 1, (x) => `${x.toFixed(2)}×`);
-      tune('ttsPitch', v.pitch, 0.8, 1.3, 0.02, 1, (x) => `${Math.round(x * 100)}%`);
-      tune('ttsSoft', v.soft, 0, 1, 0.05, 0.5, (x) => `${Math.round(x * 100)}%`);
+    root.append(pick(['system', 'chatterbox', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: v.engines[id] })), cfg.ttsEngine || 'system', (id) => c.set({ ttsEngine: id })));
+    // Chatterbox, on this PC: whether it is up, which folder, and a button to start it again
+    if (cfg.ttsEngine === 'chatterbox' && c.host.chatterboxStatus) {
+      const box = el('div');
+      root.append(box);
+      const paint = (st) => {
+        const text = st.phase === 'ready' ? v.cbReady
+          : st.phase === 'starting' ? v.cbStarting
+          : st.phase === 'failed' ? v.cbFailed.replace('{error}', String(st.error || '').slice(0, 160))
+          : v.cbOff;
+        box.replaceChildren(
+          note(text, st.phase !== 'failed'),
+          note(st.dir ? v.cbDir.replace('{dir}', st.dir) : v.cbNoDir, true),
+          ...(st.phase === 'starting' && st.log?.length ? [note(st.log[st.log.length - 1].slice(0, 120), true)] : []),
+          buttons(
+            button(v.cbFolder, () => { c.host.chatterboxChoose().then(() => c.refresh()); }),
+            button(v.cbRestart, () => { c.host.chatterboxRestart().then(paint); }),
+            button(v.cbPrepare, () => c.host.prepareShow?.()),
+          ),
+        );
+      };
+      c.host.chatterboxStatus().then(paint).catch(() => {});
+      c.onLeave(c.host.onChatterbox(paint));
     }
     root.append(buttons(go(c, v.setup, 'setupVoice'), go(c, v.test, 'testVoice')));
 

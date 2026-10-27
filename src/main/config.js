@@ -39,14 +39,21 @@ const DEFAULTS = {
   musicAware: true,  // she knows what's playing (title and artist, from Windows' media controls)
   learn: true,       // she gets to know you and adapts to you (bond.js, kept in bond.json on this PC)
   voiceMode: 'chat', // her voice: 'off', 'chat' (her chat answers) or 'all' (everything she says)
-  ttsEngine: 'system', // 'system' (Windows' voices, offline), 'capri' (her own, built in, offline), 'openai', 'elevenlabs' or 'custom' (tts.js)
+  ttsEngine: 'system', // 'system' (Windows' voices, offline), 'chatterbox' (on this PC, started by her), 'openai', 'elevenlabs' or 'custom' (tts.js)
   ttsVoice: '',      // the speech service's voice (empty: tts.js DEFAULTS)
   ttsModel: '',      // its model (empty: tts.js DEFAULTS)
   ttsUrl: '',        // 'custom': an OpenAI-compatible speech server (http://127.0.0.1:8000/v1)
   ttsFx: true,       // her "many minds" effect on a speech service's voice
-  ttsRate: 1,        // how fast she talks (her own voice and the system's: 0.5..2)
-  ttsPitch: 1,       // her own voice: how high (0.8..1.3)
-  ttsSoft: 0.5,      // her own voice: 0 crisp and bright ... 1 very soft
+  chatterboxDir: '', // 'chatterbox': its folder ('' she looks for one with "chatterbox" in its name next to her)
+  chatterboxAuto: true, // she starts it with herself and stops it when she quits (off: only an address of your own)
+  chatterboxUrl: '', // an already running Chatterbox server of your own (http://127.0.0.1:8004/v1): then she starts nothing
+  chatterboxDevice: 'auto', // 'auto', 'cuda', 'cpu' or 'mps': where the model runs
+  hfEndpoint: '',    // a mirror of the model hub for Chatterbox's download (https://hf-mirror.com), where huggingface.co is blocked
+  ollamaDir: '',     // Ollama's folder ('' she looks for one with "ollama" in its name next to her, then the PATH and the usual place)
+  autoSetup: true,   // at start-up she gets her mind (Ollama) and her voice (Chatterbox) ready, installing what is missing
+  prepareWindow: true, // her preparation window opens by itself when an install or a download takes long, or fails
+  provisioned: false, // she has taken Chatterbox as her voice (the first time, if yours was still the system's)
+  ttsRate: 1,        // how fast she talks (0.5..2)
   // her senses and her hands (all off by default: each one is a permission you turn on)
   vision: false,     // she can take a picture of your screen and react to it (screen.js, eyes.js)
   visionModel: '',   // the vision model (empty: her chat model if it can see, else a default)
@@ -82,6 +89,7 @@ function load(fresh = false) {
   } catch {
     cache = { ...DEFAULTS };
   }
+  if (cache.ttsEngine === 'capri') cache.ttsEngine = 'system'; // (the voice she once made herself is gone)
   return cache;
 }
 

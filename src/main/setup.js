@@ -52,17 +52,49 @@ async function ollamaState() {
   return { running: false, installed: fs.existsSync(ollamaFiles().cli) || Boolean(onPath), models: null, winget: Boolean(winget) };
 }
 
-// Installs Ollama with winget (Windows' own package manager); onLine(text) for what it prints.
-function installOllama(onLine) {
+// Installs something with winget (Windows' own package manager); onLine(text) for what it prints.
+function wingetInstall(id, onLine) {
   return new Promise((resolve) => {
     const child = spawn('winget', [
-      'install', '--id', 'Ollama.Ollama', '--exact', '--silent',
+      'install', '--id', id, '--exact', '--silent',
       '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity',
     ], { windowsHide: true });
     // its progress bars redraw with \r: the last state of each line is enough
     const read = (chunk) => String(chunk).split(/[\r\n]+/).map((l) => l.trim()).filter((l) => /[a-z]{3}/i.test(l)).forEach((l) => onLine?.(l));
     child.stdout.on('data', read);
     child.stderr.on('data', read);
+    child.on('error', (err) => resolve({ ok: false, error: err.message }));
+    child.on('close', (code) => resolve({ ok: code === 0, code }));
+  });
+}
+const installOllama = (onLine) => wingetInstall('Ollama.Ollama', onLine);
+const installPython = (onLine) => wingetInstall('Python.Python.3.11', onLine);
+
+// Ollama's own installer, downloaded and run silently (for a Windows with no winget). onLine(text): how far.
+async function downloadOllama(onLine) {
+  if (!WIN) return { ok: false, error: 'Windows only' };
+  const file = path.join(os.tmpdir(), 'OllamaSetup.exe');
+  try {
+    const res = await fetch('https://ollama.com/download/OllamaSetup.exe', { redirect: 'follow' });
+    if (!res.ok || !res.body) return { ok: false, error: `the download answered ${res.status}` };
+    const total = Number(res.headers.get('content-length')) || 0;
+    const out = fs.createWriteStream(file);
+    let got = 0;
+    let shown = 0;
+    for await (const chunk of res.body) {
+      out.write(chunk);
+      got += chunk.length;
+      if (total && got - shown > total / 50) {
+        shown = got;
+        onLine?.(`${Math.round((got / total) * 100)}%`);
+      }
+    }
+    await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  return new Promise((resolve) => {
+    const child = spawn(file, ['/SILENT', '/NORESTART'], { windowsHide: true, stdio: 'ignore' });
     child.on('error', (err) => resolve({ ok: false, error: err.message }));
     child.on('close', (code) => resolve({ ok: code === 0, code }));
   });
@@ -81,40 +113,8 @@ async function startOllama() {
   return { ok: false, error: 'Ollama did not answer' };
 }
 
-// Fetches a model. Ollama sends its pieces one after the other: onProgress({ completed, total })
-// adds them up, so the bar goes once from empty to full.
-async function pullModel(name, onProgress, signal) {
-  const res = await fetch(`${ollama.base()}/api/pull`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: name, stream: true }),
-    signal,
-  });
-  if (!res.ok) throw new Error(`Ollama answered ${res.status}`);
-  const pieces = new Map(); // digest -> { completed, total }
-  const decoder = new TextDecoder();
-  let buffer = '';
-  for await (const chunk of res.body) {
-    buffer += decoder.decode(chunk, { stream: true });
-    let nl;
-    while ((nl = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, nl).trim();
-      buffer = buffer.slice(nl + 1);
-      if (!line) continue;
-      const msg = JSON.parse(line);
-      if (msg.error) throw new Error(msg.error);
-      if (msg.digest && msg.total) pieces.set(msg.digest, { completed: msg.completed || 0, total: msg.total });
-      let completed = 0;
-      let total = 0;
-      for (const p of pieces.values()) {
-        completed += p.completed;
-        total += p.total;
-      }
-      onProgress?.({ completed, total, status: msg.status });
-      if (msg.status === 'success') return;
-    }
-  }
-}
+// Fetches a model (ollama.js): onProgress({ completed, total, status }), the bar going once from empty to full.
+const pullModel = (name, onProgress, signal) => ollama.pull(name, onProgress, signal);
 
 // Claude Code (or Codex) through Ollama, in a window of its own: Ollama fetches what's missing and
 // asks which model to use. She sees it like any other session, through her hooks.
@@ -147,5 +147,5 @@ function openKey(stored) {
 const openKeys = (apiKeys = {}) => Object.fromEntries(Object.entries(apiKeys).map(([id, v]) => [id, openKey(v)]));
 
 module.exports = {
-  MODELS, KEY_PAGES, ollamaState, installOllama, startOllama, pullModel, launchThroughOllama, sealKey, openKeys,
+  MODELS, KEY_PAGES, ollamaState, installOllama, installPython, downloadOllama, startOllama, pullModel, launchThroughOllama, sealKey, openKeys,
 };

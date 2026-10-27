@@ -5,14 +5,17 @@
 // the overlay, which plays it through her "many minds" effect. Keys stay here.
 //
 // OpenAI (gpt-4o-mini-tts takes instructions: her tone and mood), ElevenLabs (any voice of your
-// library; with an eleven_v3 model her mood goes in as an audio tag), or any OpenAI-compatible
-// server (a local one like Chatterbox-TTS-Server or openedai-speech: /v1/audio/speech).
+// library; with an eleven_v3 model her mood goes in as an audio tag), Chatterbox (a model on your own PC,
+// started and kept by her: chatterbox.js; her mood goes in as its dials), or any OpenAI-compatible
+// server (a local one like openedai-speech: /v1/audio/speech).
+
+const { moodDials } = require('./chatterbox');
 
 const ENGINES = {
   system: { label: 'System (offline)' },
-  capri: { label: 'Her own voice (built in, offline)' }, // made by the overlay itself (voice-synth.js): nothing to fetch here
   openai: { label: 'OpenAI', url: 'https://api.openai.com/v1', key: 'openai', env: 'OPENAI_API_KEY' },
   elevenlabs: { label: 'ElevenLabs', url: 'https://api.elevenlabs.io/v1', key: 'elevenlabs', env: 'ELEVENLABS_API_KEY' },
+  chatterbox: { label: 'Chatterbox (on this PC, started by her)' },
   custom: { label: 'OpenAI-compatible server', key: 'tts' },
 };
 
@@ -70,20 +73,33 @@ async function failure(res) {
   return withCode(new Error(message), res.status === 401 || res.status === 403 ? 'badkey' : null);
 }
 
-// The audio of `text` said by the engine picked in her config, as a Buffer (mp3).
-// keys: the opened API keys ({ openai, elevenlabs, tts }).
-async function speak(cfg, keys, { text, mood = 'calm' }) {
+// The audio of `text` said by the engine picked in her config, as a Buffer (mp3, or wav from Chatterbox).
+// keys: the opened API keys ({ openai, elevenlabs, tts }); lang: what she speaks; base: where Chatterbox
+// is listening (chatterbox.js knows).
+async function speak(cfg, keys, { text, mood = 'calm', lang = 'en', base: chatterboxBase = '' }) {
   const input = String(text || '').trim().slice(0, 1500);
   if (!input) throw new Error('nothing to say');
   const engine = ENGINES[cfg.ttsEngine] ? cfg.ttsEngine : 'system';
-  if (engine === 'system' || engine === 'capri') throw withCode(new Error('this voice is made and played by the overlay'), engine);
-  const def = DEFAULTS[engine];
+  if (engine === 'system') throw withCode(new Error('this voice is made and played by the overlay'), engine);
+  const def = DEFAULTS[engine] || {};
   const model = cfg.ttsModel || def.model;
   const voice = cfg.ttsVoice || def.voice;
   const e = ENGINES[engine];
   const key = keys[e.key] || (e.env && process.env[e.env]) || '';
   let res;
-  if (engine === 'elevenlabs') {
+  if (engine === 'chatterbox') {
+    const base = String(chatterboxBase || '').replace(/\/+$/, '');
+    if (!base) throw withCode(new Error('Chatterbox is not running'), 'nourl');
+    // (the extras are for her own server around Chatterbox; any other one ignores what it does not know)
+    const body = { model: 'chatterbox', input, response_format: 'wav', language: String(lang || 'en').slice(0, 2), ...moodDials(mood), mood };
+    if (cfg.ttsVoice) body.voice = cfg.ttsVoice;
+    res = await fetch(`${base}/audio/speech`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120000), // (a slow card, a long answer)
+    });
+  } else if (engine === 'elevenlabs') {
     if (!key) throw withCode(new Error('no ElevenLabs key'), 'nokey');
     const tag = /v3/.test(model) && V3_TAG[mood] ? `[${V3_TAG[mood]}] ` : '';
     const lively = ['angry', 'laugh', 'happy', 'surprised'].includes(mood);

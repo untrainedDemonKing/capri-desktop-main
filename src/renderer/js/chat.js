@@ -133,6 +133,20 @@ export class Chat {
     }
     capri.wake();
     const status = await host.chatStatus();
+    if (!status.ok && status.error === 'preparing') {
+      // she is getting her mind and her voice ready (the preparation window): not a thing to set up with you
+      capri.perform('curious', capri.towardCenter());
+      this.panel.say({
+        kind: 'info', face: 'aside', guide: true, line: t.preparing, quote: t.preparingHow,
+        actions: [{ id: 'show', label: t.openPrepare, primary: true }, { id: 'ok', label: t.ok }],
+        onAction: (id) => {
+          if (id === 'show') host.prepareShow?.();
+          this.panel.hide();
+        },
+        hold: null,
+      });
+      return;
+    }
     if (!status.ok && this.onSetup) {
       this.onSetup(status); // nothing to talk with yet: she sets it up with you, with buttons (setup.js)
       return;

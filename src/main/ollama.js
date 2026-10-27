@@ -28,6 +28,31 @@ async function models() {
   return list.map((m) => m.name);
 }
 
+// Whether an Ollama answers at this address, and which version it is ('' if none does).
+async function version(signal = AbortSignal.timeout(1500)) {
+  try {
+    const res = await fetch(`${base()}/api/version`, { signal });
+    if (!res.ok) return '';
+    return String((await res.json()).version || '0');
+  } catch {
+    return '';
+  }
+}
+
+// One answer in one go (not streamed): her eyes ask this about a picture (llm.js see).
+async function once({ model, messages }, signal) {
+  const res = await fetch(`${base()}/api/chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model, messages, stream: false, keep_alive: '15m', options: { temperature: 0.4, num_predict: 300 } }),
+    signal,
+  });
+  if (!res.ok) throw await failure(res);
+  const body = await res.json();
+  if (body.error) throw new Error(body.error);
+  return body.message?.content || '';
+}
+
 // Loads the model into memory ahead of the first message (the first answer after a fresh start
 // otherwise waits for it to load, which can take a while).
 function warm(model) {
@@ -76,4 +101,39 @@ async function chat({ model, messages }, onDelta, signal) {
   return text;
 }
 
-module.exports = { base, models, warm, chat };
+// Fetches a model. Ollama sends its pieces one after the other: onProgress({ completed, total })
+// adds them up, so the bar goes once from empty to full.
+async function pull(name, onProgress, signal) {
+  const res = await fetch(`${base()}/api/pull`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: name, stream: true }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`Ollama answered ${res.status}`);
+  const pieces = new Map(); // digest -> { completed, total }
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for await (const chunk of res.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let nl;
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line) continue;
+      const msg = JSON.parse(line);
+      if (msg.error) throw new Error(msg.error);
+      if (msg.digest && msg.total) pieces.set(msg.digest, { completed: msg.completed || 0, total: msg.total });
+      let completed = 0;
+      let total = 0;
+      for (const p of pieces.values()) {
+        completed += p.completed;
+        total += p.total;
+      }
+      onProgress?.({ completed, total, status: msg.status });
+      if (msg.status === 'success') return;
+    }
+  }
+}
+
+module.exports = { base, version, models, warm, chat, once, pull };

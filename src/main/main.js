@@ -19,6 +19,11 @@ const setup = require('./setup');
 const apps = require('./apps');
 const launch = require('./launch');
 const tts = require('./tts');
+const { Chatterbox } = require('./chatterbox');
+const { OllamaHost } = require('./ollama-host');
+const ollama = require('./ollama');
+const { Provision } = require('./provision');
+const { createPrepare } = require('./prepare');
 const stt = require('./stt');
 const vision = require('./screen');
 const control = require('./control');
@@ -38,6 +43,42 @@ const OLLAMA_SITE = 'https://ollama.com';
 const THEMES = ['classic', 'netrunner', 'toxic', 'violet', 'gold', 'sakura', 'ghost', 'mood'];
 // which saved key each voice engine uses (OpenAI's is the same one as her chat's)
 const TTS_KEYS = { openai: 'openai', elevenlabs: 'elevenlabs', custom: 'tts' };
+// her voice (Chatterbox) and her mind (Ollama), models on this PC: she finds their folders next to her, starts
+// them, keeps them, and gets them ready when something is missing (provision.js, shown by prepare.js)
+const placesNextToHer = () => {
+  // next to her first (her folder, the one she was started from), then the places a folder gets put
+  const place = (name) => { try { return app.getPath(name); } catch { return ''; } };
+  return [path.dirname(process.execPath), ROOT, path.resolve(ROOT, '..'), process.env.PORTABLE_EXECUTABLE_DIR, process.cwd(), place('desktop'), place('downloads'), place('documents'), place('home')]
+    .filter(Boolean).filter((p, i, all) => all.indexOf(p) === i);
+};
+// (a message to the overlay once its window is gone, while she is quitting, would throw)
+const toOverlay = (channel, payload) => { if (overlay && !overlay.isDestroyed()) overlay.webContents.send(channel, payload); };
+const chatterbox = new Chatterbox({ roots: placesNextToHer });
+chatterbox.on('change', (status) => toOverlay('chatterbox:status', status));
+const ollamaHost = new OllamaHost({ roots: placesNextToHer });
+ollamaHost.on('change', (status) => toOverlay('ollama:status', status));
+const provision = new Provision({
+  cfg: () => config.load(),
+  save: (patch) => updateConfig(patch),
+  lang: () => resolveLang(config.load().lang),
+  ollamaHost,
+  chatterbox,
+  ollamaApi: { models: () => ollama.models(), pull: (name, onProgress, signal) => ollama.pull(name, onProgress, signal) },
+  installOllama: process.platform === 'win32' ? setup.installOllama : null,
+  downloadOllama: process.platform === 'win32' ? setup.downloadOllama : null,
+  installPython: process.platform === 'win32' ? setup.installPython : null,
+  roots: placesNextToHer,
+  defaultDir: () => path.join(app.getPath('userData'), 'chatterbox'),
+  onModelsChanged: () => refreshModels(),
+});
+let prepare = null; // her preparation window (prepare.js), made once the app is ready
+provision.on('change', (snapshot) => toOverlay('provision:status', snapshot));
+provision.on('finish', async ({ ok, plan, attention }) => {
+  await refreshModels();
+  rebuildTray();
+  // she says so, the first time and after anything long: a line in her own voice is the proof it all works
+  if (ok && (attention || plan.adopt)) sendCommand('testVoice');
+});
 const STT_KEYS = { groq: 'groq', openai: 'openai', custom: 'stt' };
 
 protocol.registerSchemesAsPrivileged([
@@ -291,6 +332,10 @@ function updateConfig(patch) {
   if (did('rest')) fitOverlay(); // the taskbar in her window or not
   if (did('musicAware')) watchMedia();
   if (did('ears', 'pushToTalk')) registerPushToTalk();
+  if (did('ttsEngine', 'chatterboxDir', 'chatterboxUrl', 'chatterboxAuto', 'chatterboxDevice', 'hfEndpoint')) chatterbox.sync(config.load()).catch(() => {});
+  if (did('ollamaDir')) ollamaHost.stop(false);
+  // picking Ollama or Chatterbox (here, in her menu or in her ring) gets what they need ready, by herself
+  if (config.load().autoSetup !== false && ((did('provider') && config.load().provider === 'ollama') || (did('ttsEngine') && config.load().ttsEngine === 'chatterbox'))) provision.run();
   const cfg = rendererConfig();
   overlay?.webContents.send('capri:config', cfg);
   rebuildTray();
@@ -336,6 +381,7 @@ function buildTray() {
     { label: t.satellite, click: () => sendCommand('satellite') },
     { label: t.demo, click: playDemo },
     { label: t.help, click: () => sendCommand('welcome') },
+    { label: t.prepare, click: () => { prepare?.show({ manual: true }); provision.run(); } },
     ...(cfg.claude ? [{ label: t.report, click: () => sendCommand('report') }] : []),
     { label: t.talk, click: () => sendCommand('chat') },
     { label: t.ring, click: () => sendCommand('ring') },
@@ -792,6 +838,8 @@ function registerIpc() {
   ipcMain.handle('chat:status', async () => {
     const cfg = config.load(true); // keys may have been edited by hand
     const { provider } = cfg;
+    // her mind is being got ready (the preparation window): not "Ollama is missing"
+    if (provision.running && provider === 'ollama' && provision.step('ollama-model').state !== 'done') return { ok: false, error: 'preparing', code: 'preparing', provider };
     const models = await refreshModels({ cached: true });
     if (!models) return { ok: false, error: chatError || 'offline', code: chatErrorCode, provider };
     if (!models.length) return { ok: false, error: 'nomodel', provider };
@@ -956,10 +1004,11 @@ function registerIpc() {
     return { found: true, dir, file: fs.existsSync(file), label: fs.existsSync(file) ? path.basename(file) : path.basename(dir) };
   });
   // her voice through a speech service (tts.js): the audio of what she says, back to the overlay
-  ipcMain.handle('tts:speak', async (_e, { text, mood }) => {
+  ipcMain.handle('tts:speak', async (_e, { text, mood, lang }) => {
     const cfg = config.load();
     try {
-      const audio = await tts.speak(cfg, setup.openKeys(cfg.apiKeys), { text, mood });
+      const base = cfg.ttsEngine === 'chatterbox' ? await chatterbox.ready(cfg) : '';
+      const audio = await tts.speak(cfg, setup.openKeys(cfg.apiKeys), { text, mood, lang, base });
       return { ok: true, audio };
     } catch (err) {
       return { ok: false, error: err.message, code: err.code || null };
@@ -977,6 +1026,20 @@ function registerIpc() {
     return updateConfig(patch);
   });
   ipcMain.on('tts:keyPage', (_e, engine) => tts.KEY_PAGES[engine] && shell.openExternal(tts.KEY_PAGES[engine]));
+  // Chatterbox: how it is doing, which folder it is, and starting it again
+  ipcMain.handle('chatterbox:status', () => chatterbox.status());
+  ipcMain.handle('ollama:status', async () => ({ ...ollamaHost.status(), model: pickModel(), models: chatModels || [] }));
+  ipcMain.handle('provision:status', () => provision.snapshot());
+  ipcMain.handle('chatterbox:choose', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({ title: 'Chatterbox', properties: ['openDirectory'], defaultPath: config.load().chatterboxDir || path.dirname(process.execPath) });
+    if (canceled || !filePaths[0]) return null;
+    updateConfig({ chatterboxDir: filePaths[0], ttsEngine: 'chatterbox' });
+    return filePaths[0];
+  });
+  ipcMain.handle('chatterbox:restart', async () => {
+    await chatterbox.restart(config.load());
+    return chatterbox.status();
+  });
   // ---- her senses and her hands ----
   // her eyes: a picture of your screen (screen.js), read by the vision model (llm.js)
   ipcMain.handle('eyes:see', async (_e, { prompt }) => {
@@ -1169,6 +1232,18 @@ function main() {
     watchPresence();
     allowLoopbackAudio();
     registerPushToTalk();
+    prepare = createPrepare({
+      BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, ollamaHost, chatterbox,
+      lang: () => resolveLang(config.load().lang),
+      protocolUrl: 'capri://app/src/renderer/prepare.html',
+    });
+    // what she lives on: found, started, and made ready if something is missing (a window opens only if that takes long)
+    if (config.load().autoSetup !== false) setTimeout(() => provision.run(), 1200);
+    else {
+      // (not getting things ready for you, but the ones that are in place are still started)
+      chatterbox.sync(config.load()).catch(() => {});
+      if ((config.load().provider || 'ollama') === 'ollama') ollamaHost.sync(config.load()).catch(() => {});
+    }
     refreshModels(); // for her menu's model list
     setTimeout(() => launch.launchables().catch(() => {}), 20000); // what she can open, before you ask
     screen.on('display-metrics-changed', fitOverlay);
@@ -1181,6 +1256,10 @@ function main() {
 
   app.on('will-quit', () => {
     config.flush(); // the last changes, written now
+    // what she started goes with her (each on its own: one failing must not leave the other running)
+    for (const stop of [() => provision.cancel(), () => chatterbox.stop(), () => ollamaHost.stop()]) {
+      try { stop(); } catch (err) { console.error('[capri] stopping what she started:', err.message); }
+    }
     clearTimeout(trayTimer);
     globalShortcut.unregisterAll();
     windowWatch?.stop();

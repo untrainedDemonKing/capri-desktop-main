@@ -564,11 +564,17 @@ async function boot() {
       const cfg = await host.getConfig();
       const engine = await guide.ask({
         face: 'look', line: tv.which, quote: tv.whichHow,
-        actions: [...['system', 'capri', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: tv.engines[id], primary: id === cfg.ttsEngine })), { id: 'later', label: tv.later }],
+        actions: [...['system', 'chatterbox', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: tv.engines[id], primary: id === cfg.ttsEngine })), { id: 'later', label: tv.later }],
       });
       if (!engine || engine === 'later') return;
-      if (engine === 'system' || engine === 'capri') { // (nothing to ask: no key, no address)
+      if (engine === 'system') { // (nothing to ask: no key, no address)
         await host.ttsSetup({ engine });
+        saved = true;
+        return;
+      }
+      if (engine === 'chatterbox') { // (her folder is looked for next to her; only if there is none she asks for it)
+        await host.ttsSetup({ engine });
+        if (!(await host.chatterboxStatus()).dir) await host.chatterboxChoose();
         saved = true;
         return;
       }
@@ -732,9 +738,6 @@ async function boot() {
         break;
       case 'setupVoice': // her menu › Voice › Key, address or voice
         setupVoice();
-        break;
-      case 'tuneVoice': // her menu › Voice › a slider of her own voice was let go: she says a line with it
-        speech.say(lifeLines(brain.lang).voice.test, { mood: heart.state.mood, force: true });
         break;
       case 'testVoice': // her menu › Voice › Test her voice
         if (capri.stowed) {

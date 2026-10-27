@@ -1,11 +1,10 @@
 // Her voice: her chat answers (or everything she says) read out loud, the way she feels.
 //
-// Three ways. Her own voice, made here in the overlay (voice-synth.js: a formant synthesizer, no model, no
-// service, offline). The system's own voices (free, offline: Windows' voices, Irina / Svetlana in
-// Russian), pitched and paced by her mood. Or a speech service (main.js tts.js: OpenAI, ElevenLabs, or an
-// OpenAI-compatible server on your PC), told her mood. Her own voice and a service's are played through
-// her "many minds" effect: a chorus of slightly delayed copies of her, like the dozens of minds she's
-// made of, and a little digital edge. Her body nods along while she talks.
+// Two ways. The system's own voices (free, offline: Windows' voices, Irina / Svetlana in Russian), pitched
+// and paced by her mood. Or a speech engine (main.js tts.js: Chatterbox on this PC, started by her; OpenAI,
+// ElevenLabs, or an OpenAI-compatible server), told her mood. A service's voice is played through her "many
+// minds" effect: a chorus of slightly delayed copies of her, like the dozens of minds she's made of, and a
+// little digital edge. Her body nods along while she talks.
 
 const LOCALES = { ru: 'ru-RU', en: 'en-US', fr: 'fr-FR', es: 'es-ES', pt: 'pt-BR' };
 // female system voices she'd rather use, by language (Windows, macOS, Edge's names)
@@ -69,8 +68,6 @@ export class Speech {
     this.muted = Boolean(cfg.muted);
     this.lang = cfg.lang || 'en';
     this.rate = Number(cfg.ttsRate) || 1;
-    this.pitch = Number(cfg.ttsPitch) || 1;
-    this.soft = typeof cfg.ttsSoft === 'number' ? cfg.ttsSoft : 0.5;
     if (this.mode === 'off' || this.muted) this.stop();
   }
 
@@ -95,9 +92,7 @@ export class Speech {
     this.voice.speaking = true;
     this.onStart?.();
     try {
-      if (this.engine === 'capri') {
-        if (await this.own(words, mood, token)) return;
-      } else if (this.engine !== 'system') {
+      if (this.engine !== 'system') {
         const ok = await this.cloud(words, mood, token);
         if (ok) return;
       }
@@ -161,35 +156,11 @@ export class Speech {
     });
   }
 
-  // ---------- her own voice ----------
-
-  // Made right here (voice-synth.js: no service, no model, offline), then played through the same
-  // chain as a service's voice (the "many minds" effect, her output device). True once played (or cut
-  // off), false if it couldn't be made (she says it with the system voice then).
-  async own(text, mood, token) {
-    let made;
-    try {
-      const { synthesize } = await import('./voice-synth.js');
-      made = synthesize(text, { lang: this.lang, mood, rate: this.rate, pitch: this.pitch, soft: this.soft });
-    } catch (err) {
-      this.onError?.(err.message);
-      return false;
-    }
-    if (this.current !== token) return true;
-    if (!made.samples.length) return false;
-    const ctx = this.voice.wakeUp();
-    if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
-    const buffer = ctx.createBuffer(1, made.samples.length, made.sampleRate);
-    buffer.copyToChannel(made.samples, 0);
-    await this.play(ctx, buffer, mood, token, { rate: 1, soft: true }); // (the pace is already in it; the voice is already soft)
-    return true;
-  }
-
   // ---------- a speech service ----------
 
   // True once played (or cut off), false if the service couldn't (she says it with the system voice then).
   async cloud(text, mood, token) {
-    const res = await this.host.ttsSpeak({ text, mood }).catch((err) => ({ ok: false, error: err.message }));
+    const res = await this.host.ttsSpeak({ text, mood, lang: this.lang }).catch((err) => ({ ok: false, error: err.message }));
     if (this.current !== token) return true;
     if (!res?.ok) {
       this.onError?.(res?.error || 'failed', res?.code);
@@ -212,16 +183,14 @@ export class Speech {
 
   // Through her effect: a gentle high-pass and presence, a chorus of two copies of her a few
   // milliseconds behind, wavering (the other minds), and a little drive when she's angry.
-  // soft: her own voice, which is already warm: no presence lift (it is what makes a voice bite), the
-  // other minds quieter, and a little less gain, so nothing clips on the way out.
-  play(ctx, buffer, mood, token, { rate = this.rate, soft = false } = {}) {
+  play(ctx, buffer, mood, token, { rate = this.rate } = {}) {
     return new Promise((resolve) => {
       const src = ctx.createBufferSource();
       src.buffer = buffer;
       src.playbackRate.value = rate;
       this.source = src;
       const out = ctx.createGain();
-      out.gain.value = soft ? 1.2 : 1.4;
+      out.gain.value = 1.4;
       out.connect(this.voice.master);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
@@ -235,7 +204,7 @@ export class Speech {
         const presence = ctx.createBiquadFilter();
         presence.type = 'peaking';
         presence.frequency.value = 3200;
-        presence.gain.value = soft ? 0 : 3;
+        presence.gain.value = 3;
         let chain = src.connect(hp).connect(presence);
         if (mood === 'angry') {
           const drive = ctx.createWaveShaper();
@@ -249,7 +218,7 @@ export class Speech {
         }
         chain.connect(out);
         // the other minds: two delayed copies, their delay wavering slowly, a little thinner
-        for (const [delayMs, depth, rate, level] of [[13, 4, 0.23, soft ? 0.22 : 0.32], [22, 6, 0.31, soft ? 0.14 : 0.2]]) {
+        for (const [delayMs, depth, rate, level] of [[13, 4, 0.23, 0.32], [22, 6, 0.31, 0.2]]) {
           const d = ctx.createDelay(0.1);
           d.delayTime.value = delayMs / 1000;
           const lfo = ctx.createOscillator();
