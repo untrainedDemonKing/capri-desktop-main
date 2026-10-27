@@ -7,3 +7,6 @@ Thumbs.db
 
 # local debug captures
 captures/
+
+# wav files made by npm run voice:demo
+voice-demo/

@@ -101,7 +101,7 @@ export const LIFE_LINES = {
       test: 'Проверка связи. Это я, Капри, своим голосом.',
       which: 'Каким голосом мне говорить?',
       whichHow: 'Системный — бесплатно и без интернета (голоса Windows). OpenAI и ElevenLabs звучат живее и с эмоциями, нужен ключ. Свой сервер — например Kokoro у тебя на ПК.',
-      engines: { system: 'Системный', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'Свой сервер' },
+      engines: { system: 'Системный', capri: 'Её голос (свой)', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'Свой сервер' },
       where: 'Где взять ключ?', skip: 'Оставить как есть', later: 'Позже',
     },
     // её глаза: она смотрит на твой экран (eyes.js)
@@ -276,10 +276,10 @@ export const LIFE_LINES = {
       voice: {
         off: 'Молчит (только блипы)', chat: 'Читает ответы чата', all: 'Читает всё',
         mute: 'Без звука', volume: 'Громкость', engine: 'Голосовой движок',
-        engines: { system: 'Системный', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'Свой сервер' },
+        engines: { system: 'Системный', capri: 'Её голос (свой)', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'Свой сервер' },
         setup: 'Ключ, адрес, голос…', test: 'Проверить голос',
         outH: 'Куда звучит звук',
-        outNote: 'Её блипы, звуки и голос (OpenAI, ElevenLabs, свой сервер) идут на выбранное устройство: колонки, наушники.',
+        outNote: 'Её блипы, звуки и голос (свой, OpenAI, ElevenLabs, свой сервер) идут на выбранное устройство: колонки, наушники.',
         outSystem: 'Системный голос Windows всегда звучит на устройстве по умолчанию.',
         outDefault: 'По умолчанию (системное)',
         outNone: 'Выбор устройства здесь не поддерживается: звук идёт на системное.',
@@ -393,7 +393,7 @@ export const LIFE_LINES = {
       test: "Comms check. It's me, Capri, in my own voice.",
       which: 'Which voice should I talk with?',
       whichHow: 'System: free and offline (Windows voices). OpenAI and ElevenLabs sound more alive and emotional, with a key. Your own server: Kokoro on your PC, say.',
-      engines: { system: 'System', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'My own server' },
+      engines: { system: 'System', capri: 'Her own voice', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'My own server' },
       where: 'Where do I get a key?', skip: 'Keep as is', later: 'Later',
     },
     eyes: {
@@ -560,10 +560,10 @@ export const LIFE_LINES = {
       voice: {
         off: 'Silent (blips only)', chat: 'Reads her chat answers', all: 'Reads everything',
         mute: 'Mute', volume: 'Volume', engine: 'Voice engine',
-        engines: { system: 'System', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'My server' },
+        engines: { system: 'System', capri: 'Her own voice', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'My server' },
         setup: 'Key, address, voice…', test: 'Test her voice',
         outH: 'Where the sound goes',
-        outNote: 'Her blips, sounds and voice (OpenAI, ElevenLabs, your own server) go to the device you pick: speakers, headphones.',
+        outNote: 'Her blips, sounds and voice (her own, OpenAI, ElevenLabs, your own server) go to the device you pick: speakers, headphones.',
         outSystem: "Windows' own voice always plays on the default device.",
         outDefault: 'Default (system)',
         outNone: "Picking a device isn't supported here: the sound goes to the system's.",

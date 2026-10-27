@@ -39,7 +39,7 @@ const DEFAULTS = {
   musicAware: true,  // she knows what's playing (title and artist, from Windows' media controls)
   learn: true,       // she gets to know you and adapts to you (bond.js, kept in bond.json on this PC)
   voiceMode: 'chat', // her voice: 'off', 'chat' (her chat answers) or 'all' (everything she says)
-  ttsEngine: 'system', // 'system' (Windows' voices, offline), 'openai', 'elevenlabs' or 'custom' (tts.js)
+  ttsEngine: 'system', // 'system' (Windows' voices, offline), 'capri' (her own, built in, offline), 'openai', 'elevenlabs' or 'custom' (tts.js)
   ttsVoice: '',      // the speech service's voice (empty: tts.js DEFAULTS)
   ttsModel: '',      // its model (empty: tts.js DEFAULTS)
   ttsUrl: '',        // 'custom': an OpenAI-compatible speech server (http://127.0.0.1:8880/v1)

@@ -560,7 +560,7 @@ const voice = {
       onChange: () => c.drop(),
     }));
     root.append(heading(v.engine));
-    root.append(pick(['system', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: v.engines[id] })), cfg.ttsEngine || 'system', (id) => c.set({ ttsEngine: id })));
+    root.append(pick(['system', 'capri', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: v.engines[id] })), cfg.ttsEngine || 'system', (id) => c.set({ ttsEngine: id })));
     root.append(buttons(go(c, v.setup, 'setupVoice'), go(c, v.test, 'testVoice')));
 
     // where it comes out: speakers, headphones... (and your own mic there, to check)

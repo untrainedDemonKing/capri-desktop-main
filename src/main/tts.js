@@ -10,6 +10,7 @@
 
 const ENGINES = {
   system: { label: 'System (offline)' },
+  capri: { label: 'Her own voice (built in, offline)' }, // made by the overlay itself (voice-synth.js): nothing to fetch here
   openai: { label: 'OpenAI', url: 'https://api.openai.com/v1', key: 'openai', env: 'OPENAI_API_KEY' },
   elevenlabs: { label: 'ElevenLabs', url: 'https://api.elevenlabs.io/v1', key: 'elevenlabs', env: 'ELEVENLABS_API_KEY' },
   custom: { label: 'OpenAI-compatible server', key: 'tts' },
@@ -75,7 +76,7 @@ async function speak(cfg, keys, { text, mood = 'calm' }) {
   const input = String(text || '').trim().slice(0, 1500);
   if (!input) throw new Error('nothing to say');
   const engine = ENGINES[cfg.ttsEngine] ? cfg.ttsEngine : 'system';
-  if (engine === 'system') throw withCode(new Error('the system voice is played by the overlay'), 'system');
+  if (engine === 'system' || engine === 'capri') throw withCode(new Error('this voice is made and played by the overlay'), engine);
   const def = DEFAULTS[engine];
   const model = cfg.ttsModel || def.model;
   const voice = cfg.ttsVoice || def.voice;

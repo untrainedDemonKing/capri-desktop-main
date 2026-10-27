@@ -1,10 +1,11 @@
 // Her voice: her chat answers (or everything she says) read out loud, the way she feels.
 //
-// Two ways. The system's own voices (free, offline: Windows' voices, Irina / Svetlana in Russian),
-// pitched and paced by her mood. Or a speech service (main.js tts.js: OpenAI, ElevenLabs, or an
-// OpenAI-compatible server on your PC), told her mood, and played here through her "many minds"
-// effect: a chorus of slightly delayed copies of her, like the dozens of minds she's made of, and a
-// little digital edge. Her body nods along while she talks.
+// Three ways. Her own voice, made here in the overlay (voice-synth.js: a formant synthesizer, no model, no
+// service, offline). The system's own voices (free, offline: Windows' voices, Irina / Svetlana in
+// Russian), pitched and paced by her mood. Or a speech service (main.js tts.js: OpenAI, ElevenLabs, or an
+// OpenAI-compatible server on your PC), told her mood. Her own voice and a service's are played through
+// her "many minds" effect: a chorus of slightly delayed copies of her, like the dozens of minds she's
+// made of, and a little digital edge. Her body nods along while she talks.
 
 const LOCALES = { ru: 'ru-RU', en: 'en-US', fr: 'fr-FR', es: 'es-ES', pt: 'pt-BR' };
 // female system voices she'd rather use, by language (Windows, macOS, Edge's names)
@@ -92,7 +93,9 @@ export class Speech {
     this.voice.speaking = true;
     this.onStart?.();
     try {
-      if (this.engine !== 'system') {
+      if (this.engine === 'capri') {
+        if (await this.own(words, mood, token)) return;
+      } else if (this.engine !== 'system') {
         const ok = await this.cloud(words, mood, token);
         if (ok) return;
       }
@@ -156,6 +159,30 @@ export class Speech {
     });
   }
 
+  // ---------- her own voice ----------
+
+  // Made right here (voice-synth.js: no service, no model, offline), then played through the same
+  // chain as a service's voice (the "many minds" effect, her output device). True once played (or cut
+  // off), false if it couldn't be made (she says it with the system voice then).
+  async own(text, mood, token) {
+    let made;
+    try {
+      const { synthesize } = await import('./voice-synth.js');
+      made = synthesize(text, { lang: this.lang, mood, rate: this.rate });
+    } catch (err) {
+      this.onError?.(err.message);
+      return false;
+    }
+    if (this.current !== token) return true;
+    if (!made.samples.length) return false;
+    const ctx = this.voice.wakeUp();
+    if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+    const buffer = ctx.createBuffer(1, made.samples.length, made.sampleRate);
+    buffer.copyToChannel(made.samples, 0);
+    await this.play(ctx, buffer, mood, token, { rate: 1 }); // (the pace is already in it)
+    return true;
+  }
+
   // ---------- a speech service ----------
 
   // True once played (or cut off), false if the service couldn't (she says it with the system voice then).
@@ -183,11 +210,11 @@ export class Speech {
 
   // Through her effect: a gentle high-pass and presence, a chorus of two copies of her a few
   // milliseconds behind, wavering (the other minds), and a little drive when she's angry.
-  play(ctx, buffer, mood, token) {
+  play(ctx, buffer, mood, token, { rate = this.rate } = {}) {
     return new Promise((resolve) => {
       const src = ctx.createBufferSource();
       src.buffer = buffer;
-      src.playbackRate.value = this.rate;
+      src.playbackRate.value = rate;
       this.source = src;
       const out = ctx.createGain();
       out.gain.value = 1.4;
