@@ -17,6 +17,7 @@ import { Rhythm } from './rhythm.js';
 import { Hands } from './hands.js';
 import { Ears } from './ears.js';
 import { Bond } from './bond.js';
+import { Ring } from './ring.js';
 import { applyTheme, resolveTheme } from './themes.js';
 import { linesFor } from './lines.js';
 import { lifeLines } from './lines-life.js';
@@ -141,9 +142,10 @@ async function boot() {
   };
   const onChip = () => Boolean(chip.visible && mouse && chip.contains(mouse.x, mouse.y, 0));
   let onHer = false; // the pointer is on her body (as of the last refreshHit)
+  let ring = null; // her circular menu (below): while it's open the whole overlay takes clicks
   const refreshHit = () => {
     onHer = false;
-    if (capri.dragging) return setInteractive(true);
+    if (capri.dragging || ring?.open) return setInteractive(true);
     if (!mouse) return setInteractive(false);
     const r = panel.rect();
     const onPanel = r && mouse.x >= r.left && mouse.x <= r.right && mouse.y >= r.top && mouse.y <= r.bottom;
@@ -259,7 +261,7 @@ async function boot() {
   capri.onDrop = () => heart.dragged();
   panel.onChar = (kind) => voice.play('blip', { mood: kind });
   panel.onTalk = (talking) => talking && capri.perform('talk');
-  capri.onMenu = () => host.openMenu();
+  capri.onMenu = () => (ring ? ring.toggle() : host.openMenu()); // right-click: her circular menu
 
   // Her guide (guide.js): her welcome on first launch, and "How does it work?" in her menu,
   // where she takes you to things and points at them.
@@ -302,23 +304,45 @@ async function boot() {
     if (!chat.open) chat.start().then(() => setTimeout(() => chat.send(text), 400));
     else chat.send(text);
   };
+  // Her circular menu (ring.js): right-click her. Its settings are the tray menu's, plus the mic and the bond.
+  ring = new Ring({
+    host, capri, panel, brain, bond, ears, voice,
+    actions: { run: (name, extra) => runCommand({ name, ...extra }) },
+  });
+  ring.configure(config);
+  ring.onToggle = () => refreshHit(); // click-through again once it's shut
+  life.ring = ring;
+  eyes.ring = ring;
   // the always-visible badge: a sense is never silently on
   const sensesEl = document.getElementById('senses');
   const eyeEl = sensesEl.querySelector('.senses__eye');
   const micEl = sensesEl.querySelector('.senses__mic');
+  const barsEl = micEl.querySelector('.senses__bars');
+  let meterOn = config.micMeter !== false;
   const showSenses = ({ listening = false } = {}) => {
     const ll = lifeLines(brain.lang);
     eyeEl.hidden = !eyes.enabled;
     eyeEl.querySelector('.senses__label').textContent = ll.eyes.badge;
     micEl.hidden = !ears.enabled;
     micEl.classList.toggle('is-live', listening);
+    barsEl.hidden = !meterOn || !(listening || ears.stream);
     micEl.querySelector('.senses__label').textContent = listening ? ll.ears.listening : 'MIC';
     sensesEl.hidden = eyeEl.hidden && micEl.hidden;
   };
   ears.onState = (state) => {
-    host.senseState({ eyes: eyes.enabled, ears: ears.enabled, listening: state === 'listening' });
-    showSenses({ listening: state === 'listening' });
+    // 'metering': the mic is open only to show its level (her ring menu's Mic tab): live all the same
+    const live = state === 'listening' || state === 'metering';
+    host.senseState({ eyes: eyes.enabled, ears: ears.enabled, listening: live });
+    showSenses({ listening: live });
     if (state === 'listening') capri.perform?.('curious', capri.towardCenter());
+  };
+  // the level in the badge, a dozen times a second at most
+  let barsAt = 0;
+  ears.onLevel = (level) => {
+    const now = performance.now();
+    if (!meterOn || now - barsAt < 80) return;
+    barsAt = now;
+    barsEl.style.setProperty('--lvl', level.toFixed(2));
   };
   showSenses();
   // while she's talking, her ears don't listen to her own voice
@@ -473,11 +497,13 @@ async function boot() {
     heart.configure(cfg);
     bond.configure(cfg);
     life.configure(cfg);
+    meterOn = cfg.micMeter !== false;
     speech.configure(cfg);
     eyes.configure(cfg);
     hands.configure(cfg);
     rhythm.configure(cfg).catch(() => {});
     ears.configure(cfg);
+    ring.configure(cfg); // (after the senses: its Mic tab reads the ears)
     host.senseState({ eyes: eyes.enabled, ears: ears.enabled, listening: false });
     showSenses();
     capri.lang = cfg.lang;
@@ -491,7 +517,7 @@ async function boot() {
         if (capri.stance === 'stand') capri.perform('spin');
         const h = capri.head();
         fx.burst(h.x, h.y - 30 * capri.scale, { count: 18, power: 0.7, spread: 90 * capri.scale });
-        if (!chat.open && !panel.visible) panel.say({ kind: 'info', face: 'smug', line: themeSetting === 'mood' ? lifeLines(cfg.lang).theme.mood : pick(lifeLines(cfg.lang).theme.done), hold: 3500 });
+        if (!chat.open && !panel.visible && !ring.open) panel.say({ kind: 'info', face: 'smug', line: themeSetting === 'mood' ? lifeLines(cfg.lang).theme.mood : pick(lifeLines(cfg.lang).theme.done), hold: 3500 });
       }
     }
     capri.wander = cfg.wander;
@@ -640,7 +666,7 @@ async function boot() {
     panel.say({ kind: 'done', face: 'grin', line: te.saved, hold: 6000 });
   }
 
-  host.onCommand(async (cmd) => {
+  const runCommand = async (cmd) => {
     const t = brain.t;
     switch (cmd.name) {
       case 'teleport':
@@ -823,13 +849,23 @@ async function boot() {
         } else if (typeof capri[cmd.act] === 'function') capri[cmd.act](...(cmd.args || []));
         else capri.perform(cmd.act, cmd.dir || 0);
         break;
+      case 'ring': // her circular menu (tray, or --dev): { tab } picks the card
+        if (capri.stowed) {
+          host.setConfig({ visible: true });
+          await capri.unstow();
+        }
+        capri.wake();
+        if (cmd.open === false) ring.hide();
+        else ring.show(cmd.tab);
+        break;
       default:
         break;
     }
-  });
+  };
+  host.onCommand(runCommand);
 
   // the overlay opened in a plain browser (tests, screenshots): its pieces, to drive it from there
-  if (location.protocol === 'http:') window.__capri = { capri, fx, panel, brain, heart, life, chat, speech, voice, eyes, hands, rhythm, ears, bond };
+  if (location.protocol === 'http:') window.__capri = { capri, fx, panel, brain, heart, life, chat, speech, voice, eyes, hands, rhythm, ears, bond, ring };
 
   // entrance: her face big in the corner says hi, then she dives down to her spot
   // (put away last time: she starts in her biochip)

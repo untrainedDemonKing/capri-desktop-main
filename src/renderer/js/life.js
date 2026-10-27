@@ -36,6 +36,7 @@ export class Life {
     this.fx = fx;
     this.chat = null;  // chat.js (is a chat open?)
     this.guide = null; // guide.js (is she showing you something?)
+    this.ring = null;  // ring.js (her circular menu is open: she stays put)
     this.enabled = true; // her menu: her own activities
     this.dj = true;      // her menu: DJ mode (she skips tracks herself)
     this.musicAware = true;
@@ -78,7 +79,7 @@ export class Life {
     const c = this.capri;
     return c.mode === 'idle' && !c.busy && !c.dragging && !c.stowed && !c.dormant && !c.hidden && !c.sky && !c.pointing
       && (c.stance === 'stand' || c.stance === 'sit')
-      && !(panel && this.panel.visible) && !this.chat?.open && !this.guide?.running && !this.brain.busySessions.length;
+      && !(panel && this.panel.visible) && !this.chat?.open && !this.ring?.open && !this.guide?.running && !this.brain.busySessions.length;
   }
 
   // ---------- the clock ----------

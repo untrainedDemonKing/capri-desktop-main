@@ -61,7 +61,7 @@ export class Eyes {
   free() {
     const c = this.capri;
     return c.mode === 'idle' && !c.busy && !c.dragging && !c.stowed && !c.dormant && !c.sky
-      && !this.panel.visible && !this.brain.busySessions.length;
+      && !this.panel.visible && !this.ring?.open && !this.brain.busySessions.length;
   }
 
   // She takes a look. ask: you asked her to (she always does, and says what she sees). silent: just

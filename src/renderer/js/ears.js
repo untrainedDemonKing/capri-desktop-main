@@ -13,9 +13,21 @@ import { lifeLines } from './lines-life.js';
 const SILENCE_MS = 1100;      // this long quiet after speech: your turn is over
 const MAX_UTTERANCE = 15000;  // never record longer than this at a stretch
 const MIN_SPEECH_MS = 300;    // shorter than this: probably nothing, ignore
-const VOICE_LEVEL = 0.012;    // above this RMS counts as speech
+const VOICE_LEVEL = 0.012;    // above this RMS counts as speech (her ring menu › Microphone moves it: micThreshold)
 const VAD_MS = 40;            // how often the level is checked (25 times a second is plenty)
 const ECHO_MS = 450;          // after she stops talking, a moment before her own echo is gone
+
+// Sensitivity 0..1 (her ring menu) -> the RMS above which a sound counts as your voice: 0 hears only
+// a clear voice (0.035), 1 the faintest (0.003). The default 0.4 is the old fixed 0.012.
+export function micThreshold(sensitivity = 0.4) {
+  const s = Math.min(1, Math.max(0, Number.isFinite(sensitivity) ? sensitivity : 0.4));
+  return 0.035 * Math.pow(0.08, s);
+}
+
+// RMS -> the 0..1 a level meter shows (a voice at normal volume lands around 0.5).
+export function meterLevel(rms) {
+  return Math.min(1, Math.sqrt(Math.max(0, rms) / 0.12));
+}
 
 export class Ears {
   constructor({ host, capri, panel, voice, brain, speech }) {
@@ -36,9 +48,14 @@ export class Ears {
     this.state = 'off';     // 'off' | 'idle' | 'listening' | 'thinking'
     this.recording = false;
     this.speaking = false;  // she's talking: don't listen to her
-    this.raf = 0;
+    this.deviceId = '';     // the microphone picked (''= the system's)
+    this.voiceLevel = VOICE_LEVEL;
+    this.level = 0;         // how loud it is now, 0..1 (the meter in her ring menu and the badge)
+    this.watchers = 0;      // how many things want to see the level (her ring menu's Microphone tab)
+    this.metering = false;  // the mic is open only to show the level
     this.onTranscript = null; // (text) => void (chat.js sends it as if typed)
-    this.onState = null;      // (state) => void (the indicator)
+    this.onState = null;      // (state) => void (the indicator): 'off' | 'idle' | 'listening' | 'metering' | 'thinking'
+    this.onLevel = null;      // (level 0..1) => void, while the mic is open
     this.voiceSince = 0;
     this.silenceSince = 0;
     this.startedAt = 0;
@@ -51,6 +68,12 @@ export class Ears {
   configure(cfg) {
     this.enabled = cfg.ears === true;
     this.lang = cfg.lang === 'auto' ? '' : (cfg.lang || 'ru');
+    this.voiceLevel = micThreshold(cfg.micSensitivity);
+    const device = typeof cfg.micDevice === 'string' ? cfg.micDevice : '';
+    if (device !== this.deviceId) {
+      this.deviceId = device;
+      if (this.stream) this.reopen(); // another microphone: the same job on it
+    }
     const converse = this.enabled && cfg.converse === true;
     if (converse !== this.converse) {
       this.converse = converse;
@@ -105,11 +128,21 @@ export class Ears {
     if (!this.enabled || !this.converse) this.shutMic();
   }
 
-  async openMic() {
+  // `quiet`: asked for by her ring menu's level meter, which says so itself if it can't: no panel,
+  // and she stays on (the next try may work: another microphone, the permission given).
+  async openMic({ quiet = false } = {}) {
     if (this.stream) return true;
+    const audio = { echoCancellation: true, noiseSuppression: true };
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia({ audio: this.deviceId ? { ...audio, deviceId: { exact: this.deviceId } } : audio });
+      } catch (err) {
+        // the microphone you picked is gone (unplugged): the system's default instead
+        if (!this.deviceId || !['OverconstrainedError', 'NotFoundError'].includes(err.name)) throw err;
+        this.stream = await navigator.mediaDevices.getUserMedia({ audio });
+      }
     } catch (err) {
+      if (quiet) return false;
       this.panel.say({ kind: 'error', face: 'wide', line: this.t.noMic, quote: String(err.message).slice(0, 80), hold: 6000, life: true });
       this.enabled = false;
       return false;
@@ -124,9 +157,51 @@ export class Ears {
     return true;
   }
 
+  // Another microphone while this one is open: close it and open the new one for the same job.
+  async reopen() {
+    const wasEnabled = this.enabled;
+    this.shutMic();
+    if (!wasEnabled) return;
+    if (this.converse) await this.startConverse();
+    else if (this.watchers > 0) await this.watch(true, { again: true });
+  }
+
+  // The level meter (her ring menu › Microphone): asks for the level for as long as that tab is on
+  // screen. The mic is opened for it if it isn't already, and the badge says so (it's live then).
+  // Resolves false if the mic can't be opened (off, or no permission).
+  async watch(on, { again = false } = {}) {
+    if (!again) this.watchers = Math.max(0, this.watchers + (on ? 1 : -1));
+    if (on) {
+      if (!this.enabled) return false;
+      const opened = !this.stream;
+      if (!(await this.openMic({ quiet: true }))) return false;
+      if (opened) {
+        this.metering = true;
+        this.setState('metering');
+      }
+      return true;
+    }
+    if (this.watchers === 0 && this.metering) {
+      this.metering = false;
+      if (!this.converse && !this.recording) this.shutMic();
+      else this.setState(this.recording ? 'listening' : 'idle');
+    }
+    return true;
+  }
+
+  // The microphones there are: [{ id, label }], the system's default first. (A name only shows once
+  // the mic has been opened once: the browser keeps them back until then.)
+  async devices() {
+    const all = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+    const mics = all.filter((d) => d.kind === 'audioinput' && d.deviceId && !['default', 'communications'].includes(d.deviceId));
+    return [{ id: '', label: '' }, ...mics.map((d, i) => ({ id: d.deviceId, label: d.label || `#${i + 1}` }))];
+  }
+
   shutMic() {
     clearInterval(this.vadTimer);
     this.vadTimer = 0;
+    this.metering = false;
+    this.level = 0;
     try {
       this.recorder?.state === 'recording' && this.recorder.stop();
     } catch {
@@ -169,7 +244,11 @@ export class Ears {
     for (const v of this.vadData) sum += ((v - 128) / 128) ** 2;
     const rms = Math.sqrt(sum / this.vadData.length);
     const now = performance.now();
-    const voice = rms > VOICE_LEVEL && !this.speaking && now > (this.echoUntil || 0);
+    // the meter: up at once, down a little slower
+    const shown = meterLevel(rms);
+    this.level = shown > this.level ? shown : this.level * 0.8 + shown * 0.2;
+    this.onLevel?.(this.level);
+    const voice = rms > this.voiceLevel && !this.speaking && now > (this.echoUntil || 0);
     if (voice) {
       this.voiceSince = this.voiceSince || now;
       this.silenceSince = now;
@@ -222,8 +301,11 @@ export class Ears {
   afterTurn() {
     if (this.single) {
       this.single = false;
-      if (!this.converse) this.shutMic();
-      else this.setState('idle');
+      if (this.converse) this.setState('idle');
+      else if (this.watchers > 0 && this.stream) {
+        this.metering = true; // her ring menu is still showing the level: the mic stays open for it
+        this.setState('metering');
+      } else this.shutMic();
       return;
     }
     if (this.converse) this.setState('idle'); // the vad picks your next turn up

@@ -107,6 +107,8 @@ export class Panel {
   // onLeave: () => void, when this message goes (closed, timed out or replaced)
   say(msg) {
     const cur = this.current;
+    // her circular menu is open (ring.js): only Claude's news and prompts break in, not her small talk
+    if (this.quiet && PRIORITY[msg.kind] < 3) return false;
     // don't step on something more important that just appeared (one step of her guide follows another)
     const steps = cur?.guide && msg.guide;
     if (cur && this.visible && !steps && cur.kind !== msg.kind && PRIORITY[cur.kind] > PRIORITY[msg.kind] && performance.now() - cur.at < 2600) {

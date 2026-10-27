@@ -185,6 +185,37 @@ export class Bond {
     }
   }
 
+  progress() {
+    return progressOf(this.data);
+  }
+
+  // Her ring menu: take back one line of her notebook ('facts' | 'likes' | 'dislikes'), or empty a
+  // sentence ('style' | 'us').
+  removeNote(kind, text) {
+    const n = this.data.notes;
+    if (Array.isArray(n[kind])) n[kind] = n[kind].filter((x) => x !== text);
+    else if (kind === 'style' || kind === 'us') n[kind] = '';
+    else return;
+    this.save();
+  }
+
+  // ...or write one yourself (a fact about you). False if it's empty or the kind she never keeps.
+  addNote(kind, text) {
+    const t = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 90);
+    if (t.length < 2 || SENSITIVE.test(t) || !['facts', 'likes', 'dislikes'].includes(kind)) return false;
+    // (mergeNotes puts the new one first, and drops it from the opposite list: liked, no longer disliked)
+    this.data.notes = mergeNotes(this.data.notes, { [kind]: [t] });
+    this.save();
+    return true;
+  }
+
+  // Her ring menu: how you want her (the same four dials her learning turns), -1..1.
+  setTune(key, value) {
+    if (!(key in this.data.tune) || !Number.isFinite(value)) return;
+    this.data.tune[key] = clamp(value, -1, 1);
+    this.save();
+  }
+
   forget() {
     this.data = EMPTY();
     this.last = null;
@@ -325,18 +356,40 @@ export function learnFrom(tune, last, score) {
   return tune;
 }
 
+// What each level takes: your messages, and days you came by. Level 0 is where everybody starts.
+export const LEVEL_AT = [{ talks: 0, days: 0 }, { talks: 12, days: 0 }, { talks: 80, days: 3 }, { talks: 250, days: 10 }, { talks: 700, days: 30 }];
+
+// The level time alone would give (without being held back for rudeness).
+function earned({ talks = 0, days = 0 }) {
+  let level = 0;
+  LEVEL_AT.forEach((at, i) => { if (talks >= at.talks && days >= at.days) level = i; });
+  return level;
+}
+
 // How close she is to you: 0 strangers, 1 getting to know each other, 2 friends, 3 close, 4 one of us.
 export function levelOf(d) {
-  const { talks, days } = d;
-  let level = 0;
-  if (talks >= 12) level = 1;
-  if (talks >= 80 && days >= 3) level = 2;
-  if (talks >= 250 && days >= 10) level = 3;
-  if (talks >= 700 && days >= 30) level = 4;
+  let level = earned(d);
   // someone who's mostly rude to her doesn't get close
   if (d.style?.n >= 10 && d.style.hostile > 0.3) level = Math.min(level, 1);
   else if (d.style?.n >= 10 && d.style.hostile > 0.15) level = Math.min(level, 2);
   return level;
+}
+
+// Where you stand (her ring menu › Bond): the level, how far to the next one (0..1, and what's still
+// missing), and whether rudeness is what's holding her back.
+export function progressOf(d) {
+  const level = levelOf(d);
+  const next = level < LEVEL_AT.length - 1 ? LEVEL_AT[level + 1] : null;
+  const here = LEVEL_AT[level];
+  const out = { level, max: LEVEL_AT.length - 1, held: earned(d) > level, next: next ? level + 1 : null, fraction: 1, needTalks: 0, needDays: 0 };
+  if (!next) return out;
+  const talks = Math.max(0, (d.talks || 0) - here.talks);
+  out.needTalks = Math.max(0, next.talks - (d.talks || 0));
+  out.needDays = Math.max(0, next.days - (d.days || 0));
+  const parts = [talks / (next.talks - here.talks)];
+  if (next.days > here.days) parts.push(Math.max(0, (d.days || 0) - here.days) / (next.days - here.days));
+  out.fraction = clamp(Math.min(...parts), 0, 1);
+  return out;
 }
 
 const LEVELS = [
@@ -476,7 +529,7 @@ export function mergeNotes(old = {}, next = {}) {
   };
 }
 
-function plural(n, forms, lang) {
+export function plural(n, forms, lang) {
   if (!Array.isArray(forms)) return forms;
   if (lang === 'ru' && forms.length >= 3) {
     const m10 = n % 10;
@@ -488,7 +541,7 @@ function plural(n, forms, lang) {
   return n === 1 ? forms[0] : forms[1];
 }
 
-function dateOf(day, lang) {
+export function dateOf(day, lang) {
   const d = new Date(`${day}T12:00:00`);
   if (Number.isNaN(d.getTime())) return day;
   try {

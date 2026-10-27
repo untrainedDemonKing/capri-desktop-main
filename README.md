@@ -132,6 +132,24 @@ won't let you close.
 Ask "**what do you know about me?**", see it all in her menu (Character › What she knows about me…, with a button to
 wipe it), or say "**forget everything about me**".
 
+### Her circular menu
+
+**Right-click her** and a ring opens around her, in her colours: pick a theme and the menu changes with her mane. Each
+sector is a tab, shown as a card beside the ring (arrow keys switch, Esc or a click outside closes it):
+
+![Her circular menu: the bond, and the mic with its live level](docs/ring.png)
+
+- **Bond**: how close you two are (strangers → one of us), how far to the next level, since when you've known each
+  other; four dials for how she is with you (shorter ↔ longer, slang, teasing, warmth) that she turns herself and you
+  can turn by hand; and her notebook about you: facts, likes, dislikes, with a ✕ to take back anything wrong and a way
+  to write one yourself. "Forget everything about me" is in the same card.
+- **Mic**: on/off, which microphone (it reopens on the new one), how sensitive (the line on the meter is where "voice"
+  starts), a live waveform and level (the mic is open only while this tab is on screen and the badge by the clock blinks
+  to say so), press-to-talk or conversation mode, and whether the badge shows the level too.
+- **Senses**, **Character**, **Colours**, **Voice**, **More** (size, language, where she rests, teleport, the
+  satellite, put her away): the same settings as the tray menu, which is still there (More › System menu…). **Talk**
+  opens her chat.
+
 ### She rests lightly
 
 Asleep (down to her mask) or put away in her chip (Ctrl+Alt+C), she costs next to nothing: she's drawn on a timer and
@@ -521,6 +539,9 @@ src/renderer/js/
   ears.js                the mic, recording, silence detection, conversation mode
   fx-life.js             her moods' marks and her activities' props
   bond.js                she gets to know you: your style, how you take her answers, her notebook, how close you are
+  ring.js                her circular menu: the ring, where it goes on screen, tabs
+  ring-tabs.js           what's on each card: Bond, Mic (level meter, device, sensitivity), Senses, Colours...
+  ring-ui.js             its switches, sliders, chips (styles/ring.css, on her colour tokens)
 src/main/tts.js          speech services (OpenAI, ElevenLabs, OpenAI-compatible)
 src/main/stt.js          speech-to-text (Groq, OpenAI, OpenAI-compatible)
 src/main/screen.js       a screenshot (desktopCapturer); llm.js see() runs the vision model

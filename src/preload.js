@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('host', {
   transcribe: (request) => ipcRenderer.invoke('stt:transcribe', request),
   sttSetup: (choice) => ipcRenderer.invoke('stt:setup', choice),
   sttKeyPage: (engine) => ipcRenderer.send('stt:keyPage', engine),
+  platform: process.platform, // her ring menu greys out what only works on Windows
   hands: true, // the control bridge exists in main; hands.js checks the setting
   windowOp: (op, name) => ipcRenderer.invoke('hands:window', { op, name }),
   showDesktop: () => ipcRenderer.invoke('hands:desktop'),

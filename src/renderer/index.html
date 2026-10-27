@@ -6,6 +6,7 @@
         content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; media-src 'self' capri: blob:; connect-src 'self' capri:">
   <title>Capri</title>
   <link rel="stylesheet" href="styles/capri.css">
+  <link rel="stylesheet" href="styles/ring.css">
 </head>
 <body>
   <div id="capri" class="capri">
@@ -20,7 +21,7 @@
   <!-- while a sense is live (she can see your screen, or the mic is open), a small badge says so -->
   <div id="senses" class="senses" hidden aria-live="polite">
     <span class="senses__item senses__eye" hidden>◉ <span class="senses__label"></span></span>
-    <span class="senses__item senses__mic" hidden>● <span class="senses__label"></span></span>
+    <span class="senses__item senses__mic" hidden>● <span class="senses__label"></span><span class="senses__bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span></span>
   </div>
 
   <aside id="panel" class="panel" data-kind="info" hidden aria-live="polite">
@@ -55,6 +56,9 @@
       <div class="panel__tail" aria-hidden="true"></div>
     </div>
   </aside>
+
+  <!-- her circular menu (ring.js): settings, the mic, and what she knows about you; built when it opens -->
+  <div id="ring" class="ring" hidden></div>
 
   <div id="ticker" class="ticker" hidden>
     <div class="ticker__plate">

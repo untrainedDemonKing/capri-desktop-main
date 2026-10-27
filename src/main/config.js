@@ -58,6 +58,9 @@ const DEFAULTS = {
   sttModel: '',      // its model (empty: the engine's default)
   pushToTalk: 'Control+Alt+Space', // hold it to talk to her
   converse: false,   // conversation mode: she keeps listening and you talk back and forth
+  micDevice: '',     // which microphone ('' the system's default; an id from her ring menu › Microphone)
+  micSensitivity: 0.4, // 0..1: how quietly you can speak and still be heard (ears.js micThreshold)
+  micMeter: true,    // the live level in the mic badge by the clock
 };
 
 let cache = null;
