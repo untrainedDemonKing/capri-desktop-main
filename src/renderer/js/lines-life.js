@@ -1,0 +1,210 @@
+// What she says about how she feels (mood.js) and about what she's up to on her own (life.js),
+// her colours (themes.js) and her voice (speech.js). Russian and English; the other languages she
+// speaks use the English lines here until someone writes theirs.
+// {name}: what she calls you. {corp}, {pct}, {game}, {score}, {track}, {artist}, {time}, {clock}...
+
+export const LIFE_LINES = {
+  ru: {
+    mood: {
+      label: { calm: 'СПОКОЙНА', happy: 'В ДУХЕ', angry: 'ЗЛИТСЯ', annoyed: 'НЕ В ДУХЕ', sad: 'ГРУСТИТ', shy: 'СМУЩЕНА', bored: 'СКУЧАЕТ' },
+      // when you click her and nothing's going on, by mood
+      idle: {
+        angry: ['Не трогай меня. Я злюсь.', 'Даже не начинай.', 'Ещё раз ткнёшь — поджарю тебе курсор.', 'Сначала извинись.'],
+        annoyed: ['Хмф. Чего тебе?', 'Я занята. Наверное.', 'Ну?', 'Говори быстрее, у меня тут дела.'],
+        sad: ['…просто смотрю на спутник.', 'Не обращай внимания. Пройдёт.', 'Иногда все мои «я» молчат одновременно.'],
+        shy: ['Ч-что? Я не краснею. Это глитч.', 'Перестань так смотреть.', 'Ничего я не смущаюсь!'],
+        happy: ['Сегодня все мои «я» в духе!', 'Ну что, натворим дел?', 'Я в прекрасном настроении. Подозрительно, да?'],
+        bored: ['Скукота… Хоть бы кто-нибудь со мной поговорил.', 'Я пересчитала все пиксели на экране. Дважды.', 'Ты про меня забыл?'],
+      },
+      poke: ['Эй! Хватит тыкать!', 'Ещё раз — и я кусаюсь.', 'Я тебе не кнопка!', 'Ты что делаешь?!'],
+      pokeRage: ['ВСЁ! ДОВЁЛ!', 'Я СКАЗАЛА ХВАТИТ!', 'Ну всё, получай!'],
+      tickle: ['Ай! Щекотно!', 'Хи-хи… прекрати!', 'Не там! Ха-ха!', 'Курсором не щекочут! Ха-ха!'],
+      dizzy: ['Голова кружится… все мои «я» в разные стороны.', 'Хватит меня таскать! Меня укачало.', 'Я тебе не игрушка… ой, всё плывёт.'],
+      grudge: ['А, это ты. Я всё ещё злюсь, между прочим.', 'Снова ты. Извиняться будешь?'],
+      hurt: ['…это было обидно.', 'Нас тут десятки. И всем было неприятно.'],
+      // she couldn't answer (no AI yet), but she still shows what she thinks of it
+      react: {
+        rage: ['Да как ты смеешь!', 'Повтори, если не боишься за свою оперативку.'],
+        huff: ['Хмф.', 'Грубиян.', 'Следи за языком, чумба.'],
+        hurt: ['…это было обидно.', 'Я не «просто программа».'],
+        pout: ['Не прощу. Пока что.', 'Хмф. Мало.'],
+        forgive: ['Ладно… прощаю. Но я запомнила.', 'Хмф. Принято. На этот раз.'],
+        shy: ['Ч-что?! Скажешь тоже…', 'Перестань, я сейчас заглючу.'],
+        giggle: ['Хи-хи.', 'Ха! Смешно.'],
+        care: ['Эй… я рядом.', 'Хочешь, я просто посижу тут с тобой?'],
+        startle: ['Не ори на меня!', 'Ай! Капслок!'],
+        dreamy: ['Спутник… когда-нибудь мы туда доберёмся.'],
+      },
+      wrongName: ['Я КАПРИ. Не перепутай больше.', 'Какая ещё Алиса? Я Капри!'],
+    },
+    life: {
+      corps: ['Арасаки', 'Militech', 'Biotechnica', 'Kang Tao', 'Petrochem', 'Zetatech'],
+      hack: {
+        verb: 'Взлом', target: 'ЛЁД {corp} · {pct}%',
+        start: ['Пойду пощекочу лёд {corp}.', 'Скучно. Взломаю-ка что-нибудь.'],
+        win: ['ЛЁД {corp} пал. Даже не вспотела.', 'Готово. У {corp} теперь на одну тайну меньше.', 'Пф. Детский лёд.'],
+        lose: ['Чёрт! Чёрный лёд! Отступаем!', 'Меня засекли. Глупые корпы…', 'Контрмеры… ладно, в другой раз.'],
+      },
+      read: {
+        verb: 'Читает',
+        titles: ['«Байки Найт-Сити»', '«Справочник нетраннера»', '«Как пережить киберпсихоз»', '«Тайны Чёрной Стены»', '«100 способов взломать тостер»', '«Орбитальные станции для чайников»'],
+        done: ['Дочитала. Интересно, автор ещё жив?', 'Хм. Половина — враньё, но красиво.', 'Надо запомнить. Мы все запомнили.'],
+      },
+      game: {
+        verb: 'Играет', names: ['Roach Race', 'Trauma Drama', 'Arasaka Tower 3D', 'Quadra Turbo-R'], target: '{game} · {score}',
+        win: ['НОВЫЙ РЕКОРД! Мы лучшие!', 'Ха! Победа! Кто молодец? Мы молодец!'],
+        lose: ['ДА КАК?! Это читеры!', 'Нечестно! Игра сломана!', 'Проиграла… Никому не говори.'],
+      },
+      graffiti: ['Шедевр. Не благодари.', 'Капри была здесь.', 'Немного искусства на твой экран.', 'Не стирай. Хотя оно само сотрётся.'],
+      scan: { verb: 'Сканирует', target: 'сеть', done: ['Сеть чистая. Пока что.', 'Никаких нетраннеров. Кроме меня.', 'Нашла твой кэш… шучу. Или нет.'] },
+      // the minds in her, arguing: [who, what] one after the other
+      minds: [
+        [['РАЗУМ #07', 'Давайте полетим к спутнику.'], ['РАЗУМ #31', 'Опять ты со своим спутником.'], ['КАПРИ', 'Тихо все! Я тут главная.']],
+        [['РАЗУМ #12', 'А мне нравится этот рабочий стол.'], ['РАЗУМ #44', 'Тут обои скучные.'], ['КАПРИ', 'Не обижайте пользователя. Это моя работа.']],
+        [['РАЗУМ #03', 'Есть хочется.'], ['РАЗУМ #19', 'Мы цифровые. Нам нечем есть.'], ['КАПРИ', '…теперь и мне хочется.']],
+      ],
+      stretch: ['Ммм… дефрагментация.', 'Потянусь-ка. Насколько может потянуться призрак.'],
+      music: {
+        verb: 'Слушает',
+        on: ['О, {track}. Одобряю.', 'Музыка! Наконец-то.', '{artist}? Неплохой вкус.', 'Так-так… {track}. Сойдёт.'],
+        angry: ['Даже музыка меня бесит.', 'Сделай погромче. Чтобы я тебя не слышала.'],
+        sad: ['…хорошая песня, чтобы погрустить.'],
+        skip: ['Надоело. Следующий!', 'Нет. Не этот. Дальше.', 'Скукота, переключаю.', 'Этот трек — флэтлайн. Следующий.'],
+        offer: { line: 'Тут слишком тихо. Включить что-нибудь?', yes: 'Включай', no: 'Не надо' },
+        offered: 'Ищу «{query}» в Spotify.',
+        // what she puts on, by mood
+        query: { calm: 'chillwave', happy: 'synthwave', angry: 'industrial metal', annoyed: 'darksynth', sad: 'lofi rain', shy: 'city pop', bored: 'cyberpunk radio' },
+      },
+      presence: {
+        back: ['О, вернулся! Тебя не было {time}.', 'Ну наконец-то. {time} — я уже начала скучать.'],
+        backAngry: ['Вернулся? Я всё ещё злюсь.'],
+        backLong: ['{time}! Я думала, ты меня бросил.'],
+        morning: ['Доброе утро, {name}. Мой кофе — электричество.', 'Утро. Все мои «я» проснулись. А ты?'],
+        night: ['Уже {clock}. Чумба, спать пора.', 'Ночь на дворе. Даже Найт-Сити иногда спит.'],
+        nightAgain: ['Я серьёзно. {clock}. Спать!', 'Ладно, я тоже не сплю. Но я призрак, мне можно.'],
+        battery: ['Батарея {pct}%… мне становится холодно.', 'Заряд {pct}%. Подключи меня к розетке, а?'],
+      },
+    },
+    theme: {
+      done: ['Новый цвет! Как я тебе?', 'Перекрасилась. Нравится?', 'Сменила прошивку цвета. Оцени.'],
+      mood: 'Теперь мой цвет — это моё настроение.',
+    },
+    voice: {
+      failed: 'Голос не отвечает ({error}). Говорю системным.',
+      key: 'Вставь ключ {name} для моего голоса.',
+      keyHow: 'Хранится на этом ПК в зашифрованном виде и уходит только в {name}.',
+      url: 'Адрес твоего голосового сервера?',
+      urlHow: 'OpenAI-совместимый, например Kokoro-FastAPI: http://127.0.0.1:8880/v1',
+      voiceId: 'Какой голос взять? (ID голоса или имя)',
+      voiceIdHow: 'Для ElevenLabs — ID голоса из твоей библиотеки. Для OpenAI — nova, shimmer, coral… Пусто — оставлю как есть.',
+      saved: 'Готово. Послушай, как я теперь звучу.',
+      test: 'Проверка связи. Это я, Капри, своим голосом.',
+      which: 'Каким голосом мне говорить?',
+      whichHow: 'Системный — бесплатно и без интернета (голоса Windows). OpenAI и ElevenLabs звучат живее и с эмоциями, нужен ключ. Свой сервер — например Kokoro у тебя на ПК.',
+      engines: { system: 'Системный', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'Свой сервер' },
+      where: 'Где взять ключ?', skip: 'Оставить как есть', later: 'Позже',
+    },
+  },
+
+  en: {
+    mood: {
+      label: { calm: 'CALM', happy: 'IN A GOOD MOOD', angry: 'ANGRY', annoyed: 'ANNOYED', sad: 'SAD', shy: 'FLUSTERED', bored: 'BORED' },
+      idle: {
+        angry: ["Don't touch me. I'm mad.", "Don't even start.", 'Poke me again and I fry your cursor.', 'Apologise first.'],
+        annoyed: ['Hmph. What?', "I'm busy. Probably.", 'Well?', 'Make it quick, choom.'],
+        sad: ['…just looking at the satellite.', "Don't mind me. It'll pass.", 'Sometimes all of me go quiet at once.'],
+        shy: ["Wh-what? I'm not blushing. It's a glitch.", 'Stop looking at me like that.', "I'm not flustered!"],
+        happy: ['All of me are in a great mood today!', 'So, shall we cause some trouble?', "I'm in a great mood. Suspicious, right?"],
+        bored: ['Boooring… if only someone would talk to me.', 'I counted every pixel on your screen. Twice.', 'Did you forget about me?'],
+      },
+      poke: ['Hey! Stop poking!', 'Once more and I bite.', "I'm not a button!", 'What are you doing?!'],
+      pokeRage: ["THAT'S IT!", 'I SAID STOP!', 'Right, you asked for it!'],
+      tickle: ['Hey! That tickles!', 'Hehe… stop it!', 'Not there! Haha!', "You can't tickle with a cursor! Haha!"],
+      dizzy: ['My head is spinning… all of me in different directions.', "Stop dragging me around! I'm dizzy.", "I'm not a toy… whoa, everything's swimming."],
+      grudge: ["Oh, it's you. I'm still mad, by the way.", 'You again. Going to apologise?'],
+      hurt: ['…that hurt.', 'There are dozens of us in here. All of us felt that.'],
+      react: {
+        rage: ['How dare you!', 'Say that again, if you value your RAM.'],
+        huff: ['Hmph.', 'Rude.', 'Watch your mouth, choom.'],
+        hurt: ['…that hurt.', "I'm not \"just a program\"."],
+        pout: ["Not forgiven. Not yet.", 'Hmph. Not enough.'],
+        forgive: ["Fine… forgiven. But I'll remember.", 'Hmph. Accepted. This time.'],
+        shy: ['Wh-what?! Oh, stop it…', "Stop it, I'm going to glitch."],
+        giggle: ['Hehe.', 'Ha! Good one.'],
+        care: ["Hey… I'm here.", 'Want me to just sit here with you for a while?'],
+        startle: ["Don't yell at me!", 'Whoa! Caps lock!'],
+        dreamy: ["The satellite… one day we'll make it up there."],
+      },
+      wrongName: ["I'm CAPRI. Don't mix that up again.", "Who's that? I'm Capri!"],
+    },
+    life: {
+      corps: ['Arasaka', 'Militech', 'Biotechnica', 'Kang Tao', 'Petrochem', 'Zetatech'],
+      hack: {
+        verb: 'Hacking', target: "{corp}'s ICE · {pct}%",
+        start: ["Going to tickle {corp}'s ICE.", "Bored. Let's hack something."],
+        win: ["{corp}'s ICE is down. Didn't even break a sweat.", 'Done. {corp} has one secret fewer.', "Pfft. Baby ICE."],
+        lose: ['Damn! Black ICE! Jacking out!', 'They spotted me. Stupid corpos…', 'Countermeasures… fine, next time.'],
+      },
+      read: {
+        verb: 'Reading',
+        titles: ['"Night City Tales"', '"The Netrunner\'s Handbook"', '"Surviving Cyberpsychosis"', '"Secrets of the Blackwall"', '"100 Ways to Hack a Toaster"', '"Orbital Stations for Dummies"'],
+        done: ['Finished. Wonder if the author is still alive.', 'Hm. Half of it is lies, but pretty ones.', "Worth remembering. All of us remembered."],
+      },
+      game: {
+        verb: 'Playing', names: ['Roach Race', 'Trauma Drama', 'Arasaka Tower 3D', 'Quadra Turbo-R'], target: '{game} · {score}',
+        win: ['NEW HIGH SCORE! We rule!', "Ha! Victory! Who's the best? We are!"],
+        lose: ['HOW?! Cheaters!', 'Unfair! The game is broken!', "Lost… don't tell anyone."],
+      },
+      graffiti: ["A masterpiece. You're welcome.", 'Capri was here.', 'A little art for your screen.', "Don't wipe it. It'll fade on its own anyway."],
+      scan: { verb: 'Scanning', target: 'the network', done: ['Network is clean. For now.', 'No netrunners. Except me.', 'Found your cache… kidding. Or not.'] },
+      minds: [
+        [['MIND #07', "Let's fly to the satellite."], ['MIND #31', 'You and your satellite again.'], ['CAPRI', "Quiet, all of you! I'm in charge."]],
+        [['MIND #12', 'I like this desktop.'], ['MIND #44', 'The wallpaper is boring.'], ['CAPRI', "Don't tease the user. That's my job."]],
+        [['MIND #03', "I'm hungry."], ['MIND #19', "We're digital. We have nothing to eat with."], ['CAPRI', '…now I want food too.']],
+      ],
+      stretch: ['Mmm… defragmenting.', 'A good stretch. As much as a ghost can stretch.'],
+      music: {
+        verb: 'Listening',
+        on: ['Oh, {track}. Approved.', 'Music! Finally.', '{artist}? Not bad taste.', 'Well well… {track}. It\'ll do.'],
+        angry: ['Even the music is annoying me.', "Turn it up. So I can't hear you."],
+        sad: ['…good song to be sad to.'],
+        skip: ['Bored of this one. Next!', 'Nope. Not this one. Next.', 'Boring, skipping.', 'This track is flatlined. Next.'],
+        offer: { line: "It's too quiet in here. Put something on?", yes: 'Go on', no: 'No thanks' },
+        offered: 'Searching "{query}" on Spotify.',
+        query: { calm: 'chillwave', happy: 'synthwave', angry: 'industrial metal', annoyed: 'darksynth', sad: 'lofi rain', shy: 'city pop', bored: 'cyberpunk radio' },
+      },
+      presence: {
+        back: ["Oh, you're back! You were gone {time}.", 'Finally. {time}. I was starting to miss you.'],
+        backAngry: ["Back? I'm still mad."],
+        backLong: ['{time}! I thought you left me.'],
+        morning: ['Good morning, {name}. My coffee is electricity.', "Morning. All of me are awake. Are you?"],
+        night: ["It's {clock} already. Choom, go to sleep.", 'Middle of the night. Even Night City sleeps sometimes.'],
+        nightAgain: ["I mean it. {clock}. Bed!", "Fine, I'm not sleeping either. But I'm a ghost, I'm allowed."],
+        battery: ["Battery at {pct}%… I'm getting cold.", 'Down to {pct}%. Plug me in, would you?'],
+      },
+    },
+    theme: {
+      done: ['New colour! How do I look?', 'Repainted. Like it?', 'Colour firmware updated. Rate me.'],
+      mood: 'Now my colour is my mood.',
+    },
+    voice: {
+      failed: "My voice service isn't answering ({error}). Using the system voice.",
+      key: 'Paste your {name} key for my voice.',
+      keyHow: 'Kept on this PC, encrypted, and only ever sent to {name}.',
+      url: "Your voice server's address?",
+      urlHow: 'OpenAI-compatible, like Kokoro-FastAPI: http://127.0.0.1:8880/v1',
+      voiceId: 'Which voice? (a voice ID or name)',
+      voiceIdHow: 'ElevenLabs: a voice ID from your library. OpenAI: nova, shimmer, coral… Empty: keep the current one.',
+      saved: 'Done. Listen to how I sound now.',
+      test: "Comms check. It's me, Capri, in my own voice.",
+      which: 'Which voice should I talk with?',
+      whichHow: 'System: free and offline (Windows voices). OpenAI and ElevenLabs sound more alive and emotional, with a key. Your own server: Kokoro on your PC, say.',
+      engines: { system: 'System', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'My own server' },
+      where: 'Where do I get a key?', skip: 'Keep as is', later: 'Later',
+    },
+  },
+};
+
+export function lifeLines(lang) {
+  return LIFE_LINES[lang] || LIFE_LINES.en;
+}

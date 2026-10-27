@@ -6,6 +6,10 @@
 const TRAY = {
   fr: {
     name: 'Français',
+    mood: (m) => `Humeur : ${m}`, moods: { calm: 'calme', happy: 'de bonne humeur', angry: 'en colère', annoyed: 'agacée', sad: 'triste', shy: 'gênée', bored: 's’ennuie' },
+    character: 'Caractère', emotions: 'Émotions (colère, rires, bouderies)', life: 'Ses propres activités', dj: 'Mode DJ (elle change de morceau)', musicAware: 'Savoir ce qui joue',
+    colors: 'Couleurs', themes: { classic: 'Rouge (comme dans l’anime)', netrunner: 'Netrunner (cyan)', toxic: 'Toxique (vert acide)', violet: 'Violet', gold: 'Or', sakura: 'Sakura (rose)', ghost: 'Fantôme (blanc)', mood: 'Selon son humeur' },
+    voice: 'Voix', voiceOff: 'Muette (bips seulement)', voiceChat: 'Lit ses réponses du chat', voiceAll: 'Lit tout ce qu’elle dit', voiceEngine: 'Moteur', engines: { system: 'Voix du système (hors ligne, gratuit)', openai: 'OpenAI (clé)', elevenlabs: 'ElevenLabs (clé)', custom: 'Serveur compatible OpenAI (local)' }, voiceFx: 'Effet « plusieurs esprits »', voiceSetup: 'Clé, adresse ou voix…', voiceTest: 'Tester sa voix', voiceKeyPage: 'Où trouver une clé ?',
     online: (port) => `Capri — à l'écoute sur ${port}`,
     teleport: 'Téléporter', satellite: 'Regarder le satellite', demo: 'Lancer la démo', help: 'Comment ça marche ?',
     report: 'Rapport de mission', talk: 'Lui parler', custom: 'La personnaliser…', chatModel: 'Modèle IA', aiSetup: 'Choisir avec elle…', apiKey: 'Clé API ou adresse…', noOllama: 'Ollama introuvable',
@@ -21,6 +25,10 @@ const TRAY = {
   },
   en: {
     name: 'English',
+    mood: (m) => `Mood: ${m}`, moods: { calm: 'calm', happy: 'in a good mood', angry: 'angry', annoyed: 'annoyed', sad: 'sad', shy: 'flustered', bored: 'bored' },
+    character: 'Character', emotions: 'Emotions (anger, laughs, sulking)', life: 'Her own activities', dj: 'DJ mode (she skips tracks)', musicAware: 'Know what’s playing',
+    colors: 'Colours', themes: { classic: 'Red (like the anime)', netrunner: 'Netrunner (cyan)', toxic: 'Toxic (acid green)', violet: 'Violet', gold: 'Gold', sakura: 'Sakura (pink)', ghost: 'Ghost (white)', mood: 'Follow her mood' },
+    voice: 'Voice', voiceOff: 'Silent (blips only)', voiceChat: 'Reads her chat answers', voiceAll: 'Reads everything she says', voiceEngine: 'Engine', engines: { system: 'System voice (offline, free)', openai: 'OpenAI (key)', elevenlabs: 'ElevenLabs (key)', custom: 'OpenAI-compatible server (local)' }, voiceFx: '“Many minds” effect', voiceSetup: 'Key, address or voice…', voiceTest: 'Test her voice', voiceKeyPage: 'Where do I get a key?',
     online: (port) => `Capri — listening on ${port}`,
     teleport: 'Teleport', satellite: 'Look at the satellite', demo: 'Play demo', help: 'How does it work?',
     report: 'Mission report', talk: 'Talk to her', custom: 'Make her yours…', chatModel: 'AI model', aiSetup: 'Set it up with her…', apiKey: 'API key or address…', noOllama: 'Ollama not found',
@@ -36,6 +44,10 @@ const TRAY = {
   },
   es: {
     name: 'Español',
+    mood: (m) => `Humor: ${m}`, moods: { calm: 'tranquila', happy: 'de buen humor', angry: 'enfadada', annoyed: 'molesta', sad: 'triste', shy: 'avergonzada', bored: 'aburrida' },
+    character: 'Carácter', emotions: 'Emociones (enfados, risas, berrinches)', life: 'Sus propias actividades', dj: 'Modo DJ (cambia de canción)', musicAware: 'Saber qué suena',
+    colors: 'Colores', themes: { classic: 'Rojo (como en el anime)', netrunner: 'Netrunner (cian)', toxic: 'Tóxico (verde ácido)', violet: 'Violeta', gold: 'Oro', sakura: 'Sakura (rosa)', ghost: 'Fantasma (blanco)', mood: 'Según su humor' },
+    voice: 'Voz', voiceOff: 'Muda (solo pitidos)', voiceChat: 'Lee sus respuestas del chat', voiceAll: 'Lee todo lo que dice', voiceEngine: 'Motor', engines: { system: 'Voz del sistema (sin conexión, gratis)', openai: 'OpenAI (clave)', elevenlabs: 'ElevenLabs (clave)', custom: 'Servidor compatible con OpenAI (local)' }, voiceFx: 'Efecto «muchas mentes»', voiceSetup: 'Clave, dirección o voz…', voiceTest: 'Probar su voz', voiceKeyPage: '¿Dónde consigo una clave?',
     online: (port) => `Capri — escuchando en ${port}`,
     teleport: 'Teletransportar', satellite: 'Mirar el satélite', demo: 'Ver la demo', help: '¿Cómo funciona?',
     report: 'Informe de misión', talk: 'Hablar con ella', custom: 'Personalizarla…', chatModel: 'Modelo de IA', aiSetup: 'Elegir con ella…', apiKey: 'Clave API o dirección…', noOllama: 'Ollama no encontrado',
@@ -51,6 +63,10 @@ const TRAY = {
   },
   pt: {
     name: 'Português (Brasil)',
+    mood: (m) => `Humor: ${m}`, moods: { calm: 'calma', happy: 'de bom humor', angry: 'brava', annoyed: 'irritada', sad: 'triste', shy: 'envergonhada', bored: 'entediada' },
+    character: 'Personalidade', emotions: 'Emoções (raiva, risadas, birra)', life: 'Atividades próprias', dj: 'Modo DJ (ela troca de música)', musicAware: 'Saber o que está tocando',
+    colors: 'Cores', themes: { classic: 'Vermelho (como no anime)', netrunner: 'Netrunner (ciano)', toxic: 'Tóxico (verde ácido)', violet: 'Violeta', gold: 'Ouro', sakura: 'Sakura (rosa)', ghost: 'Fantasma (branco)', mood: 'Conforme o humor' },
+    voice: 'Voz', voiceOff: 'Muda (só bipes)', voiceChat: 'Lê as respostas do chat', voiceAll: 'Lê tudo o que diz', voiceEngine: 'Motor', engines: { system: 'Voz do sistema (offline, grátis)', openai: 'OpenAI (chave)', elevenlabs: 'ElevenLabs (chave)', custom: 'Servidor compatível com OpenAI (local)' }, voiceFx: 'Efeito “muitas mentes”', voiceSetup: 'Chave, endereço ou voz…', voiceTest: 'Testar a voz dela', voiceKeyPage: 'Onde consigo uma chave?',
     online: (port) => `Capri — ouvindo na porta ${port}`,
     teleport: 'Teletransportar', satellite: 'Olhar o satélite', demo: 'Ver a demo', help: 'Como funciona?',
     report: 'Relatório de missão', talk: 'Falar com ela', custom: 'Personalizar…', chatModel: 'Modelo de IA', aiSetup: 'Escolher com ela…', apiKey: 'Chave de API ou endereço…', noOllama: 'Ollama não encontrado',
@@ -66,6 +82,10 @@ const TRAY = {
   },
   ru: {
     name: 'Русский',
+    mood: (m) => `Настроение: ${m}`, moods: { calm: 'спокойна', happy: 'в духе', angry: 'злится', annoyed: 'не в духе', sad: 'грустит', shy: 'смущена', bored: 'скучает' },
+    character: 'Характер', emotions: 'Эмоции (злость, смех, обиды)', life: 'Свои занятия на экране', dj: 'Режим DJ (сама переключает треки)', musicAware: 'Знать, что играет',
+    colors: 'Цвет', themes: { classic: 'Красный (как в аниме)', netrunner: 'Нетраннер (циан)', toxic: 'Токсичный (кислотно-зелёный)', violet: 'Фиолетовый', gold: 'Золото', sakura: 'Сакура (розовый)', ghost: 'Призрак (белый)', mood: 'По настроению' },
+    voice: 'Голос', voiceOff: 'Молчит (только писк)', voiceChat: 'Озвучивает ответы в чате', voiceAll: 'Озвучивает всё, что говорит', voiceEngine: 'Движок', engines: { system: 'Системный голос (офлайн, бесплатно)', openai: 'OpenAI (ключ)', elevenlabs: 'ElevenLabs (ключ)', custom: 'Свой сервер, совместимый с OpenAI' }, voiceFx: 'Эффект «множества разумов»', voiceSetup: 'Ключ, адрес или голос…', voiceTest: 'Проверить голос', voiceKeyPage: 'Где взять ключ?',
     online: (port) => `Capri — слушаю порт ${port}`,
     teleport: 'Телепортироваться', satellite: 'Посмотреть на спутник', demo: 'Запустить демо', help: 'Как это работает?',
     report: 'Отчёт о миссиях', talk: 'Поговорить с ней', custom: 'Настроить её…', chatModel: 'ИИ-модель', aiSetup: 'Выбрать вместе с ней…', apiKey: 'API-ключ или адрес…', noOllama: 'Ollama не найдена',

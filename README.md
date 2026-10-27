@@ -1,4 +1,4 @@
-**English** · [Français](README.fr.md)
+**English** · [Français](README.fr.md) · [Русский](README.ru.md)
 
 # Capri
 
@@ -53,6 +53,35 @@ glitches, comments on every action, comes to find you when it needs your permiss
 ![Victory: the key pose, then the laugh and the cut-in](docs/victory.png)
 
 ![The satellite: her stars, the road, the red light, the answer](docs/star.png)
+
+### Her character
+
+She has moods that build up and wear off (`mood.js`): insult her and she gets angry (a string of insults and she
+blows up: a red flash, her red copies flying off her, a growl, then a bolt at your pointer) and holds a grudge, even
+across restarts, until you apologise (twice, if she was furious); compliment her and she gets flustered (a blush, a
+little heart); make her laugh and she laughs; call her "Alexa" and she corrects you; tell her you're sad and she
+softens. Poke her over and over and she loses it, sweep the pointer back and forth over her and she's ticklish, rest it
+on her head for a head pat, drag her around and she gets dizzy, leave her alone and she gets bored. She reacts with
+her body before her AI even answers, and her AI is told how she feels and why. Her mood shows on her panel and at the
+top of her menu (her menu › Character › Emotions turns it off).
+
+![Her moods](docs/moods.png)
+
+- **Her voice** (her menu › Voice): her chat answers read out, or everything she says. The system's voices (free,
+  offline, pitched by her mood), OpenAI (`gpt-4o-mini-tts`, told how she feels), ElevenLabs (your voice id), or any
+  OpenAI-compatible speech server on your PC (Kokoro-FastAPI). Speech services go through her "many minds" effect:
+  two delayed, wavering copies of her under her voice.
+- **Her colours** (her menu › Colours, or "turn blue" in her chat): seven themes for her mane, her misregistered copy,
+  the panel and her lightning, or *Follow her mood*.
+- **Her own life** (`life.js`): when nothing's going on she hacks some corp's ICE, plays a tiny arcade game (and rages
+  when she loses), reads a data shard, paints neon graffiti on your screen, scans your network, argues with the other
+  minds in her. With music playing (Windows' media controls: Spotify, a browser…) she puts headphones on and bobs her
+  head, has opinions about the track, and in DJ mode skips one herself now and then. She notices when you've been
+  away, says good morning, tells you to go to bed at 3 am, complains when the battery runs low.
+
+![Her colours](docs/themes.png)
+
+![What she gets up to](docs/life.png)
 
 ### She gets around
 
@@ -328,6 +357,11 @@ Your file contents are never sent: for a write, only its size goes through.
 Her chat goes to Ollama on your PC (`127.0.0.1:11434`, or `OLLAMA_HOST`) with what she knows of the moment (the
 project's name, Claude's last action, today's counts). Her mission log stays in her own storage on your PC.
 
+Her voice, if you pick a speech service for it (OpenAI, ElevenLabs): what she says goes to that service, nowhere else
+(the system voice and a server on your PC keep it here). What's playing (title and artist) is read on your PC and only
+ever goes into her chat's prompt, so she can talk about it. Her moods, grudges and what she's been up to stay in her
+own storage on your PC.
+
 ## Art direction
 
 The goal: she should feel like she stepped out of the anime, not like a widget.
@@ -409,6 +443,14 @@ src/renderer/js/
   lines.js               what she says (FR / EN / ES / PT / RU)
   chip.js                her mask: while she sleeps, and bottom left when you put her away
   voice.js               the sounds
+  mood.js                her feelings: what a message does to her, how long it lasts, her grudges
+  heart.js               her feelings on her body, her face, her colours, her voice; poking, tickling, head pats
+  life.js                what she does on her own, the music, noticing you
+  themes.js              her colours
+  speech.js              her voice: the system's, or a speech service through her many-minds effect
+  fx-life.js             her moods' marks and her activities' props
+src/main/tts.js          speech services (OpenAI, ElevenLabs, OpenAI-compatible)
+src/main/media.js / .ps1 what's playing, from Windows' media controls
 ```
 
 To hack on it: `npm run dev` turns on debug routes on the bridge (`/debug/capture` saves a frame of the window to `captures/`,

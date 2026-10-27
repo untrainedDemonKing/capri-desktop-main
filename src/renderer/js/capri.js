@@ -8,6 +8,10 @@
 import { SpriteRenderer, SPRITE } from './sprite.js';
 import { ACTS, NEUTRAL, Player } from './acting.js';
 import { sleep, rand, pick, clamp, lerp, ease, tween, reducedMotion, today } from './util.js';
+import * as marks from './fx-life.js';
+import { COLORS } from './fx.js';
+
+const COLORS_RED = () => COLORS.red; // her theme's main colour (themes.js changes it)
 
 const ON_TWOS = 1000 / 12;
 const ON_ONES = 1000 / 24;
@@ -22,6 +26,31 @@ const UPLINK_DAY = 'capri.uplinkDay'; // the last day she sent the red light up
 const GREEN = [0.21, 1, 0.48];
 const INK = [0.08, 0.06, 0.11];
 const RED = [1, 0.13, 0.32];
+
+// What floating looks like in each of her moods (acting.js), and the glow over her (sprite.js).
+const MOOD_STAND = { angry: 'standAngry', annoyed: 'standAnnoyed', sad: 'standSad', happy: 'standHappy', shy: 'standShy', bored: 'standBored' };
+// her misregistered copy takes the colour of strong feelings (otherwise her theme's)
+const MOOD_RIM = { angry: [1, 0.22, 0.08], sad: [0.22, 0.45, 1], shy: [1, 0.45, 0.8] };
+const MOOD_TINT = {
+  angry: { tint: [1, 0.1, 0.06], amt: (k) => 0.16 + 0.22 * k },
+  annoyed: { tint: [1, 0.32, 0.18], amt: () => 0.1 },
+  sad: { tint: [0.32, 0.48, 1], amt: (k) => 0.18 + 0.14 * k },
+  shy: { tint: [1, 0.42, 0.72], amt: (k) => 0.14 + 0.12 * k },
+  happy: { tint: [1, 0.86, 0.42], amt: () => 0.07 },
+  bored: { tint: [0.62, 0.62, 0.74], amt: () => 0.16 },
+};
+// a reaction (mood.js reactionTo, or her chat's answer) as an act, and which way it leans
+const REACTIONS = {
+  rage: 'rage', huff: 'huff', hurt: 'wince', pout: 'pout', forgive: 'forgive', shy: 'shy', giggle: 'giggle',
+  laugh: 'laughFit', care: 'care', startle: 'startle', surprised: 'startle', dizzy: 'dizzy', stretch: 'stretch',
+  smug: 'curious', happy: 'hop',
+};
+// the words of her marks, in her language
+const SAY = {
+  hmph: { ru: 'хмф', en: 'hmph', fr: 'pff', es: 'hmpf', pt: 'hunf' },
+  huh: { ru: '!?', en: '!?', fr: '!?', es: '¡¿', pt: '!?' },
+  yawn: { ru: 'ахх…', en: 'yawn…', fr: 'baille…', es: 'bostezo…', pt: 'bocejo…' },
+};
 
 export class Capri {
   constructor({ root, canvas, image, fx, voice }) {
@@ -47,6 +76,12 @@ export class Capri {
     this.wander = true;
     this.possessWindows = true; // tray: "Possess my windows"
     this.restOn = 'corner'; // where she rests when nothing's going on: her corner, or 'taskbar' (her menu)
+    this.lang = 'en';
+    this.moodName = 'calm'; // how she feels (mood.js), and how strongly, 0..1
+    this.moodLevel = 0;
+    this.tintTo = { tint: [1, 1, 1], amt: 0 };
+    this.nextMoodBeat = 0;  // the next little sign of her mood (a vein, a blush, a sigh...)
+    this.activityAct = null; // what she floats like while busy with something of hers (life.js): 'tinker', 'read', 'bop'
     this.nextHome = 0;
     this.dragging = false;
 
@@ -55,6 +90,7 @@ export class Capri {
       smear: [0, 0], echo: [0, 0],
       glitch: 0, glitchSeed: 0, split: 0, collapse: 0, dissolve: 0, sparkle: 1, grade: 1,
       sil: INK, silAmount: 0, misreg: [-2.6, 2.2], alpha: 1,
+      hue: 0.968, hueMix: 0.6, maneSat: 1, maneVal: 1, rim: [0.48, 0.24, 1.0], tint: [1, 1, 1], tintAmt: 0,
     };
     this.bob = 0;
     this.tilt = 0;
@@ -357,7 +393,21 @@ export class Capri {
     const pose = { ...NEUTRAL, ...base, ...act };
     if (this.mode === 'sleep' && this.stance === 'sit' && !act) {
       Object.assign(pose, { head: 0.12, mane: -0.1, kickL: 0.03, kickR: 0.03, armL: -0.45, armR: -0.45 }); // dozing on the ledge
+    } else if (this.stance === 'sit' && !act) {
+      // her mood on a ledge too: bristling, drooping, ducking her head
+      const k = this.moodLevel;
+      if (this.moodName === 'angry') Object.assign(pose, { mane: pose.mane + 0.22 + (this.baseIndex % 2) * 0.06, head: pose.head - 0.05 });
+      else if (this.moodName === 'sad') Object.assign(pose, { mane: pose.mane - 0.15, head: pose.head + 0.1 * (0.5 + k) });
+      else if (this.moodName === 'shy') Object.assign(pose, { head: pose.head + 0.14, mane: pose.mane - 0.05 });
+      else if (this.moodName === 'happy') Object.assign(pose, { mane: pose.mane + 0.06 });
     }
+    // angry, her misregistered copy shakes loose: further off, a new offset every drawing
+    if (this.moodName === 'angry') p.misreg = [-3.2 - Math.random() * 2.4 * (0.5 + this.moodLevel), 2.6 + Math.random() * 2];
+    else if (p.misreg[0] !== -2.6) p.misreg = [-2.6, 2.2];
+    // her mood's glow comes and goes over a few drawings
+    p.tint = this.tintTo.tint;
+    p.tintAmt += (this.tintTo.amt - p.tintAmt) * 0.25;
+    if (Math.abs(this.tintTo.amt - p.tintAmt) < 0.004) p.tintAmt = this.tintTo.amt;
 
     p.head = pose.head;
     p.mane = pose.mane;
@@ -388,7 +438,7 @@ export class Capri {
     if (this.busy || this.dragging) return;
 
     if (now > this.nextTwitch) {
-      this.nextTwitch = now + rand(5000, 13000);
+      this.nextTwitch = now + (this.moodName === 'angry' ? rand(1800, 4500) : rand(5000, 13000));
       if (!reducedMotion.matches && this.mode !== 'sleep') this.twitch();
     }
 
@@ -397,6 +447,8 @@ export class Capri {
       this.nextShed = now + rand(4000, 11000) * (this.mode === 'sleep' ? 2.5 : 1);
       if (!reducedMotion.matches && this.stance !== 'peek') this.shed();
     }
+
+    if (now > this.nextMoodBeat) this.moodBeat(now);
 
     if (this.mode === 'idle' && this.stance !== 'peek' && now > this.nextGaze) {
       this.nextGaze = now + rand(90000, 180000);
@@ -513,7 +565,101 @@ export class Capri {
     if (this.stance === 'sit') return 'sit';
     if (this.stance === 'peek') return 'peek';
     if (this.stance === 'fall') return 'fall';
-    return this.mode === 'sleep' ? 'sleep' : 'stand';
+    if (this.mode === 'sleep') return 'sleep';
+    if (this.activityAct) return this.activityAct; // busy with something of hers (life.js)
+    if (this.mode === 'idle') return MOOD_STAND[this.moodName] || 'stand';
+    return 'stand';
+  }
+
+  // ---------- her moods (mood.js) ----------
+
+  // How she feels: her float, her glow. Level 0..1.
+  setMood(mood, level = 0) {
+    const changed = mood !== this.moodName;
+    this.moodName = mood;
+    this.moodLevel = level;
+    const look = MOOD_TINT[mood];
+    this.tintTo = look ? { tint: look.tint, amt: look.amt(level) } : { tint: this.tintTo.tint, amt: 0 };
+    this.p.rim = MOOD_RIM[mood] || this.themeRim || this.p.rim;
+    if (changed && this.stance === 'stand' && !this.pointing) this.base = this.restBase();
+    if (changed) this.nextMoodBeat = performance.now() + rand(1500, 4000);
+  }
+
+  // Her colours (themes.js): the mane's hue and how hard it's pushed there, its saturation and
+  // brightness, and her violet misregistered copy.
+  setTheme({ hue, mix, sat, val, rim }) {
+    this.themeRim = rim;
+    Object.assign(this.p, { hue, hueMix: mix, maneSat: sat, maneVal: val, rim: MOOD_RIM[this.moodName] || rim });
+  }
+
+  // What she's busy with changes how she floats (null: back to her mood's float).
+  setActivity(act) {
+    this.activityAct = act;
+    if (this.stance === 'stand' && !this.pointing) this.base = this.restBase();
+  }
+
+  // A reaction, played as an act: 'rage', 'huff', 'hurt', 'pout', 'forgive', 'shy', 'giggle',
+  // 'laugh', 'care', 'startle', 'dizzy', 'stretch', 'smug', 'happy', 'dreamy'. Resolves when done.
+  react(name, dir = this.towardCenter()) {
+    if (this.hidden || this.stowed || this.dormant) return Promise.resolve();
+    if (this.mode === 'sleep') this.wake();
+    if (name === 'dreamy') {
+      if (this.gaze({ big: false })) return Promise.resolve();
+      return this.perform('curious', dir);
+    }
+    const act = REACTIONS[name];
+    if (!act) return Promise.resolve();
+    if (this.busy || this.stance === 'fall') return Promise.resolve();
+    // the jumpy ones would lift her off her ledge: sitting, she does them smaller
+    if (this.stance === 'sit' && ['rage', 'laughFit', 'startle', 'hop'].includes(act)) {
+      return this.perform(act === 'rage' ? 'huff' : act === 'laughFit' ? 'giggle' : 'curious', dir);
+    }
+    if (this.stance === 'peek' && act !== 'giggle') return this.unpeek({ shy: name === 'shy' });
+    return this.perform(act, dir);
+  }
+
+  // Where her marks go: the top of her head, on the open side, and her face.
+  markAt(side = this.towardCenter()) {
+    const s = this.scale;
+    const h = this.head();
+    return { x: h.x + side * 78 * s, y: h.top + 18 * s };
+  }
+
+  faceAt() {
+    return () => {
+      const h = this.head();
+      return { x: h.x, y: h.y + 4 * this.scale };
+    };
+  }
+
+  // A little sign of her mood now and then, between everything else.
+  moodBeat(now) {
+    const k = this.moodLevel;
+    const mood = this.moodName;
+    this.nextMoodBeat = now + (mood === 'angry' ? rand(5000, 9000) : rand(9000, 18000));
+    if (this.busy || this.hidden || this.act || this.sky || reducedMotion.matches || this.mode === 'sleep') return;
+    if (this.stance === 'peek' || this.stance === 'fall') return;
+    const s = this.scale;
+    if (mood === 'angry') {
+      marks.vein(this.fx, () => this.markAt(), { size: 0.8 + 0.5 * k, life: 1300 });
+      if (Math.random() < 0.6) marks.steam(this.fx, this.markAt(-this.towardCenter()), { scale: s * 1.4 });
+      if (Math.random() < 0.5) this.spark();
+      this.voice.play('growl', { soft: true });
+    } else if (mood === 'annoyed') {
+      if (Math.random() < 0.5) marks.vein(this.fx, () => this.markAt(), { size: 0.7, life: 1000 });
+      else this.perform('huff', this.towardCenter());
+    } else if (mood === 'sad') {
+      marks.drops(this.fx, this.faceAt(), { count: 2, scale: s * 1.4 });
+      if (Math.random() < 0.4) this.voice.play('sigh');
+    } else if (mood === 'shy') {
+      marks.blush(this.fx, this.faceAt(), { scale: s * 1.5, life: 2000 });
+    } else if (mood === 'happy') {
+      if (this.stance === 'stand' && Math.random() < 0.35) this.perform(pick(['hop', 'spin']), this.towardCenter());
+      else this.twitch();
+    } else if (mood === 'bored') {
+      if (this.stance === 'stand' && Math.random() < 0.4) this.perform('stretch');
+      else marks.word(this.fx, this.markAt().x, this.markAt().y, '…', { size: 22, life: 1400, rise: 20 });
+    }
   }
 
   setMode(mode) {
@@ -846,6 +992,98 @@ export class Capri {
         break;
       case 'snap':
         this.twitch();
+        this.voice.play('tick');
+        break;
+      // her moods (acting.js)
+      case 'seethe':
+        if (Math.random() < 0.3) marks.steam(this.fx, this.markAt(), { count: 2, scale: s * 1.3 });
+        break;
+      case 'tsk':
+        if (Math.random() < 0.4) marks.vein(this.fx, () => this.markAt(), { size: 0.6, life: 800 });
+        break;
+      case 'growl':
+        this.voice.play('growl');
+        break;
+      case 'rage': {
+        const top = this.markAt();
+        marks.vein(this.fx, () => this.markAt(), { size: 1.5, life: 2200 });
+        marks.steam(this.fx, top, { count: 4, scale: s * 1.6 });
+        this.fx.burst(mane.x, mane.y, { count: 26, power: 1.1, spread: 140 * s });
+        this.fx.ring(mane.x, mane.y, { size: 0.5 });
+        this.fx.lines(mane.x, mane.y, { inner: 120 * s + 30, life: 420 });
+        this.flash([RED, INK, RED]);
+        this.p.glitchSeed = Math.random() * 100;
+        this.p.glitch = 0.5;
+        this.p.split = 6;
+        tween(this.p, { glitch: 0, split: 0 }, 600, ease.out);
+        this.voice.play('rage');
+        break;
+      }
+      case 'huff':
+        marks.vein(this.fx, () => this.markAt(), { size: 1, life: 1200 });
+        marks.steam(this.fx, this.markAt(-this.towardCenter()), { count: 2, scale: s * 1.3 });
+        this.voice.play('huff');
+        break;
+      case 'sting':
+        this.twitch();
+        marks.drops(this.fx, this.faceAt(), { count: 3, scale: s * 1.4 });
+        this.voice.play('sting');
+        break;
+      case 'pout': {
+        const m = this.markAt(-this.towardCenter());
+        marks.word(this.fx, m.x, m.y, SAY.hmph[this.lang] || SAY.hmph.en, { size: 18, life: 1200, rise: 26, color: COLORS_RED() });
+        this.voice.play('huff');
+        break;
+      }
+      case 'sigh':
+        this.voice.play('sigh');
+        break;
+      case 'softGlow':
+        tween(this.p, { sparkle: 1.6 }, 300, ease.out).then(() => tween(this.p, { sparkle: this.mode === 'sleep' ? 0.35 : 1 }, 600, ease.inOut));
+        break;
+      case 'blush':
+        marks.blush(this.fx, this.faceAt(), { scale: s * 1.5, life: 2600 });
+        marks.heart(this.fx, this.markAt().x, this.markAt().y, { scale: s * 1.4 });
+        this.voice.play('shy');
+        break;
+      case 'blushPeek':
+        if (Math.random() < 0.5) marks.blush(this.fx, this.faceAt(), { scale: s * 1.5, life: 1200 });
+        break;
+      case 'giggle':
+        marks.haha(this.fx, this.head(), { lang: this.lang, count: 1 });
+        this.voice.play('giggle');
+        break;
+      case 'haha':
+        if (Math.random() < 0.45) marks.haha(this.fx, this.head(), { lang: this.lang, count: 1 });
+        if (this.act?.index === 2) this.voice.play('laugh');
+        break;
+      case 'soft':
+        tween(this.p, { sparkle: 1.5 }, 400, ease.out).then(() => tween(this.p, { sparkle: 1 }, 700, ease.inOut));
+        break;
+      case 'startle': {
+        const m = this.markAt();
+        marks.word(this.fx, m.x, m.y, SAY.huh[this.lang] || '!?', { size: 24, life: 900, rise: 30, color: COLORS_RED() });
+        this.fx.ring(h.x, h.y, { size: 0.35 });
+        this.voice.play('startle');
+        break;
+      }
+      case 'dizzy':
+        marks.dizzy(this.fx, () => this.head(), { scale: s * 1.4, life: 2200 });
+        this.voice.play('dizzy');
+        break;
+      case 'yawn': {
+        const m = this.markAt();
+        marks.word(this.fx, m.x, m.y, SAY.yawn[this.lang] || SAY.yawn.en, { size: 15, life: 1400, rise: 24 });
+        this.voice.play('yawn');
+        break;
+      }
+      case 'beat':
+        if (Math.random() < 0.22) {
+          const m = this.markAt(pick([-1, 1]));
+          marks.word(this.fx, m.x, m.y, pick(['♪', '♫', '♬']), { size: 20, life: 1300, rise: 50, drift: rand(-20, 20), color: pick([COLORS_RED(), '#36ff7a', '#fff4f6']) });
+        }
+        break;
+      case 'page':
         this.voice.play('tick');
         break;
       default:
@@ -1600,6 +1838,7 @@ export class Capri {
         tween(this.p, { glitch: 0, split: 0 }, 200, ease.out);
         this.onTeleport?.('end');
         this.drop();
+        this.onDrop?.(); // dragged around too often, she gets dizzy (heart.js)
       } else {
         this.onClick?.();
       }

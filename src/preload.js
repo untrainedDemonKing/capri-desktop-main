@@ -56,4 +56,11 @@ contextBridge.exposeInMainWorld('host', {
   music: (query) => ipcRenderer.invoke('apps:music', query),
   openSite: (address) => ipcRenderer.invoke('apps:site', address),
   focusOverlay: (on) => ipcRenderer.send('overlay:focus', Boolean(on)),
+  // her character: her voice, what's playing, whether you're there, how she feels
+  ttsSpeak: (request) => ipcRenderer.invoke('tts:speak', request),
+  ttsSetup: (choice) => ipcRenderer.invoke('tts:setup', choice),
+  ttsKeyPage: (engine) => ipcRenderer.send('tts:keyPage', engine),
+  onMedia: on('media:now'),
+  onPresence: on('presence'),
+  moodState: (state) => ipcRenderer.send('mood:state', state),
 });

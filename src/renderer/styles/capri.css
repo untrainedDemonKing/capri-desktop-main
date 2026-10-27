@@ -865,3 +865,57 @@ html[data-motion='reduced'] .panel__line.is-glitching,
 html[data-motion='reduced'] .panel[data-kind='alert'] .panel__state {
   animation: none !important;
 }
+
+/* ---------- her moods (mood.js, heart.js) ----------
+   A chip by her name says how she feels; the panel and her portrait follow it. */
+
+.panel__mood {
+  padding: 1px 5px 0;
+  color: var(--ink);
+  background: var(--paper-3);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+
+.panel[data-mood='angry'] .panel__mood { background: var(--red); animation: blink 700ms steps(2, jump-none) infinite; }
+.panel[data-mood='annoyed'] .panel__mood { background: oklch(0.72 0.17 40); }
+.panel[data-mood='sad'] .panel__mood { background: var(--blue); color: var(--paper); }
+.panel[data-mood='shy'] .panel__mood { background: oklch(0.78 0.15 350); }
+.panel[data-mood='happy'] .panel__mood { background: var(--green); }
+.panel[data-mood='bored'] .panel__mood { background: var(--paper-3); }
+
+/* angry: her red misregistered copy instead of the violet one, and the panel trembling */
+.panel[data-mood='angry'] {
+  filter: drop-shadow(6px 6px 0 var(--red));
+}
+.panel[data-mood='angry'] .panel__frame {
+  animation: rage-shake 260ms steps(1, end) infinite;
+}
+.panel[data-mood='angry'] .panel__face img {
+  filter: saturate(1.6) hue-rotate(-20deg) contrast(1.15);
+}
+.panel[data-mood='shy'] .panel__face img {
+  filter: saturate(1.2) sepia(0.25) hue-rotate(300deg);
+}
+.panel[data-mood='sad'] .panel__face img {
+  filter: saturate(0.55) hue-rotate(190deg) brightness(0.92);
+}
+.panel[data-mood='sad'] {
+  filter: drop-shadow(6px 6px 0 var(--blue));
+}
+.panel[data-mood='bored'] .panel__face img {
+  filter: saturate(0.6);
+}
+
+@keyframes rage-shake {
+  0% { transform: translate(1px, 0); }
+  25% { transform: translate(-1px, 1px); }
+  50% { transform: translate(1px, -1px); }
+  75% { transform: translate(0, 1px); }
+}
+
+[data-motion='reduced'] .panel[data-mood='angry'] .panel__frame,
+[data-motion='reduced'] .panel[data-mood='angry'] .panel__mood {
+  animation: none;
+}

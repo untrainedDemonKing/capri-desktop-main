@@ -24,6 +24,7 @@ export class Brain {
     this.lang = lang;
     this.assistant = assistant; // 'claude', 'codex' or 'agy': whose events she follows
     this.custom = {};       // what you made her (custom.js): { userName, persona, myLines, memories }
+    this.heart = null;      // how she feels (heart.js): her idle lines follow it, Claude's work moves it
     this.sessions = new Map();
     this.replyFor = null;    // the session whose answer she's holding up for you
     this.linked = true;      // has a Claude Code event ever reached her (app.js sets it from the config)
@@ -222,6 +223,7 @@ export class Brain {
     const lines = String(evt.error || '').split('\n').map((l) => l.trim()).filter(Boolean);
     const firstLine = lines.find((l) => !/^exit code \d+$/i.test(l)) || lines[0] || '';
     this.tally(evt)?.error();
+    this.heart?.event('claudeError');
     this.capri.hurt();
     this.voice.play('error');
     this.say('error', fmt(pick(this.t.error), { tool: evt.tool_name || this.t.someTool }), s, {
@@ -274,6 +276,7 @@ export class Brain {
     const quote = cleanMarkdown(evt.last_assistant_message || '');
     if (wasWorking || s.count) {
       this.tally(evt)?.done({ files: s.files.size, ms: s.taskStart ? Date.now() - s.taskStart : 0, project: s.project });
+      this.heart?.event('claudeDone');
     }
 
     if (!this.busySessions.length) {
@@ -365,7 +368,8 @@ export class Brain {
     const busy = this.busySessions;
     if (!busy.length) {
       const talk = this.onTalk && { actions: [{ id: 'talk', label: this.t.chat.talk }], onAction: () => this.onTalk(), hold: 6000 };
-      this.say('idle', this.idleLine(), null, { face: pick(['calm', 'smug', 'aside']), hold: 4000, ...talk });
+      const felt = this.heart?.idleLine(); // how she feels shows in what she says
+      this.say('idle', felt?.line || this.idleLine(), null, { face: felt?.face || pick(['calm', 'smug', 'aside']), hold: 4000, ...talk });
       return;
     }
     const s = busy.sort((a, b) => b.seen - a.seen)[0];
