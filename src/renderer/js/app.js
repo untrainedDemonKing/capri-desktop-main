@@ -9,7 +9,12 @@ import { Mission } from './mission.js';
 import { Chat } from './chat.js';
 import { Setup } from './setup.js';
 import { Custom } from './custom.js';
+import { Heart } from './heart.js';
+import { Life } from './life.js';
+import { Speech } from './speech.js';
+import { applyTheme, resolveTheme } from './themes.js';
 import { linesFor } from './lines.js';
+import { lifeLines } from './lines-life.js';
 import { pick, fmt, reducedMotion } from './util.js';
 
 const host = window.host;
@@ -84,11 +89,37 @@ async function boot() {
   capri.wander = config.wander;
   capri.possessWindows = config.possess;
   capri.restOn = config.rest || 'corner';
+  capri.lang = config.lang;
   capri.setView(innerWidth, innerHeight, innerHeight - floorGap);
   capri.setScale(config.scale);
 
   const mission = new Mission();
   const brain = new Brain({ capri, panel, voice, host, mission, lang: config.lang, assistant: config.assistant });
+
+  // Her feelings (heart.js, mood.js): what she shows, and her colours when they follow her mood.
+  const heart = new Heart({ capri, panel, voice, brain, host });
+  brain.heart = heart;
+  let themeSetting = config.theme || 'classic';
+  let themeShown = applyTheme(resolveTheme(themeSetting, heart.state.mood), { capri });
+  heart.onMood = (state) => {
+    host.moodState({ mood: state.mood, level: state.level });
+    if (themeSetting === 'mood') themeShown = applyTheme(resolveTheme('mood', state.mood), { capri });
+  };
+  heart.configure(config);
+  heart.start();
+  // Her voice (speech.js): her chat answers read out, or everything she says
+  const speech = new Speech({ voice, host });
+  speech.configure(config);
+  speech.onTalk = () => capri.perform('talk');
+  let voiceWarned = 0;
+  speech.onError = (error) => {
+    if (Date.now() - voiceWarned < 10 * 60000) return; // said once in a while, not on every line
+    voiceWarned = Date.now();
+    panel.say({ kind: 'error', face: 'aside', line: fmt(lifeLines(brain.lang).voice.failed, { error: String(error).slice(0, 90) }), hold: 6000 });
+  };
+  panel.onLine = (msg) => {
+    if (speech.wants('line') && msg.kind !== 'chat') speech.say(msg.line, { mood: heart.state.mood, kind: 'line' });
+  };
 
   // Click-through everywhere except on her body, the panel and her biochip.
   let interactive = false;
@@ -135,6 +166,13 @@ async function boot() {
     mouse = { x: e.clientX, y: e.clientY };
     refreshHit();
     hoverChip();
+    // tickling her, patting her head (heart.js)
+    if (!capri.hidden && capri.stance !== 'fall') {
+      const on = capri.hit(mouse.x, mouse.y);
+      const h = capri.head();
+      const onHead = on && Math.hypot(mouse.x - h.x, mouse.y - (h.y - 34 * capri.scale)) < 62 * capri.scale;
+      heart.pointer(on, onHead);
+    }
   });
   document.addEventListener('mouseleave', () => {
     mouse = null;
@@ -196,9 +234,11 @@ async function boot() {
     if (!panel.visible && Math.random() < (when === 'end' ? 0.6 : 0.4)) panel.say({ kind: 'info', line: pick(lines), hold: 3800 });
   };
   capri.onClick = () => {
+    if (heart.poke()) return; // poked too many times: she's had it
     if (panel.visible) panel.hide();
     else brain.status();
   };
+  capri.onDrop = () => heart.dragged();
   panel.onChar = (kind) => voice.play('blip', { mood: kind });
   panel.onTalk = (talking) => talking && capri.perform('talk');
   capri.onMenu = () => host.openMenu();
@@ -209,6 +249,15 @@ async function boot() {
   // Talking to her (chat.js): "Talk to her" in her menu, or the button when you click her idle.
   const chat = new Chat({ capri, panel, voice, host, brain });
   brain.onTalk = () => chat.start();
+  chat.heart = heart;
+  chat.speech = speech;
+  // Her own little life (life.js): things to do, music, noticing you
+  const life = new Life({ capri, panel, voice, host, brain, heart, fx });
+  life.chat = chat;
+  life.guide = guide;
+  life.configure(config);
+  life.start();
+  chat.life = life;
   // Getting her chat going with buttons (setup.js): Ollama and a model, a key, or an address
   const setup = new Setup({ guide, panel, host, brain, capri, voice });
   guide.setup = setup;
@@ -326,6 +375,23 @@ async function boot() {
 
   host.onConfig((cfg) => {
     voice.configure(cfg);
+    heart.configure(cfg);
+    life.configure(cfg);
+    speech.configure(cfg);
+    capri.lang = cfg.lang;
+    if ((cfg.theme || 'classic') !== themeSetting) {
+      // new colours: a twirl to show them off (and a word, unless her chat already said one)
+      themeSetting = cfg.theme || 'classic';
+      const next = resolveTheme(themeSetting, heart.state.mood);
+      if (next !== themeShown) {
+        themeShown = applyTheme(next, { capri });
+        capri.twitch();
+        if (capri.stance === 'stand') capri.perform('spin');
+        const h = capri.head();
+        fx.burst(h.x, h.y - 30 * capri.scale, { count: 18, power: 0.7, spread: 90 * capri.scale });
+        if (!chat.open && !panel.visible) panel.say({ kind: 'info', face: 'smug', line: themeSetting === 'mood' ? lifeLines(cfg.lang).theme.mood : pick(lifeLines(cfg.lang).theme.done), hold: 3500 });
+      }
+    }
     capri.wander = cfg.wander;
     capri.possessWindows = cfg.possess;
     capri.restOn = cfg.rest || 'corner';
@@ -352,6 +418,57 @@ async function boot() {
       document.documentElement.lang = cfg.lang;
     }
   });
+
+  // Her voice, set up with buttons: which engine, then its key or address, then which voice, then a test.
+  async function setupVoice() {
+    const tv = lifeLines(brain.lang).voice;
+    let saved = false;
+    await guide.scene(async () => {
+      const cfg = await host.getConfig();
+      const engine = await guide.ask({
+        face: 'look', line: tv.which, quote: tv.whichHow,
+        actions: [...['system', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: tv.engines[id], primary: id === cfg.ttsEngine })), { id: 'later', label: tv.later }],
+      });
+      if (!engine || engine === 'later') return;
+      if (engine === 'system') {
+        await host.ttsSetup({ engine });
+        saved = true;
+        return;
+      }
+      const choice = { engine };
+      if (engine === 'custom') {
+        const got = await guide.askText({ face: 'look', line: tv.url, quote: tv.urlHow, placeholder: cfg.ttsUrl || 'http://127.0.0.1:8880/v1', actions: cfg.ttsUrl ? [{ id: 'skip', label: tv.skip }] : [] });
+        if (!got) return;
+        if (got.text) choice.url = got.text;
+      } else {
+        const slot = engine === 'openai' ? 'openai' : 'elevenlabs';
+        const has = cfg.keys?.includes(slot);
+        const name = tv.engines[engine];
+        const got = await guide.askText({
+          face: 'look', line: fmt(tv.key, { name }), quote: fmt(tv.keyHow, { name }), secret: true, placeholder: 'sk-… / xi-…',
+          actions: [{ id: 'where', label: tv.where }, ...(has ? [{ id: 'skip', label: tv.skip }] : [])],
+          onAction: (id) => {
+            if (id !== 'where') return false;
+            host.ttsKeyPage(engine);
+            return true; // the panel stays
+          },
+        });
+        if (!got || (!got.text && !has)) return;
+        if (got.text) choice.key = got.text;
+      }
+      const voiceGot = await guide.askText({ face: 'smug', line: tv.voiceId, quote: tv.voiceIdHow, placeholder: cfg.ttsVoice || (engine === 'openai' ? 'nova' : engine === 'elevenlabs' ? 'voice id' : 'af_bella'), actions: [{ id: 'skip', label: tv.skip }] });
+      if (voiceGot?.text) choice.voice = voiceGot.text;
+      await host.ttsSetup(choice);
+      saved = true;
+    });
+    if (!saved) return;
+    const cfg = await host.getConfig();
+    speech.configure(cfg);
+    if (cfg.voiceMode === 'off') host.setConfig({ voiceMode: 'chat' });
+    capri.perform('hop');
+    panel.say({ kind: 'done', face: 'grin', line: tv.saved, quote: tv.test, hold: 6000 });
+    speech.say(tv.test, { mood: heart.state.mood, force: true });
+  }
 
   host.onCommand(async (cmd) => {
     const t = brain.t;
@@ -407,6 +524,37 @@ async function boot() {
         break;
       case 'chat': // "Talk to her" in her menu
         chat.start();
+        break;
+      case 'setupVoice': // her menu › Voice › Key, address or voice
+        setupVoice();
+        break;
+      case 'testVoice': // her menu › Voice › Test her voice
+        if (capri.stowed) {
+          host.setConfig({ visible: true });
+          await capri.unstow();
+        }
+        capri.wake();
+        panel.say({ kind: 'info', face: 'grin', line: lifeLines(brain.lang).voice.test, hold: 5000 });
+        speech.say(lifeLines(brain.lang).voice.test, { mood: heart.state.mood, force: true });
+        break;
+      case 'feel': // --dev: as if you'd sent her this message (her feelings only), or a reaction / an event
+        if (cmd.text) heart.feel(cmd.text);
+        if (cmd.reaction) capri.react(cmd.reaction);
+        if (cmd.event) heart.event(cmd.event);
+        if (cmd.mood) {
+          heart.mood.apply(cmd.mood);
+          heart.mood.changed();
+        }
+        break;
+      case 'life': // --dev: one of her activities (hack, read, game, graffiti, scan, minds, stretch, offer)
+        life.nextAt = Infinity;
+        life.begin(cmd.activity);
+        break;
+      case 'media': // --dev: as if this were playing ({ title, artist, playing })
+        life.onMedia(cmd.now || {});
+        break;
+      case 'presence': // --dev: as if you'd been away this long (s), or were back
+        life.onPresence({ idle: cmd.idle ?? 0 });
         break;
       case 'report': // "Mission report" in her menu
         if (capri.stowed) {
@@ -489,6 +637,9 @@ async function boot() {
         break;
     }
   });
+
+  // the overlay opened in a plain browser (tests, screenshots): its pieces, to drive it from there
+  if (location.protocol === 'http:') window.__capri = { capri, fx, panel, brain, heart, life, chat, speech, voice };
 
   // entrance: her face big in the corner says hi, then she dives down to her spot
   // (put away last time: she starts in her biochip)

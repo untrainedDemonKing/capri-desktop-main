@@ -17,6 +17,8 @@ const llm = require('./llm');
 const setup = require('./setup');
 const apps = require('./apps');
 const launch = require('./launch');
+const tts = require('./tts');
+const { startMediaWatch } = require('./media');
 const { ASSISTANTS, assistant } = require('./assistants');
 const activeAssistant = () => assistant(config.load().assistant); // Claude Code or Codex
 const activeHooks = () => activeAssistant().hooks;
@@ -28,6 +30,10 @@ const PORT = Number(process.env.CAPRI_PORT) || 47823;
 const SOUND_EXT = /\.(mp3|wav|ogg|m4a)$/i;
 
 const OLLAMA_SITE = 'https://ollama.com';
+// her colours (renderer themes.js), in the order of her menu
+const THEMES = ['classic', 'netrunner', 'toxic', 'violet', 'gold', 'sakura', 'ghost', 'mood'];
+// which saved key each voice engine uses (OpenAI's is the same one as her chat's)
+const TTS_KEYS = { openai: 'openai', elevenlabs: 'elevenlabs', custom: 'tts' };
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'capri', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
@@ -44,6 +50,9 @@ let chatModels = null; // the provider's models, as last seen (null: not reached
 let chatError = null;  // why not, when the provider said
 let chatErrorCode = null; // 'nokey' or 'nourl': what her setup should ask for
 const chats = new Map(); // id -> AbortController of an answer being streamed
+let moodState = null;   // how she feels (the overlay says), for her menu's top line
+let mediaWatch = null;  // what's playing (media.js), while she's allowed to know
+let presenceTimer = null;
 
 const userSoundsDir = () => path.join(app.getPath('userData'), 'sounds');
 
@@ -249,6 +258,7 @@ function rendererConfig() {
 function updateConfig(patch) {
   config.save(patch);
   if ('rest' in patch) fitOverlay(); // the taskbar in her window or not
+  if ('musicAware' in patch) watchMedia();
   const cfg = rendererConfig();
   overlay?.webContents.send('capri:config', cfg);
   rebuildTray();
@@ -268,6 +278,7 @@ function rebuildTray() {
 
   const menu = Menu.buildFromTemplate([
     { label: t.online(PORT), enabled: false },
+    ...(moodState && cfg.emotions !== false ? [{ label: t.mood(t.moods[moodState.mood] || moodState.mood), enabled: false }] : []),
     { type: 'separator' },
     { label: t.teleport, click: () => sendCommand('teleport') },
     { label: t.satellite, click: () => sendCommand('satellite') },
@@ -283,6 +294,46 @@ function rebuildTray() {
       submenu: [[t.small, 0.45], [t.medium, 0.6], [t.large, 0.8]].map(([label, scale]) => ({
         label, type: 'radio', checked: Math.abs(cfg.scale - scale) < 0.01, click: () => updateConfig({ scale }),
       })),
+    },
+    {
+      label: t.colors,
+      submenu: THEMES.map((theme) => ({
+        label: t.themes[theme], type: 'radio', checked: (cfg.theme || 'classic') === theme, click: () => updateConfig({ theme }),
+      })),
+    },
+    {
+      label: t.voice,
+      submenu: [
+        ...[['off', t.voiceOff], ['chat', t.voiceChat], ['all', t.voiceAll]].map(([voiceMode, label]) => ({
+          label, type: 'radio', checked: cfg.voiceMode === voiceMode, click: () => updateConfig({ voiceMode }),
+        })),
+        { type: 'separator' },
+        {
+          label: t.voiceEngine,
+          submenu: Object.keys(tts.ENGINES).map((ttsEngine) => ({
+            label: t.engines[ttsEngine], type: 'radio', checked: cfg.ttsEngine === ttsEngine,
+            click: () => {
+              updateConfig({ ttsEngine });
+              const key = TTS_KEYS[ttsEngine];
+              const missing = (key && !config.load().apiKeys?.[key] && !(ttsEngine === 'openai' && process.env.OPENAI_API_KEY))
+                || (ttsEngine === 'custom' && !config.load().ttsUrl);
+              if (missing) sendCommand('setupVoice');
+            },
+          })),
+        },
+        { label: t.voiceFx, type: 'checkbox', checked: cfg.ttsFx !== false, click: (item) => updateConfig({ ttsFx: item.checked }) },
+        { label: t.voiceSetup, click: () => sendCommand('setupVoice') },
+        { label: t.voiceTest, click: () => sendCommand('testVoice') },
+      ],
+    },
+    {
+      label: t.character,
+      submenu: [
+        { label: t.emotions, type: 'checkbox', checked: cfg.emotions !== false, click: (item) => updateConfig({ emotions: item.checked }) },
+        { label: t.life, type: 'checkbox', checked: cfg.life !== false, click: (item) => updateConfig({ life: item.checked }) },
+        { label: t.musicAware, type: 'checkbox', checked: cfg.musicAware !== false, enabled: process.platform === 'win32', click: (item) => updateConfig({ musicAware: item.checked }) },
+        { label: t.dj, type: 'checkbox', checked: cfg.dj !== false, enabled: process.platform === 'win32' && cfg.musicAware !== false, click: (item) => updateConfig({ dj: item.checked }) },
+      ],
     },
     {
       label: t.sound,
@@ -493,6 +544,27 @@ async function pickClaudeFolder() {
   updateConfig({ claudeCwd: filePaths[0] });
 }
 
+// What's playing (media.js), while her menu lets her know it.
+function watchMedia() {
+  const on = config.load().musicAware !== false;
+  if (on && !mediaWatch) {
+    mediaWatch = startMediaWatch({ onUpdate: (now) => overlay?.webContents.send('media:now', now) });
+  } else if (!on && mediaWatch) {
+    mediaWatch.stop();
+    mediaWatch = null;
+    overlay?.webContents.send('media:now', {});
+  }
+}
+
+// How long since the keyboard or the mouse were last touched: she notices you're away, and back.
+function watchPresence() {
+  clearInterval(presenceTimer);
+  presenceTimer = setInterval(() => {
+    if (!overlay || overlay.isDestroyed()) return;
+    overlay.webContents.send('presence', { idle: powerMonitor.getSystemIdleTime() });
+  }, 5000);
+}
+
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(ROOT, 'assets', 'icons', 'tray.png'));
   tray = new Tray(icon);
@@ -648,6 +720,34 @@ function registerIpc() {
     else shell.openPath(dir);
     return { found: true, dir, file: fs.existsSync(file), label: fs.existsSync(file) ? path.basename(file) : path.basename(dir) };
   });
+  // her voice through a speech service (tts.js): the audio of what she says, back to the overlay
+  ipcMain.handle('tts:speak', async (_e, { text, mood }) => {
+    const cfg = config.load();
+    try {
+      const audio = await tts.speak(cfg, setup.openKeys(cfg.apiKeys), { text, mood });
+      return { ok: true, audio };
+    } catch (err) {
+      return { ok: false, error: err.message, code: err.code || null };
+    }
+  });
+  // her voice's key, address or voice, pasted in her panel (the key kept encrypted like her chat's)
+  ipcMain.handle('tts:setup', (_e, { engine, key, url, voice }) => {
+    const before = config.load();
+    const patch = {};
+    if (engine && tts.ENGINES[engine]) patch.ttsEngine = engine;
+    const slot = TTS_KEYS[patch.ttsEngine || before.ttsEngine];
+    if (key && slot) patch.apiKeys = { ...before.apiKeys, [slot]: setup.sealKey(String(key).trim()) };
+    if (typeof url === 'string' && url.trim()) patch.ttsUrl = url.trim();
+    if (typeof voice === 'string' && voice.trim()) patch.ttsVoice = voice.trim().slice(0, 80);
+    return updateConfig(patch);
+  });
+  ipcMain.on('tts:keyPage', (_e, engine) => tts.KEY_PAGES[engine] && shell.openExternal(tts.KEY_PAGES[engine]));
+  // how she feels, for her menu's top line (only when the mood itself changes)
+  ipcMain.on('mood:state', (_e, state) => {
+    const changed = state?.mood !== moodState?.mood;
+    moodState = state && { mood: String(state.mood), level: Number(state.level) || 0 };
+    if (changed) rebuildTray();
+  });
   ipcMain.handle('sounds:list', () => {
     try {
       return fs.readdirSync(userSoundsDir())
@@ -784,6 +884,8 @@ function main() {
     });
     globalShortcut.register('Control+Alt+C', () => toggleVisible());
     llm.restoreClaude(readMemory().claude);
+    watchMedia();
+    watchPresence();
     refreshModels(); // for her menu's model list
     setTimeout(() => launch.launchables().catch(() => {}), 20000); // what she can open, before you ask
     screen.on('display-metrics-changed', fitOverlay);
@@ -797,6 +899,8 @@ function main() {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     windowWatch?.stop();
+    mediaWatch?.stop();
+    clearInterval(presenceTimer);
   });
   app.on('window-all-closed', (e) => e.preventDefault());
 }

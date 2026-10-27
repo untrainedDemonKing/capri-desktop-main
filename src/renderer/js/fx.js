@@ -534,7 +534,9 @@ export class FxLayer {
     // the dive swings out a little toward the middle of the screen on its way down to her
     const ctrl = { x: lerp(at.x, to.x, 0.25) - (to.x - at.x) * 0.2, y: lerp(at.y, to.y, 0.15) };
     return new Promise((land) => {
-      this.add({ type: 'intro', smooth: true, life: FRAME_MS * (INTRO_T.end + 1), s, at, to, ctrl, label, caption, still, onCue, land, cued: -1 });
+      // done: on a slow PC the drawing where she lands can be skipped altogether (the intro ends
+      // between two frames): she lands anyway, or she'd never show up
+      this.add({ type: 'intro', smooth: true, life: FRAME_MS * (INTRO_T.end + 1), s, at, to, ctrl, label, caption, still, onCue, land, done: land, cued: -1 });
     });
   }
 
@@ -1800,6 +1802,14 @@ export class FxLayer {
         ctx.restore();
         break;
       }
+      default:
+        // her moods' marks and the props of what she's busy with (fx-life.js) draw themselves
+        if (it.render) {
+          ctx.save();
+          it.render(ctx, t, now, this);
+          ctx.restore();
+        }
+        break;
     }
   }
 }

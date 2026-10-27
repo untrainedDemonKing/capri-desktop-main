@@ -8,7 +8,16 @@ import { rand, pick } from './util.js';
 const BLIP_NOTES = [62, 65, 67, 69, 72, 74, 77, 79];
 const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
 
-export const CUES = ['teleport-out', 'teleport-in', 'done', 'alert', 'error', 'hello', 'blip', 'tick', 'star', 'land', 'rise', 'bolt', 'charge', 'possess'];
+export const CUES = [
+  'teleport-out', 'teleport-in', 'done', 'alert', 'error', 'hello', 'blip', 'tick', 'star', 'land', 'rise', 'bolt', 'charge', 'possess',
+  // her moods and her own little life (mood.js, life.js)
+  'growl', 'rage', 'huff', 'giggle', 'laugh', 'sigh', 'sting', 'shy', 'startle', 'dizzy', 'yawn', 'skip', 'win', 'lose',
+];
+// her talking blips by mood: how far up or down they go (semitones), how harsh, how fast
+const BLIP_MOOD = {
+  angry: { shift: -5, wave: 'sawtooth', gap: 40 }, annoyed: { shift: -2, gap: 45 }, happy: { shift: 4, gap: 40 },
+  sad: { shift: -4, gap: 75, soft: 0.7 }, shy: { shift: 7, gap: 55, soft: 0.6 }, bored: { shift: -2, gap: 70, soft: 0.8 },
+};
 
 export class Voice {
   constructor() {
@@ -18,6 +27,8 @@ export class Voice {
     this.volume = 0.7;
     this.custom = new Map(); // cue -> AudioBuffer
     this.lastBlip = 0;
+    this.mood = 'calm'; // her mood (mood.js): her blips follow it
+    this.speaking = false; // her voice is reading something out (speech.js): no blips over it
   }
 
   ensure() {
@@ -88,6 +99,20 @@ export class Voice {
       bolt: () => this.bolt(opts.soft),
       charge: () => this.charge(),
       possess: () => this.possess(),
+      growl: () => this.growl(opts.soft),
+      rage: () => this.rage(),
+      huff: () => this.huff(),
+      giggle: () => this.giggle(),
+      laugh: () => this.laugh(),
+      sigh: () => this.sigh(),
+      sting: () => this.sting(),
+      shy: () => this.shy(),
+      startle: () => this.startle(),
+      dizzy: () => this.dizzy(),
+      yawn: () => this.yawn(),
+      skip: () => this.skip(),
+      win: () => this.win(),
+      lose: () => this.lose(),
     }[cue];
     fn?.();
   }
@@ -147,15 +172,186 @@ export class Voice {
   }
 
   blip(mood = 'talk') {
+    if (this.speaking) return; // her real voice is on
+    const feel = BLIP_MOOD[this.mood] || {};
     const now = performance.now();
-    if (now - this.lastBlip < 45) return;
+    if (now - this.lastBlip < (feel.gap || 45)) return;
     this.lastBlip = now;
     const t = this.ctx.currentTime;
-    const base = pick(BLIP_NOTES) + (mood === 'alert' ? 5 : mood === 'error' ? -7 : 0);
+    const base = pick(BLIP_NOTES) + (mood === 'alert' ? 5 : mood === 'error' ? -7 : 0) + (feel.shift || 0);
     const f = midi(base);
-    this.osc('square', f, t, 0.035, 0.035);
-    this.osc('triangle', f * 1.498, t + 0.004, 0.03, 0.025); // a fifth up
-    this.osc('square', f * 0.501, t + 0.008, 0.03, 0.018);   // an octave down, slightly off
+    const k = feel.soft || 1;
+    this.osc(feel.wave || 'square', f, t, 0.035, 0.035 * k);
+    this.osc('triangle', f * 1.498, t + 0.004, 0.03, 0.025 * k); // a fifth up
+    this.osc('square', f * 0.501, t + 0.008, 0.03, 0.018 * k);   // an octave down, slightly off
+  }
+
+  // ---------- her moods ----------
+
+  // a low, rough growl: a buzz shaken by a fast tremolo, through a closing filter
+  growl(soft = false) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const dur = soft ? 0.28 : 0.5;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(soft ? 78 : 68, t);
+    o.frequency.linearRampToValueAtTime(soft ? 70 : 58, t + dur);
+    const trem = ctx.createOscillator();
+    trem.frequency.value = 27;
+    const tremGain = ctx.createGain();
+    tremGain.gain.value = 0.5;
+    const amp = ctx.createGain();
+    amp.gain.value = 0.5;
+    trem.connect(tremGain).connect(amp.gain);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(900, t);
+    lp.frequency.exponentialRampToValueAtTime(260, t + dur);
+    const g = ctx.createGain();
+    this.env(g, t, 0.03, soft ? 0.1 : 0.2, dur);
+    o.connect(amp).connect(lp).connect(g).connect(this.master);
+    o.start(t);
+    trem.start(t);
+    o.stop(t + dur + 0.1);
+    trem.stop(t + dur + 0.1);
+    if (!soft) this.noiseBurst(t, dur * 0.8, 0.05, 500, 220, 1.2);
+  }
+
+  // blowing up: a growl, a crash of noise, the pitch diving, a stutter of glitches
+  rage() {
+    const t = this.ctx.currentTime;
+    this.growl();
+    this.noiseBurst(t + 0.05, 0.35, 0.22, 3000, 300, 0.8);
+    const o = this.osc('sawtooth', 420, t + 0.04, 0.4, 0.09);
+    o.frequency.exponentialRampToValueAtTime(60, t + 0.42);
+    for (let i = 0; i < 6; i++) this.osc('square', rand(300, 2600), t + 0.1 + i * 0.045, 0.025, 0.05);
+  }
+
+  // a puff of air out of her nose
+  huff() {
+    const t = this.ctx.currentTime;
+    this.noiseBurst(t, 0.2, 0.16, 1400, 500, 1.4);
+    this.osc('triangle', 180, t, 0.08, 0.05);
+  }
+
+  // a short giggle: four quick chirps, up and back down
+  giggle() {
+    const t = this.ctx.currentTime;
+    [76, 79, 77, 74].forEach((n, i) => {
+      const at = t + i * 0.085;
+      const o = this.osc('triangle', midi(n), at, 0.06, 0.07);
+      o.frequency.exponentialRampToValueAtTime(midi(n - 2), at + 0.06);
+      this.osc('square', midi(n) * 1.01, at + 0.003, 0.04, 0.02);
+    });
+  }
+
+  // a real laugh, with all her voices: "ha"s going down, each a little chord
+  laugh() {
+    const t = this.ctx.currentTime;
+    [81, 79, 81, 77, 79, 74, 72].forEach((n, i) => {
+      const at = t + i * 0.11;
+      for (const [k, wave, peak] of [[1, 'square', 0.05], [1.012, 'square', 0.03], [0.5, 'triangle', 0.05]]) {
+        const o = this.osc(wave, midi(n) * k, at, 0.075, peak);
+        o.frequency.exponentialRampToValueAtTime(midi(n - 3) * k, at + 0.075);
+      }
+      this.noiseBurst(at, 0.05, 0.03, 2500, 1500, 3);
+    });
+  }
+
+  // a long breath out
+  sigh() {
+    const t = this.ctx.currentTime;
+    this.noiseBurst(t, 0.75, 0.07, 1600, 280, 0.9);
+    const o = this.osc('sine', 260, t + 0.05, 0.6, 0.03);
+    o.frequency.exponentialRampToValueAtTime(150, t + 0.6);
+  }
+
+  // stung: a glitch, then a falling tone
+  sting() {
+    const t = this.ctx.currentTime;
+    for (let i = 0; i < 3; i++) this.osc('square', rand(1500, 3200), t + i * 0.03, 0.02, 0.04);
+    const o = this.osc('triangle', 660, t + 0.1, 0.5, 0.06);
+    o.frequency.exponentialRampToValueAtTime(330, t + 0.55);
+  }
+
+  // flustered: a little "eep", two soft high chirps going up
+  shy() {
+    const t = this.ctx.currentTime;
+    [84, 88].forEach((n, i) => {
+      const o = this.osc('sine', midi(n), t + i * 0.12, 0.1, 0.06);
+      o.frequency.exponentialRampToValueAtTime(midi(n + 3), t + i * 0.12 + 0.1);
+    });
+  }
+
+  // startled: a quick rising chirp
+  startle() {
+    const t = this.ctx.currentTime;
+    const o = this.osc('square', 500, t, 0.12, 0.07);
+    o.frequency.exponentialRampToValueAtTime(1600, t + 0.1);
+    this.noiseBurst(t, 0.06, 0.08, 4000, 8000, 4);
+  }
+
+  // dizzy: a tone wobbling down
+  dizzy() {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(900, t);
+    o.frequency.exponentialRampToValueAtTime(300, t + 0.9);
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 9;
+    const depth = ctx.createGain();
+    depth.gain.value = 60;
+    vib.connect(depth).connect(o.frequency);
+    const g = ctx.createGain();
+    this.env(g, t, 0.02, 0.05, 0.9);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    vib.start(t);
+    o.stop(t + 1);
+    vib.stop(t + 1);
+  }
+
+  // a yawn: a slow slide up and back down, soft
+  yawn() {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(220, t);
+    o.frequency.exponentialRampToValueAtTime(440, t + 0.45);
+    o.frequency.exponentialRampToValueAtTime(180, t + 1.1);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05, t + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.15);
+    o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 1.2);
+    this.noiseBurst(t + 0.1, 0.9, 0.02, 900, 400, 1);
+  }
+
+  // skipping a track: a scratch and a quick drop
+  skip() {
+    const t = this.ctx.currentTime;
+    this.noiseBurst(t, 0.12, 0.14, 5000, 900, 2);
+    const o = this.osc('sawtooth', 900, t + 0.05, 0.16, 0.06);
+    o.frequency.exponentialRampToValueAtTime(120, t + 0.2);
+  }
+
+  // a game won: a quick little fanfare
+  win() {
+    const t = this.ctx.currentTime;
+    [72, 76, 79, 84].forEach((n, i) => this.osc('square', midi(n), t + i * 0.08, 0.1, 0.05));
+    this.osc('triangle', midi(88), t + 0.32, 0.35, 0.06);
+  }
+
+  // a game lost: the arcade's sad descending buzz
+  lose() {
+    const t = this.ctx.currentTime;
+    [67, 64, 61, 55].forEach((n, i) => this.osc('square', midi(n), t + i * 0.14, 0.13, 0.05));
   }
 
   tick() {

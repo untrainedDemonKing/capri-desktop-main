@@ -31,6 +31,19 @@ const DEFAULTS = {
   motion: 'auto',    // her animations: 'auto' (like Windows' animation effects), 'full' or 'reduced'
   motionAsked: false, // she asked once, Windows' animations being off, whether to move anyway
   render: 'auto',   // how her window is drawn: 'auto', 'gl' (OpenGL) or 'software' (no graphics card), for PCs that show it black
+  // her character (mood.js, life.js, themes.js, speech.js)
+  emotions: true,    // she has moods: she gets angry, laughs, sulks, gets flustered
+  theme: 'classic',  // her colours: a key of themes.js THEMES, or 'mood' (they follow how she feels)
+  life: true,        // she finds things to do on her own (hacking, games, graffiti...)
+  dj: true,          // DJ mode: while music plays she skips a track herself now and then
+  musicAware: true,  // she knows what's playing (title and artist, from Windows' media controls)
+  voiceMode: 'chat', // her voice: 'off', 'chat' (her chat answers) or 'all' (everything she says)
+  ttsEngine: 'system', // 'system' (Windows' voices, offline), 'openai', 'elevenlabs' or 'custom' (tts.js)
+  ttsVoice: '',      // the speech service's voice (empty: tts.js DEFAULTS)
+  ttsModel: '',      // its model (empty: tts.js DEFAULTS)
+  ttsUrl: '',        // 'custom': an OpenAI-compatible speech server (http://127.0.0.1:8880/v1)
+  ttsFx: true,       // her "many minds" effect on a speech service's voice
+  ttsRate: 1,        // how fast she talks
 };
 
 let cache = null;

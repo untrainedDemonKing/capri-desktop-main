@@ -42,6 +42,7 @@ export class Panel {
     this.summary = panel.querySelector('.panel__summary');
     this.log = panel.querySelector('.panel__log');
     this.tag = panel.querySelector('.panel__tag');
+    this.moodEl = panel.querySelector('.panel__mood'); // how she feels (mood.js), when it's not calm
     this.state = panel.querySelector('.panel__state');
     this.tickerVerb = ticker.querySelector('.ticker__verb');
     this.tickerTarget = ticker.querySelector('.ticker__target');
@@ -155,6 +156,7 @@ export class Panel {
     this.decode(msg.line || '', msg.kind);
 
     if (msg.hold) this.hideTimer = setTimeout(() => this.hide(), msg.hold);
+    if (msg.line && !msg.chat) this.onLine?.(msg);
     return true;
   }
 
@@ -171,6 +173,15 @@ export class Panel {
     this.quote.textContent = text || '';
     this.quote.hidden = !text;
     this.place();
+  }
+
+  // How she feels, on the panel: a chip by her name, and the panel's colours and her portrait
+  // following it (capri.css [data-mood]).
+  setMood(mood, label = '') {
+    this.el.dataset.mood = mood || 'calm';
+    if (!this.moodEl) return;
+    this.moodEl.textContent = label ? `◆ ${label}` : '';
+    this.moodEl.hidden = !label;
   }
 
   // Change her expression; the swap glitches across a couple of drawings.

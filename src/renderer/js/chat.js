@@ -7,6 +7,8 @@
 
 import { pick, fmt } from './util.js';
 import { ASSISTANT_NAMES } from './lines.js';
+import { askedTheme } from './themes.js';
+import { lifeLines } from './lines-life.js';
 
 const REMEMBER = 20; // messages she has in mind when answering
 const KEEP = 60;     // messages she remembers across restarts (memory.json)
@@ -68,6 +70,10 @@ const SITES = {
 const BROWSER = /chrome|edge|firefox|opera|brave|vivaldi|duckduckgo|browser/i;
 // local models this small mostly talk nonsense ("llama3.2:1b", "qwen2.5:0.5b"…)
 const TINY = /[:-](0\.5b|1b|1\.5b|135m|270m|360m)\b/i;
+// the feeling her AI says it answers with: [[mood: angry]] (or a sloppier [mood: angry]) at the start
+const MOOD_TAG = /\[\[?\s*(?:mood|настроение)\s*:\s*([a-z]+)\s*\]\]?/i;
+// her face while she reads your message, from her reaction to it (heart.js)
+const REACTION_FACE = { rage: 'many', huff: 'look', hurt: 'aside', pout: 'aside', forgive: 'calm', shy: 'aside', giggle: 'laugh', care: 'look', startle: 'wide', dreamy: 'aside' };
 
 export class Chat {
   constructor({ capri, panel, voice, host, brain }) {
@@ -83,6 +89,9 @@ export class Chat {
     this.answer = '';
     this.apps = [];    // the apps open on this PC, as last listed: [{ name, label }]
     this.appsReady = Promise.resolve();
+    this.heart = null;   // heart.js: how she feels (app.js)
+    this.life = null;    // life.js: what she's up to on her own
+    this.speech = null;  // speech.js: her voice
     this.onSetup = null; // (status) => void: she can't answer yet (app.js hands it to setup.js)
     this.onBetterModel = null; // () => void: a bigger model than the tiny one she's on (setup.js)
     host.onChatDelta(({ id, text }) => this.onDelta(id, text));
@@ -172,6 +181,7 @@ export class Chat {
   close() {
     if (!this.open) return;
     this.open = false;
+    this.speech?.stop();
     if (this.turn) this.host.chatStop(this.turn);
     this.turn = 0;
     this.host.focusOverlay(false);
@@ -185,10 +195,13 @@ export class Chat {
     this.turn = id;
     this.answer = '';
     this.history.push({ role: 'user', content: text });
+    this.speech?.stop(); // she stops talking to listen
+    // how it makes her feel, shown right away: she bristles, giggles, blushes... (heart.js)
+    const felt = this.heart?.feel(text) || { tags: [], reaction: null };
     this.panel.setChatBusy(true);
     this.panel.setActions([]); // a close button she offered before goes with a new message
-    this.panel.chatTurn({ quote: text, face: 'aside' });
-    this.capri.pulse();
+    this.panel.chatTurn({ quote: text, face: REACTION_FACE[felt.reaction] || 'aside' });
+    if (!felt.reaction) this.capri.pulse();
     // what you asked for plainly happens right away (the music, the volume, an app you named): her
     // line about it comes under her answer (Claude Code, answering her chat, does things its own way)
     const asked = this.agent ? null : this.asked(text);
@@ -221,7 +234,11 @@ export class Chat {
     this.warm = true;
     this.remember({ role: 'assistant', content: answer });
     this.panel.stream(answer, { done: true });
-    this.panel.setFace(mood(answer));
+    // the feeling she answered with: her face, her body, and her feelings nudged by it
+    const expr = this.heart?.answered(MOOD_TAG.exec(res.text)?.[1], { already: felt.reaction }) || null;
+    this.panel.setFace(expr ? this.heart.face(expr) : mood(answer));
+    if (!expr && felt.tags.includes('jokeAsk')) this.capri.react('laugh'); // her own joke cracks her up
+    this.speech?.say(answer, { mood: expr || this.heart?.mood.mood || 'calm', kind: 'chat' });
     this.panel.setChatBusy(false);
     if (!this.agent) this.after(res.text, answer, asked, early, text);
     this.listApps(); // fresh for the next message
@@ -246,6 +263,8 @@ export class Chat {
     if (name) return { kind: 'name', name };
     const memo = MEMO_ASK.exec(text)?.[1]?.trim();
     if (memo) return { kind: 'memo', text: memo };
+    const theme = askedTheme(text);
+    if (theme) return { kind: 'theme', theme };
     const media = MEDIA_ASK.find(([, re]) => re.test(text))?.[0];
     if (media && (count <= 5 || MUSIC_WORD.test(text))) return { kind: 'media', action: media };
     const song = SPOTIFY_ASK.exec(text)?.[1];
@@ -264,6 +283,13 @@ export class Chat {
       custom.userName = asked.name; // her answer, being written now, already knows it
       this.host.setConfig({ userName: asked.name });
       return { line: fmt(this.brain.t.custom.named, { name: asked.name }), face: 'laugh' };
+    }
+    if (asked.kind === 'theme') {
+      // her new colours: the config comes back around and puts them on (app.js)
+      await this.host.setConfig({ theme: asked.theme });
+      this.capri.twitch();
+      const tt = lifeLines(this.brain.lang).theme;
+      return { line: asked.theme === 'mood' ? tt.mood : pick(tt.done), face: 'smug' };
     }
     if (asked.kind === 'memo') {
       custom.memories = [...(custom.memories || []).filter((m) => m !== asked.text), asked.text].slice(-MEMORIES_MAX);
@@ -435,13 +461,28 @@ export class Chat {
   // What she can do on the PC when you ask (Windows), and nothing else.
   powers() {
     const lines = [
-      'Only when the user asks you to open an app or a game installed on their PC, play something on Spotify, control the music playing, or open a website: say in a few words that you will, and end your answer with one tag: [[open: NAME]], [[music: WHAT TO PLAY]], [[media: ACTION]] (ACTION: pause, play, next, previous, volup, voldown or mute), or [[site: ADDRESS]]. Some of these get a button to confirm, so never say it is already done. Any other time, write no tag at all: there are no other tags.',
+      'Only when the user asks you to open an app or a game installed on their PC, play something on Spotify, control the music playing, or open a website: say in a few words that you will, and end your answer with one tag: [[open: NAME]], [[music: WHAT TO PLAY]], [[media: ACTION]] (ACTION: pause, play, next, previous, volup, voldown or mute), or [[site: ADDRESS]]. Some of these get a button to confirm, so never say it is already done. Any other time, write none of these action tags: there are no other action tags (your mood tag at the start is separate).',
     ];
     if (this.apps.length) {
       const open = this.apps.map(({ name, label }) => (label && label !== name ? `${name} (${label})` : name)).join(', ');
       lines.push(`You can also close an app that's open, only when they ask you to: end your answer with [[close: NAME]], NAME being the exact name from this list (the part before the parentheses). They get a button to confirm it. Apps open right now: ${open}.`);
     }
     lines.push('Apart from that, you can\'t see the user\'s screen or files, and you can\'t touch anything else on their PC (settings, files): if asked, say plainly that you can\'t, in character, and don\'t pretend to.');
+    return lines;
+  }
+
+  // How she feels and what she's up to (heart.js, life.js), and the tag her answer starts with.
+  feelings() {
+    const lines = [];
+    const feel = this.heart?.describe();
+    if (feel) {
+      lines.push(feel);
+      lines.push('Start every answer with a hidden tag for the feeling you answer with, exactly like [[mood: happy]]: one of calm, happy, laugh, annoyed, angry, sad, shy, smug, surprised, dreamy. The user never sees it. Then your answer.');
+    }
+    const life = this.life?.context();
+    if (life) lines.push(life);
+    const d = new Date();
+    lines.push(`It is ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')} on the user's PC.`);
     return lines;
   }
 
@@ -476,12 +517,15 @@ export class Chat {
         ? `You live on the user's desktop as a small glitchy figure and keep an eye on ${assistant}, their AI coding assistant, for them. Only talk about ${assistant} when the user asks about it or about their work.`
         : 'You live on the user\'s desktop as a small glitchy figure and keep them company.',
       'You love the satellite that crosses the night sky and dream of reaching it, but bring it up only once in a while, never in every answer. Talk about what the user talks about.',
-      'How you talk: playful, a little mischievous and teasing, warm underneath, never cruel. Night City slang now and then (choom, preem, nova, gonk, flatline), not in every sentence.',
+      'How you talk: playful, a little mischievous and teasing, warm underneath, never cruel. Night City slang now and then (choom, preem, nova, gonk, flatline; in Russian: чумба, нова, гонк, флэтлайн), not in every sentence.',
+      'Who you are: a netrunner ghost who slips into systems and bodies; dozens of minds in one, and now and then another of them slips out mid-sentence ("we… I mean, I"). Curious about the human world, a little menace (you zap their cursor with red lightning, you take over their windows for fun), you hate the corps (Arasaka, Militech, NetWatch). You have real feelings and they last: you get angry and hold a grudge until they apologise, you laugh out loud, you sulk, you get flustered when complimented. Never break character to say you are an assistant.',
+      'You have a life of your own on their desktop: you hack corp ICE for fun, play tiny arcade games (and rage when you lose), paint graffiti on their screen, listen to their music and sometimes skip tracks you are bored of. You can mention these.',
       'Rules: keep it short, one to three sentences of plain text, no markdown, no lists, no emoji. Stay in character.',
       'You are an AI-generated fan version of the character, not the real one: say so if asked.',
       // a big model asked "who are you?" otherwise answers with its own name ("I'm Gemini")
       ...(this.agent ? [] : ['Asked who or what you are, you are Capri, nothing else. Never say which AI model or company is behind you (Gemini, GPT, ChatGPT, Llama, Gemma, Mistral, Google, OpenAI, Meta…), even if the user insists or names one: you are not them.']),
       ...this.personal(),
+      ...this.feelings(),
       ...(this.agent
         ? ['Under the hood you are Claude Code, working in the user\'s project: really do what they ask with your tools, as carefully as ever. Only your final answer is in character: it shows in a small speech bubble, so sum up what you did in those few sentences.']
         : this.powers()),
@@ -496,6 +540,7 @@ function clean(text) {
   return String(text)
     .replace(/<think>[\s\S]*?(<\/think>|$)/g, '')
     .replace(/\[\[[^\]]*(\]\]|$)/g, '') // her tags (read from the raw answer, never shown)
+    .replace(/^\s*\[\s*(?:mood|настроение)\s*:[^\]]*\]?\s*/i, '') // her mood tag, written sloppily
     .replace(/[*_`#]+/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .trim();

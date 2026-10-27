@@ -18,7 +18,8 @@
     "hooks:agy:uninstall": "node scripts/install-hooks-agy.js --uninstall",
     "check:llm": "node scripts/check-llm.js",
     "test:hooks": "node --test tests/hooks.test.js",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "test:character": "node --test tests/character.test.js"
   },
   "keywords": [
     "claude-code",
@@ -52,7 +53,8 @@
     ],
     "asarUnpack": [
       "hooks/**",
-      "src/main/windows.ps1"
+      "src/main/windows.ps1",
+      "src/main/media.ps1"
     ],
     "win": {
       "target": "nsis",

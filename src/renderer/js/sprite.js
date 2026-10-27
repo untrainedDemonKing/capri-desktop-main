@@ -45,6 +45,14 @@ uniform vec4 uSil;
 uniform vec2 uMisreg;
 uniform vec3 uRim;
 uniform float uAlpha;
+// her colours (her menu's themes): the hue her mane is pushed to, how hard, its saturation and
+// brightness; and the glow of her mood over her (mood.js), strongest on the mane
+uniform float uHue;
+uniform float uHueMix;
+uniform float uManeSat;
+uniform float uManeVal;
+uniform vec3 uTint;
+uniform float uTintAmt;
 uniform float uPx; // sprite pixels per screen pixel
 
 // landmarks, in sprite pixels (capri-full.png is 240x420, see tools/build-sprite.py)
@@ -106,9 +114,12 @@ vec3 grade(vec3 c, out float red) {
   float lit = smoothstep(0.1, 0.3, h.z);
   red = smoothstep(0.78, 0.85, hx) * (1.0 - smoothstep(1.06, 1.1, hx)) * lit * smoothstep(0.06, 0.2, h.y);
   float green = smoothstep(0.22, 0.27, h.x) * (1.0 - smoothstep(0.47, 0.52, h.x)) * lit * smoothstep(0.15, 0.3, h.y);
-  hx = mix(hx, 0.968, red * 0.6 * uGrade);
+  float target = uHue < 0.5 ? uHue + 1.0 : uHue;           // unwrapped like hx
+  hx = mix(hx, target, red * uHueMix * uGrade);
   h.x = fract(hx);
   h.y = mix(h.y, max(h.y, 0.86), red * uGrade);
+  h.y = mix(h.y, h.y * uManeSat, red);
+  h.z = mix(h.z, min(1.0, h.z * uManeVal), red);
   h.y = mix(h.y, min(1.0, h.y * 1.1 + 0.06), green * uGrade);
   h.z = mix(h.z, min(1.0, h.z * 1.5 + 0.1), (red + green) * uGrade);
   return hsv2rgb(h);
@@ -120,6 +131,11 @@ vec4 cel(vec2 s) {
   if (c.a <= 0.0) return vec4(0.0);
   float red;
   c.rgb = grade(c.rgb, red);
+  // her mood's glow: the colour pulled toward the tint, its brightness kept
+  if (uTintAmt > 0.0) {
+    float v = max(max(c.r, c.g), c.b);
+    c.rgb = mix(c.rgb, uTint * v, uTintAmt * (0.3 + 0.7 * red));
+  }
   // speckles on the red parts: a fixed star field plus a few that twinkle per drawing.
   // One speck is about one screen pixel whatever her size, and sticks to the body.
   if (red > 0.0 && uSparkle > 0.0) {
@@ -317,6 +333,7 @@ const UNIFORMS = [
   'uSit', 'uKickL', 'uKickR',
   'uSmear', 'uEcho', 'uGlitch', 'uGlitchSeed',
   'uSplit', 'uCollapse', 'uDissolve', 'uSparkle', 'uGrade', 'uSil', 'uMisreg', 'uRim', 'uAlpha', 'uPx',
+  'uHue', 'uHueMix', 'uManeSat', 'uManeVal', 'uTint', 'uTintAmt',
 ];
 
 export const SPRITE = {
@@ -440,7 +457,15 @@ export class SpriteRenderer {
     gl.uniform1f(u.uGrade, s.grade);
     gl.uniform4f(u.uSil, s.sil[0], s.sil[1], s.sil[2], s.silAmount);
     gl.uniform2f(u.uMisreg, s.misreg[0], s.misreg[1]);
-    gl.uniform3f(u.uRim, 0.48, 0.24, 1.0);
+    const rim = s.rim || [0.48, 0.24, 1.0];
+    gl.uniform3f(u.uRim, rim[0], rim[1], rim[2]);
+    gl.uniform1f(u.uHue, s.hue ?? 0.968);
+    gl.uniform1f(u.uHueMix, s.hueMix ?? 0.6);
+    gl.uniform1f(u.uManeSat, s.maneSat ?? 1);
+    gl.uniform1f(u.uManeVal, s.maneVal ?? 1);
+    const tint = s.tint || [1, 1, 1];
+    gl.uniform3f(u.uTint, tint[0], tint[1], tint[2]);
+    gl.uniform1f(u.uTintAmt, s.tintAmt || 0);
     gl.uniform1f(u.uAlpha, s.alpha);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
