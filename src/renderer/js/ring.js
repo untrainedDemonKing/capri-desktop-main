@@ -189,7 +189,7 @@ export class Ring {
     }
     const { capri, panel } = this;
     capri.wake?.();
-    if (panel.visible && ['info', 'idle'].includes(panel.current?.kind)) panel.hide();
+    panel.park(); // (what's showing would be under the ring: a passing line goes, Claude's news waits)
     this.isOpen = true;
     panel.quiet = true;
     this.state = {};

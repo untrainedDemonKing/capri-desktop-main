@@ -74,7 +74,7 @@ function file() {
 
 function load(fresh = false) {
   if (fresh) flush(); // (a change not written yet would be lost to the read)
-  if (cache && !fresh) return cache;
+  if (cache && (!fresh || pending)) return cache; // (pending still: the write failed, the file is older than what we hold)
   try {
     cache = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file(), 'utf8')) };
   } catch {
@@ -113,6 +113,8 @@ function flush() {
     fs.renameSync(tmp, file());
   } catch (err) {
     console.error('[capri] could not save config:', err.message);
+    // (a file held by another program, a full disk): not lost, tried again with the next change or at exit
+    pending = true;
   }
 }
 

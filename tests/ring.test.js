@@ -278,8 +278,10 @@ test('while the menu is open a prompt or a chat steps it aside, Claude\'s news w
   const said = [];
   const p = Object.create(Panel.prototype);
   p.say = (m) => said.push(m.line);
-  p.quiet = true;
+  p.held = { kind: 'done', line: 'отложено до открытия', heldAt: performance.now() };
+  p.quiet = true; // (the menu opens: what was put aside for it stays put aside)
   assert.equal(p.quiet, true);
+  assert.equal(p.held.line, 'отложено до открытия');
   p.held = { kind: 'done', line: 'готово', heldAt: performance.now() };
   p.quiet = false;
   assert.equal(p.quiet, false);
@@ -291,6 +293,27 @@ test('while the menu is open a prompt or a chat steps it aside, Claude\'s news w
   p.quiet = false;
   await new Promise((r) => setTimeout(r, 450));
   assert.deepEqual(said, ['готово'], 'three minutes old: not worth saying');
+});
+
+test('opening the menu over a panel: a passing line goes, Claude\'s news waits, a prompt and a chat stay', async () => {
+  const { Panel } = await load('panel.js');
+  const make = (current) => {
+    const p = Object.create(Panel.prototype);
+    Object.assign(p, { current, el: { hidden: false }, suspended: false, leaving: false, held: null, hid: 0 });
+    p.hide = () => { p.hid += 1; };
+    return p;
+  };
+  const park = (current) => { const p = make(current); p.park(); return p; };
+  assert.equal(park({ kind: 'info' }).hid, 1);
+  assert.equal(park({ kind: 'idle' }).held, null);
+  const done = park({ kind: 'done', line: 'готово' });
+  assert.equal(done.hid, 1);
+  assert.equal(done.held.line, 'готово', 'kept for after');
+  assert.equal(park({ kind: 'error', line: 'упало' }).held.line, 'упало');
+  assert.equal(park({ kind: 'alert' }).hid, 0, 'a permission prompt stays');
+  assert.equal(park({ kind: 'info', chat: { send: 'x' } }).hid, 0, 'her chat stays');
+  assert.equal(park({ kind: 'info', guide: true }).hid, 0, 'her guide stays');
+  assert.equal(park(null).hid, 0);
 });
 
 test('turning conversation off keeps the mic for the meter; a finished turn closes it unless the meter wants it', async () => {

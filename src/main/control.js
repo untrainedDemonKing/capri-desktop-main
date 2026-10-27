@@ -156,10 +156,12 @@ ${script}
 // ---------- windows ----------
 
 const SHOW = { minimize: 6, maximize: 3, restore: 9 };
+const OPS = new Set([...Object.keys(SHOW), 'focus', 'close']);
 
 // op: 'minimize' | 'maximize' | 'restore' | 'focus' | 'close'; name: a program or a word of a title.
 // Resolves with how many windows it touched.
 async function windowOp(op, name) {
+  if (!OPS.has(op)) throw new Error('what to do with the window?'); // (it goes into the script as code)
   const target = String(name || '').trim().slice(0, 60);
   if (!target) throw new Error('which window?');
   const act = op === 'focus' ? '[void][CapriHands]::Focus($h)'
@@ -263,4 +265,4 @@ $ws.SendKeys('{ENTER}')
   return true;
 }
 
-module.exports = { windowOp, showDesktop, type, prepareMessage, sendPrepared, appKey, APPS };
+module.exports = { windowOp, showDesktop, type, prepareMessage, sendPrepared, appKey, APPS, OPS };

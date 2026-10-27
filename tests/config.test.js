@@ -75,3 +75,21 @@ test('the file is replaced whole, never half written', () => {
   assert.equal(fs.existsSync(`${config.file()}.tmp`), false);
   assert.equal(onDisk().persona.length, 5000);
 });
+
+test('a write that fails is kept and tried again; a fresh read does not throw it away', () => {
+  const realWrite = fs.writeFileSync;
+  const realError = console.error;
+  console.error = () => {};
+  fs.writeFileSync = () => { throw new Error('EBUSY: the file is held by another program'); };
+  try {
+    config.save({ userName: 'Вика' });
+    config.flush();
+    assert.equal(config.load(true).userName, 'Вика', 'what we hold is newer than the file');
+  } finally {
+    fs.writeFileSync = realWrite;
+    console.error = realError;
+  }
+  assert.notEqual(onDisk().userName, 'Вика', 'not written yet');
+  config.flush();
+  assert.equal(onDisk().userName, 'Вика', 'written once the file is free');
+});

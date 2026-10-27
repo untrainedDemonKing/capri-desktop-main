@@ -37,7 +37,7 @@ const MEDIA_ASK = [
   ['pause', /\b(pause|pausa|pausar)\b|stop (the )?music|arrête la musique|пауз/i],
   ['next', /\b(next|skip|suivante?|siguiente|próxima|proxima)\b|passe (à )?la suivante|salta|pula|следующ/i],
   ['previous', /\b(previous|précédente?|anterior)\b|предыдущ/i],
-  ['play', /\b(resume|reprends|reanuda|retoma)\b|relance la musique|remets la musique|продолж/i],
+  ['play', /\b(resume|reprends|reanuda|retoma)\b|relance la musique|remets la musique|продолж[а-яё]*\s+(?:музык|песн|трек)/i], // ("продолжай" alone is "go on")
   ['volup', /\b(louder|plus fort)\b|monte le son|turn (it )?up|sube el volumen|aumenta o volume|громче/i],
   ['voldown', /\b(quieter|moins fort)\b|baisse le son|turn (it )?down|baja el volumen|abaixa o volume|тише/i],
   ['mute', /\bmute\b|coupe le son|silencia|sem som|выключи звук/i],
@@ -46,6 +46,7 @@ const MUSIC_WORD = /musi|chanson|song|track|titre|morceau|spotify|canci|faixa|п
 // "put X on Spotify", "mets X sur Spotify", "pon X en Spotify", "coloca X no Spotify", "включи X в Spotify"
 const SPOTIFY_ASK = /(?:play|put on|put|mets|joue|lance|écoute|pon|toca|reproduce|coloca|toque|включи|поставь)\s+(?:moi\s+|me\s+)?(.+?)\s+(?:on|sur|en|no|na|в)\s+spotify/i;
 const MEDIA_ACTIONS = new Set(MEDIA_ASK.map(([action]) => action));
+const TRANSPORT = new Set(['pause', 'play', 'next', 'previous']); // the keys of a player (the rest is the volume)
 // what her tag needs to find in your message before it does anything: a small model tags answers about
 // anything ("[[music: synthwave]]" under a film tip), and music and the media keys act right away
 const LISTEN = /[ée]cout|listen|escuch|\bouv(ir|e)\b|слуша|playlist|album|\b(play|joue|mets|pon|toca|coloca)\b|включи|поставь/i;
@@ -103,6 +104,7 @@ export class Chat {
     this.hands = null;   // hands.js: her hands on the PC (windows, messages)
     this.eyes = null;    // eyes.js: what's on your screen
     this.screenNow = ''; // what she saw this turn, if you asked about the screen
+    this.later = '';     // what you said (your voice) while she was still answering
     this.onSetup = null; // (status) => void: she can't answer yet (app.js hands it to setup.js)
     this.onBetterModel = null; // () => void: a bigger model than the tiny one she's on (setup.js)
     host.onChatDelta(({ id, text }) => this.onDelta(id, text));
@@ -112,7 +114,14 @@ export class Chat {
     return this.brain.t.chat;
   }
 
-  async start() {
+  // Opens her chat. Asked twice before it's open (a tap on her and your voice at once, a second thing you
+  // said while the first is still being heard): the same opening, not a second one on top of it.
+  start() {
+    this.starting ||= this.begin().finally(() => { this.starting = null; });
+    return this.starting;
+  }
+
+  async begin() {
     const { capri, host, t } = this;
     if (this.open) {
       this.panel.chatInput.focus();
@@ -157,7 +166,6 @@ export class Chat {
     this.listApps();
     const shortModel = status.model.replace(/:latest$/, '').replace(/^models\//, ''); // Ollama's tag, Gemini's prefix
     const tiny = status.provider === 'ollama' && TINY.test(status.model) && this.onBetterModel;
-    host.focusOverlay(true); // the keyboard, for typing to her
     const shown = this.panel.say({
       kind: 'chat',
       face: 'look',
@@ -180,10 +188,10 @@ export class Chat {
       onLeave: () => this.close(),
       hold: null,
     });
-    if (!shown) {
-      host.focusOverlay(false); // something more important is on (a permission prompt)
-      return;
-    }
+    if (!shown) return; // something more important is on (a permission prompt)
+    // the keyboard, for typing to her (only now: her ring menu, if it was open, has stepped aside for her
+    // in the line above, and gives the keyboard back as it goes)
+    host.focusOverlay(true);
     this.open = true;
     setTimeout(() => this.panel.chatInput.focus(), 150); // once the overlay has the keyboard
     capri.perform('hop');
@@ -196,10 +204,25 @@ export class Chat {
     this.speech?.stop();
     if (this.turn) this.host.chatStop(this.turn);
     this.turn = 0;
+    this.later = '';
     this.host.focusOverlay(false);
     this.bond?.reflect(this.history, { closing: true }); // what she learned about you, into her notebook
     this.capri.nextMove = performance.now() + 30000;
     this.capri.nextGaze = performance.now() + 60000;
+  }
+
+  // Something you said with your voice (ears.js): sent now, or, if she's still answering, as soon as she's
+  // done (it was heard and paid for: not thrown away).
+  say(text) {
+    if (this.turn) this.later = [this.later, text].filter(Boolean).join(' ');
+    else this.send(text);
+  }
+
+  // what was said while she answered, now
+  sayLater() {
+    const text = this.later;
+    this.later = '';
+    if (text && this.open) setTimeout(() => this.send(text), 700);
   }
 
   async send(text) {
@@ -251,6 +274,7 @@ export class Chat {
       const known = { busy: 'swamped', gone: 'gone', credit: 'credit', badkey: 'badkey', refused: 'refused' }[res.code];
       this.panel.stream(known ? this.t[known] : `${this.t.failed} ${res.error}`, { done: true });
       this.panel.setChatBusy(false);
+      this.later = ''; // (it would only fail the same way)
       return;
     }
     const answer = clean(res.text) || '…';
@@ -263,6 +287,7 @@ export class Chat {
     if (!expr && felt.tags.includes('jokeAsk')) this.capri.react('laugh'); // her own joke cracks her up
     this.speech?.say(answer, { mood: expr || this.heart?.mood.mood || 'calm', kind: 'chat' });
     this.panel.setChatBusy(false);
+    this.sayLater();
     this.bond?.replied(answer, expr || ''); // your next message tells her how this one landed
     const acted = this.agent ? null : this.after(res.text, answer, asked, early, text);
     if (grew) Promise.resolve(acted).catch(() => {}).then(() => this.closer(grew, answer));
@@ -310,13 +335,22 @@ export class Chat {
     const intent = this.hands?.parse(text);
     if (intent) return { kind: 'hands', intent };
     const media = MEDIA_ASK.find(([, re]) => re.test(text))?.[0];
-    if (media && (count <= 5 || MUSIC_WORD.test(text))) return { kind: 'media', action: media };
+    if (media && this.mediaAsked(media, text, count)) return { kind: 'media', action: media };
     const song = SPOTIFY_ASK.exec(text)?.[1];
     if (song) return { kind: 'music', song };
     const app = this.askedToClose(text);
     if (app) return { kind: 'close', name: app };
     if (OPEN_ASK.test(text) && count <= 8) return { kind: 'open', text };
     return null;
+  }
+
+  // Whether "next", "pause", "louder"... is about the music, and not just a word in what you're saying
+  // ("следующий вопрос", "next, please"): about music itself, or short; the track keys also only when
+  // something is playing (or it's one or two words), the volume ones in a few words.
+  mediaAsked(action, text, count) {
+    if (MUSIC_WORD.test(text)) return true;
+    if (!TRANSPORT.has(action)) return count <= 5;
+    return count <= 2 || (count <= 5 && Boolean(this.life?.media?.playing));
   }
 
   // Doing it now. Resolves with her line about it ({ line, face }), or null if there was nothing to do.
@@ -607,13 +641,18 @@ export class Chat {
   }
 }
 
-// The model's answer as she'd say it: no reasoning block, no markdown marks.
-function clean(text) {
+// The model's answer as she'd say it: no reasoning block, no markdown marks (**bold**, *emphasis*, `code`,
+// # headings, bullets), and everything else as it was: C#, snake_case, 2*3.
+export function clean(text) {
   return String(text)
     .replace(/<think>[\s\S]*?(<\/think>|$)/g, '')
     .replace(/\[\[[^\]]*(\]\]|$)/g, '') // her tags (read from the raw answer, never shown)
     .replace(/^\s*\[\s*(?:mood|настроение)\s*:[^\]]*\]?\s*/i, '') // her mood tag, written sloppily
-    .replace(/[*_`#]+/g, '')
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/\*{2,}/g, '') // (a ** still waiting for its other half, while the answer comes in)
+    .replace(/(^|[\s(])([*_])(?=\S)([^*_\n]*?\S)\2(?=[\s.,!?;:)…]|$)/g, '$1$3') // *emphasis*, _emphasis_ (not 2 * 3 * 4)
+    .replace(/`+/g, '')
+    .replace(/^[ \t]*(?:#{1,6}[ \t]+|[*•][ \t]+)/gm, '')
     .replace(/[ \t]+\n/g, '\n')
     .trim();
 }

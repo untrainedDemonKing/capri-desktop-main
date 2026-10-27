@@ -307,8 +307,8 @@ async function boot() {
   ears.configure(config);
   ears.onTranscript = (text) => {
     // show what you said and send it to her chat (open it first if need be)
-    if (!chat.open) chat.start().then(() => setTimeout(() => chat.send(text), 400));
-    else chat.send(text);
+    if (!chat.open) chat.start().then(() => setTimeout(() => chat.say(text), 400));
+    else chat.say(text);
   };
   // Her circular menu (ring.js): right-click her. Its settings are the tray menu's, plus the mic and the bond.
   ring = new Ring({

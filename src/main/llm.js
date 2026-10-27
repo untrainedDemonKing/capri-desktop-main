@@ -104,24 +104,35 @@ async function openaiChat(p, { model, messages }, onDelta, signal) {
   const decoder = new TextDecoder();
   let buffer = '';
   let text = '';
+  // one line of the stream; true when it says the answer is over
+  const feed = (line) => {
+    if (!line.startsWith('data:')) return false;
+    const data = line.slice(5).trim();
+    if (data === '[DONE]') return true;
+    let msg;
+    try {
+      msg = JSON.parse(data);
+    } catch {
+      return false; // a keep-alive, or a server's own chatter: not a piece of the answer
+    }
+    if (msg.error) throw new Error(msg.error.message || msg.error);
+    const piece = msg.choices?.[0]?.delta?.content || ''; // reasoning comes apart, and is left out
+    if (piece) {
+      text += piece;
+      onDelta(piece);
+    }
+    return false;
+  };
   for await (const chunk of res.body) {
     buffer += decoder.decode(chunk, { stream: true });
     let nl;
     while ((nl = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (data === '[DONE]') return text;
-      const msg = JSON.parse(data);
-      if (msg.error) throw new Error(msg.error.message || msg.error);
-      const piece = msg.choices?.[0]?.delta?.content || ''; // reasoning comes apart, and is left out
-      if (piece) {
-        text += piece;
-        onDelta(piece);
-      }
+      if (feed(line)) return text;
     }
   }
+  feed(buffer.trim()); // (the last line of an answer may come without its newline)
   return text;
 }
 
@@ -142,9 +153,12 @@ function claudeVersion() {
 }
 
 function claudeChat(cfg, text, persona, onDelta, signal) {
-  // her persona, from a file: too long and too full of quotes and newlines for cmd's command line
-  const personaFile = path.join(os.tmpdir(), 'capri-persona.txt');
-  fs.writeFileSync(personaFile, persona);
+  // her persona, from a file: too long and too full of quotes and newlines for cmd's command line. It has
+  // what she knows about you in it: a folder of its own that only you can open, gone once she's answered.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-'));
+  const personaFile = path.join(dir, 'persona.txt');
+  fs.writeFileSync(personaFile, persona, { mode: 0o600 });
+  const tidy = () => fs.rmSync(dir, { recursive: true, force: true });
   const args = ['-p', '--output-format', 'stream-json', '--verbose',
     '--permission-mode', CLAUDE_MODES.includes(cfg.claudeMode) ? cfg.claudeMode : 'default',
     '--append-system-prompt-file', quote(personaFile)];
@@ -156,6 +170,7 @@ function claudeChat(cfg, text, persona, onDelta, signal) {
       shell: process.platform === 'win32',
       windowsHide: true,
     });
+    child.stdin.on('error', () => {}); // (it may be gone before it reads the message: that's the 'close' below, not a crash)
     const kill = () => (process.platform === 'win32'
       ? execFile('taskkill', ['/pid', String(child.pid), '/t', '/f'], () => {})
       : child.kill());
@@ -188,8 +203,12 @@ function claudeChat(cfg, text, persona, onDelta, signal) {
     });
     child.stderr.on('data', (chunk) => { errors += chunk; });
     child.stdin.end(text);
-    child.on('error', reject);
+    child.on('error', (err) => {
+      tidy();
+      reject(err);
+    });
     child.on('close', () => {
+      tidy();
       if (signal.aborted) return reject(new Error('stopped'));
       if (result?.is_error) return reject(new Error(result.result || 'Claude Code failed'));
       if (!result) return reject(new Error(errors.trim().slice(0, 300) || 'Claude Code gave no answer'));

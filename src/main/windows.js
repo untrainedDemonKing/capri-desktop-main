@@ -41,7 +41,7 @@ function startWindowWatch({ overlay, onUpdate }) {
       } catch {
         return;
       }
-      if (stopped || overlay.isDestroyed()) return;
+      if (stopped || overlay.isDestroyed() || !Array.isArray(snap?.wins)) return; // (not a snapshot: an error line of the script's)
       const bounds = overlay.getBounds();
       const wins = snap.wins
         .map((w) => toOverlay(w, bounds))

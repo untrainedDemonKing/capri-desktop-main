@@ -102,6 +102,19 @@ export class Panel {
     return !this.el.hidden && !this.suspended && !this.leaving;
   }
 
+  // Her circular menu is about to open over what's showing (ring.js): a passing line goes, what Claude
+  // said ('done', an error, her report) waits and is shown once the menu is shut; a permission prompt, her
+  // chat and her guide stay where they are.
+  park() {
+    const cur = this.current;
+    if (!cur || !this.visible) return;
+    if (['info', 'idle', 'work'].includes(cur.kind) && !cur.chat && !cur.guide) this.hide();
+    else if (['done', 'error', 'report'].includes(cur.kind) && !cur.chat && !cur.guide) {
+      this.held = { ...cur, heldAt: performance.now() };
+      this.hide();
+    }
+  }
+
   // Her circular menu is open (ring.js): see whileMenuOpen. Once it's shut, what Claude said meanwhile shows.
   get quiet() {
     return this.menuOpen === true;
@@ -109,7 +122,8 @@ export class Panel {
 
   set quiet(on) {
     this.menuOpen = on;
-    const held = !on && this.held;
+    if (on) return;
+    const held = this.held;
     this.held = null;
     if (held && performance.now() - held.heldAt < 120000) setTimeout(() => this.say(held), 400);
   }

@@ -583,7 +583,7 @@ const voice = {
       if (sound?.sinkError) root.append(note(v.outFailed));
     }
     root.append(buttons(button(v.outTest, () => sound?.test())));
-    root.append(toggle(v.monitor, state.monitor === true, (on) => {
+    root.append(toggle(v.monitor, state.monitor === true && cfg.ears === true, (on) => {
       state.monitor = on;
       state.monitorFailed = false;
       if (on) {
