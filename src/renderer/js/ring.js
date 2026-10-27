@@ -165,7 +165,16 @@ export class Ring {
   // The settings as they are now (app.js passes every change along); the open card follows.
   configure(cfg) {
     this.cfg = { ...cfg };
-    if (this.isOpen && !this.dragging) this.refresh();
+    if (!this.isOpen || this.dragging) return;
+    if (this.builtFor !== (this.capri.scale || 0.8)) this.rebuild(); // her size changed: the ring goes round her new size
+    else this.refresh();
+  }
+
+  rebuild() {
+    this.runCleanups();
+    this.build();
+    for (const g of this.root.querySelectorAll('.ring__sector')) g.classList.toggle('is-on', g.dataset.tab === this.tab);
+    this.refresh();
   }
 
   toggle() {
@@ -189,7 +198,7 @@ export class Ring {
     this.root.classList.add('is-entering');
     setTimeout(() => this.root.classList.remove('is-entering'), 420);
     this.stay();
-    window.addEventListener('keydown', this.onKey);
+    window.addEventListener('keydown', this.onKey, true); // (capturing: Esc is the ring's, not the chat's under it)
     this.select(tab || this.tab);
     this.onToggle?.(true);
   }
@@ -203,21 +212,25 @@ export class Ring {
     this.runCleanups();
     this.root.hidden = true;
     this.root.replaceChildren();
-    window.removeEventListener('keydown', this.onKey);
+    window.removeEventListener('keydown', this.onKey, true);
     if (this.focused) this.host.focusOverlay?.(false); // the keyboard back where it was (only if the notebook form took it)
     this.focused = false;
     this.capri.nextMove = performance.now() + 20000;
     this.onToggle?.(false);
   }
 
-  // She stays where she is meanwhile.
+  // She stays where she is meanwhile: no wandering off, and no dozing off while you're in her menu.
   stay() {
-    this.capri.nextMove = this.capri.nextGaze = performance.now() + STAY_MS;
+    const now = performance.now();
+    this.stayedAt = now;
+    this.capri.nextMove = this.capri.nextGaze = now + STAY_MS;
+    this.capri.lastActivity = now;
   }
 
   key(e) {
     if (e.key === 'Escape') {
       e.preventDefault();
+      e.stopPropagation(); // (a chat open under the ring stays open)
       this.hide();
       return;
     }
@@ -237,6 +250,7 @@ export class Ring {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const s = this.capri.scale || 0.8;
+    this.builtFor = s;
     const feet = this.capri.pos || { x: vw / 2, y: vh * 0.8 };
     // around her body: from her head to a little below her hips
     const cx = feet.x;
@@ -276,6 +290,10 @@ export class Ring {
     root.oncontextmenu = (e) => {
       e.preventDefault();
       this.hide();
+    };
+    // the pointer moving over it is you being here: she doesn't doze (once in a few seconds is enough)
+    root.onpointermove = () => {
+      if (performance.now() - (this.stayedAt || 0) > 5000) this.stay();
     };
   }
 

@@ -22,6 +22,15 @@ const PRIORITY = { info: 1, idle: 1, work: 2, done: 3, error: 3, report: 3, chat
 const DECODE_STEP_MS = 28;
 const COUNT_MS = 700; // her report's numbers counting up
 
+// While her circular menu is open (ring.js): what still reaches you. A permission prompt, a chat you
+// asked for and a step of her guide are 'urgent' (the menu steps aside for them); Claude's news
+// ('later') would be drawn under the menu, so it waits and is shown once the menu is shut; her small
+// talk is dropped ('drop').
+export function whileMenuOpen(msg) {
+  if (msg.kind === 'alert' || msg.guide || msg.chat) return 'urgent';
+  return PRIORITY[msg.kind] < 3 ? 'drop' : 'later';
+}
+
 export class Panel {
   constructor({ panel, ticker, labels }) {
     this.el = panel;
@@ -58,6 +67,8 @@ export class Panel {
     this.tickerShownAt = 0;
     this.tickerTimer = null;
     this.missed = null; // a Claude message that came while you were chatting with her, shown after
+    this.held = null;   // the same, for while her circular menu was open (see `quiet`)
+    this.onUrgent = null; // () => void: something the menu has to step aside for
 
     // talking to her (chat.js): a line to type in, under her answer
     this.chatForm = panel.querySelector('.panel__chat');
@@ -91,6 +102,18 @@ export class Panel {
     return !this.el.hidden && !this.suspended && !this.leaving;
   }
 
+  // Her circular menu is open (ring.js): see whileMenuOpen. Once it's shut, what Claude said meanwhile shows.
+  get quiet() {
+    return this.menuOpen === true;
+  }
+
+  set quiet(on) {
+    this.menuOpen = on;
+    const held = !on && this.held;
+    this.held = null;
+    if (held && performance.now() - held.heldAt < 120000) setTimeout(() => this.say(held), 400);
+  }
+
   // Message: { kind, line, tag, quote, reply, summary, log: [{verb, target, error}], actions, guide,
   //            hold (ms | null for sticky) }
   // reply: Claude's whole answer, in a block that scrolls
@@ -107,8 +130,16 @@ export class Panel {
   // onLeave: () => void, when this message goes (closed, timed out or replaced)
   say(msg) {
     const cur = this.current;
-    // her circular menu is open (ring.js): only Claude's news and prompts break in, not her small talk
-    if (this.quiet && PRIORITY[msg.kind] < 3) return false;
+    // her circular menu is open: it steps aside for what you asked for or must answer, and Claude's
+    // news waits for it to be shut (whileMenuOpen)
+    if (this.quiet) {
+      const gate = whileMenuOpen(msg);
+      if (gate === 'urgent') this.onUrgent?.();
+      else {
+        if (gate === 'later') this.held = { ...msg, heldAt: performance.now() };
+        return false;
+      }
+    }
     // don't step on something more important that just appeared (one step of her guide follows another)
     const steps = cur?.guide && msg.guide;
     if (cur && this.visible && !steps && cur.kind !== msg.kind && PRIORITY[cur.kind] > PRIORITY[msg.kind] && performance.now() - cur.at < 2600) {

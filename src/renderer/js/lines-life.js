@@ -244,7 +244,7 @@ export const LIFE_LINES = {
       mic: {
         off: 'Микрофон выключен. Включи, чтобы говорить с ней голосом.',
         listen: 'Слушать меня',
-        live: 'Микрофон открыт, пока эта вкладка на экране: значок в углу мигает.',
+        live: 'Микрофон открыт, пока эта вкладка на экране: значок в углу мигает. Разговор на это время на паузе — можно спокойно проверять.',
         denied: 'Не получилось открыть микрофон: нет устройства или нет доступа.',
         retry: 'Ещё раз',
         device: 'Устройство', defaultDevice: 'По умолчанию (системный)',
@@ -528,7 +528,7 @@ export const LIFE_LINES = {
       mic: {
         off: 'The microphone is off. Turn it on to talk to her by voice.',
         listen: 'Listen to me',
-        live: 'The mic is open while this tab is on screen: the badge in the corner blinks.',
+        live: 'The mic is open while this tab is on screen: the badge in the corner blinks. Talking to me is paused meanwhile, so test away.',
         denied: "Couldn't open the microphone: no device, or no access.",
         retry: 'Try again',
         device: 'Device', defaultDevice: 'Default (system)',

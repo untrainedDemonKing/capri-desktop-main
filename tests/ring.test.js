@@ -222,13 +222,11 @@ test('hearing your own mic on the output picked: needs the mic on, keeps it open
   const real = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   let stopped = 0;
   const sinks = [];
-  let contexts = 0;
   Object.defineProperty(globalThis, 'navigator', {
     configurable: true,
     value: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop: () => { stopped += 1; } }] }) } },
   });
   globalThis.AudioContext = class {
-    constructor() { contexts += 1; }
     setSinkId(id) { sinks.push(id); return Promise.resolve(); }
     createMediaStreamSource() { return { connect() {} }; }
     createAnalyser() { return { fftSize: 0, getByteTimeDomainData() {} }; }
@@ -261,6 +259,98 @@ test('hearing your own mic on the output picked: needs the mic on, keeps it open
     if (real) Object.defineProperty(globalThis, 'navigator', real);
     else delete globalThis.navigator;
     delete globalThis.AudioContext;
+  }
+});
+
+test('while the menu is open a prompt or a chat steps it aside, Claude\'s news waits, small talk is dropped', async () => {
+  const { whileMenuOpen, Panel } = await load('panel.js');
+  assert.equal(whileMenuOpen({ kind: 'alert' }), 'urgent');
+  assert.equal(whileMenuOpen({ kind: 'info', chat: { send: 'x' } }), 'urgent');
+  assert.equal(whileMenuOpen({ kind: 'info', guide: true }), 'urgent');
+  assert.equal(whileMenuOpen({ kind: 'done' }), 'later');
+  assert.equal(whileMenuOpen({ kind: 'error' }), 'later');
+  assert.equal(whileMenuOpen({ kind: 'report' }), 'later');
+  assert.equal(whileMenuOpen({ kind: 'info' }), 'drop');
+  assert.equal(whileMenuOpen({ kind: 'idle' }), 'drop');
+  assert.equal(whileMenuOpen({ kind: 'work' }), 'drop');
+
+  // what waited is shown once the menu is shut (and not if it's stale)
+  const said = [];
+  const p = Object.create(Panel.prototype);
+  p.say = (m) => said.push(m.line);
+  p.quiet = true;
+  assert.equal(p.quiet, true);
+  p.held = { kind: 'done', line: 'готово', heldAt: performance.now() };
+  p.quiet = false;
+  assert.equal(p.quiet, false);
+  assert.equal(p.held, null);
+  await new Promise((r) => setTimeout(r, 450));
+  assert.deepEqual(said, ['готово']);
+  p.quiet = true;
+  p.held = { kind: 'done', line: 'старое', heldAt: performance.now() - 3 * 60000 };
+  p.quiet = false;
+  await new Promise((r) => setTimeout(r, 450));
+  assert.deepEqual(said, ['готово'], 'three minutes old: not worth saying');
+});
+
+test('turning conversation off keeps the mic for the meter; a finished turn closes it unless the meter wants it', async () => {
+  const { Ears } = await load('ears.js');
+  const real = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let stopped = 0;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop: () => { stopped += 1; } }] }) } },
+  });
+  globalThis.AudioContext = class {
+    createMediaStreamSource() { return { connect() {} }; }
+    createAnalyser() { return { fftSize: 0, getByteTimeDomainData() {} }; }
+    close() { return Promise.resolve(); }
+  };
+  globalThis.MediaRecorder = class {
+    static isTypeSupported() { return false; }
+    start() { this.state = 'recording'; }
+    stop() { this.state = 'inactive'; } // (no onstop: no transcription here)
+  };
+  let ears;
+  try {
+    ears = new Ears({ host: {}, capri: {}, panel: { say() {} }, voice: {}, brain: { lang: 'ru' }, speech: {} });
+    ears.configure({ ears: true, converse: true });
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(ears.state, 'idle');
+    await ears.watch(true); // the menu's meter, while she listens anyway
+    ears.configure({ ears: true, converse: false });
+    assert.equal(ears.state, 'metering', 'the meter still has its mic');
+    assert.ok(ears.stream);
+    assert.equal(stopped, 0);
+    await ears.watch(false);
+    assert.equal(ears.state, 'off', 'and let go with the meter');
+    assert.equal(stopped, 1);
+
+    // press-to-talk: the mic closes after the turn, unless the meter is on
+    await ears.listenOnce();
+    assert.equal(ears.single, true);
+    ears.finish(); // (what the vad does when you go quiet; then the answer comes back)
+    ears.afterTurn();
+    assert.equal(ears.state, 'off');
+    await ears.watch(true);
+    await ears.listenOnce();
+    ears.finish();
+    ears.afterTurn();
+    assert.equal(ears.state, 'metering');
+    await ears.watch(false);
+    assert.equal(ears.state, 'off');
+
+    // conversation off while no menu is open: closed
+    ears.configure({ ears: true, converse: true });
+    await new Promise((r) => setTimeout(r, 10));
+    ears.configure({ ears: true, converse: false });
+    assert.equal(ears.state, 'off');
+  } finally {
+    ears?.shutMic(); // (a failed assert must not leave the vad timer running)
+    if (real) Object.defineProperty(globalThis, 'navigator', real);
+    else delete globalThis.navigator;
+    delete globalThis.AudioContext;
+    delete globalThis.MediaRecorder;
   }
 });
 

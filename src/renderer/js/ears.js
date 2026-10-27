@@ -133,7 +133,15 @@ export class Ears {
 
   stopConverse() {
     this.single = false;
-    if (!this.enabled || !this.converse) this.shutMic();
+    if (this.enabled && this.watchers > 0 && this.stream) {
+      // her ring menu is still showing the level (or playing your mic back): the mic stays open for it
+      if (!this.recording) {
+        this.metering = true;
+        this.setState('metering');
+      }
+      return;
+    }
+    this.shutMic();
   }
 
   // `quiet`: asked for by her ring menu's level meter, which says so itself if it can't: no panel,
@@ -303,8 +311,9 @@ export class Ears {
       if (this.recording && this.state !== 'listening') this.setState('listening');
     }
     if (!this.recording) {
-      // conversation mode, between turns: start a turn when you begin to speak
-      if (this.converse && voice && !this.speaking) this.startRecording();
+      // conversation mode, between turns: start a turn when you begin to speak (not while her menu is
+      // showing the level or playing your mic back: then you're testing it, not talking to her)
+      if (this.converse && voice && !this.speaking && this.watchers === 0) this.startRecording();
       return;
     }
     const spoke = this.voiceSince && now - this.voiceSince > MIN_SPEECH_MS;
@@ -342,21 +351,19 @@ export class Ears {
     }
     const text = clean(res.text);
     if (text && text.length > 1) this.onTranscript?.(text);
-    else this.afterTurn(); // nothing understood: just keep listening
+    this.afterTurn(); // (nothing understood: just keep listening)
   }
 
-  // After a turn: in conversation mode, wait for her to finish talking, then listen again.
+  // After a turn: in conversation mode, wait for her to finish talking, then listen again (the vad
+  // picks your next turn up). Otherwise (press-to-talk, or conversation was switched off meanwhile)
+  // the mic closes, unless her ring menu is still showing its level.
   afterTurn() {
-    if (this.single) {
-      this.single = false;
-      if (this.converse) this.setState('idle');
-      else if (this.watchers > 0 && this.stream) {
-        this.metering = true; // her ring menu is still showing the level: the mic stays open for it
-        this.setState('metering');
-      } else this.shutMic();
-      return;
-    }
-    if (this.converse) this.setState('idle'); // the vad picks your next turn up
+    this.single = false;
+    if (this.converse) this.setState('idle');
+    else if (this.enabled && this.watchers > 0 && this.stream) {
+      this.metering = true;
+      this.setState('metering');
+    } else this.shutMic();
   }
 }
 

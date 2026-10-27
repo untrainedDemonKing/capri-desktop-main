@@ -6,7 +6,7 @@
 // Off unless you turn it on (her menu › Senses › Let her see my screen). While it's on, the eye by
 // the clock is open, and she tells you the first time she takes a look.
 
-import { pick, fmt } from './util.js';
+import { fmt } from './util.js';
 import { lifeLines } from './lines-life.js';
 import { ASSISTANT_NAMES } from './lines.js';
 

@@ -749,10 +749,16 @@ function rest(level) {
   watchPresence();
 }
 
+// The tooltip of her icon by the clock: her name, and which senses are live right now.
+function trayTip() {
+  const live = [senseState.eyes && '◉ screen', senseState.ears && (senseState.listening ? '● mic (open)' : '● mic')].filter(Boolean);
+  return live.length ? `Capri · ${live.join(' · ')}` : 'Capri';
+}
+
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(ROOT, 'assets', 'icons', 'tray.png'));
   tray = new Tray(icon);
-  tray.setToolTip('Capri');
+  tray.setToolTip(trayTip());
   tray.on('click', () => sendCommand('status'));
   buildTray();
 }
@@ -1017,7 +1023,10 @@ function registerIpc() {
   // how deeply she rests: the helpers watching your windows and music stop while she's out
   ipcMain.on('rest:level', (_e, level) => rest(String(level)));
   // her senses' indicator by the clock (an eye, a mic, a note): only the tray line cares
-  ipcMain.on('sense:state', (_e, state) => { senseState = state || {}; });
+  ipcMain.on('sense:state', (_e, state) => {
+    senseState = state || {};
+    tray?.setToolTip(trayTip()); // a sense is never silently on: the icon by the clock says so too
+  });
   // how she feels, for her menu's top line (only when the mood itself changes)
   ipcMain.on('mood:state', (_e, state) => {
     const changed = state?.mood !== moodState?.mood;

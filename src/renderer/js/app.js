@@ -230,7 +230,12 @@ async function boot() {
     // she may have moved out from under a still pointer: never leave a dead click zone behind
     refreshHit();
   };
-  capri.onTeleport = (phase) => (phase === 'start' ? panel.suspend() : panel.resume());
+  capri.onTeleport = (phase) => {
+    if (phase === 'start') {
+      ring?.hide(); // she's off somewhere (or folding away): the menu was drawn round where she stood
+      panel.suspend();
+    } else panel.resume();
+  };
   capri.chipAt = () => chip.center();
   capri.onStow = () => {
     chip.setMode(capri.mode);
@@ -312,6 +317,7 @@ async function boot() {
   });
   ring.configure(config);
   ring.onToggle = () => refreshHit(); // click-through again once it's shut
+  panel.onUrgent = () => ring.hide();  // a permission prompt, a chat or her guide: the menu steps aside
   life.ring = ring;
   eyes.ring = ring;
   // the always-visible badge: a sense is never silently on
@@ -504,7 +510,6 @@ async function boot() {
     hands.configure(cfg);
     rhythm.configure(cfg).catch(() => {});
     ears.configure(cfg);
-    ring.configure(cfg); // (after the senses: its Mic tab reads the ears)
     host.senseState({ eyes: eyes.enabled, ears: ears.enabled, listening: false });
     showSenses();
     capri.lang = cfg.lang;
@@ -546,6 +551,8 @@ async function boot() {
       panel.labels = linesFor(cfg.lang, cfg.assistant);
       document.documentElement.lang = cfg.lang;
     }
+    // last: it redraws its open card from everything above (the senses its Mic tab reads, the language, the colours)
+    ring.configure(cfg);
   });
 
   // Her voice, set up with buttons: which engine, then its key or address, then which voice, then a test.
