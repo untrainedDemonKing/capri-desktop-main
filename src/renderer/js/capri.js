@@ -82,6 +82,9 @@ export class Capri {
     this.tintTo = { tint: [1, 1, 1], amt: 0 };
     this.nextMoodBeat = 0;  // the next little sign of her mood (a vein, a blush, a sigh...)
     this.activityAct = null; // what she floats like while busy with something of hers (life.js): 'tinker', 'read', 'bop'
+    this.dancing = false;    // moving to the real beat (rhythm.js)
+    this.danceLevel = 0;     // how loud the music is, 0..1
+    this.manePop = 0;        // a mane flare on a beat, decays each frame
     this.nextHome = 0;
     this.dragging = false;
 
@@ -391,6 +394,15 @@ export class Capri {
       }
     }
     const pose = { ...NEUTRAL, ...base, ...act };
+    // dancing (rhythm.js): the beat pops her mane, and the louder the music the bigger her sway
+    if (this.dancing && !act) {
+      pose.mane = (pose.mane || 0) + this.manePop + this.danceLevel * 0.05;
+      const swell = 0.6 + this.danceLevel * 0.9;
+      pose.bob = (pose.bob || 0) * swell;
+      pose.tilt = (pose.tilt || 0) * swell;
+    }
+    this.manePop *= 0.6;
+    if (this.manePop < 0.01) this.manePop = 0;
     if (this.mode === 'sleep' && this.stance === 'sit' && !act) {
       Object.assign(pose, { head: 0.12, mane: -0.1, kickL: 0.03, kickR: 0.03, armL: -0.45, armR: -0.45 }); // dozing on the ledge
     } else if (this.stance === 'sit' && !act) {
@@ -596,6 +608,30 @@ export class Capri {
   setActivity(act) {
     this.activityAct = act;
     if (this.stance === 'stand' && !this.pointing) this.base = this.restBase();
+  }
+
+  // She starts (or stops) dancing to the real beat (rhythm.js): her float becomes the groove.
+  setDancing(on) {
+    if (on === this.dancing) return;
+    this.dancing = on;
+    this.danceLevel = 0;
+    this.setActivity(on ? 'dance' : null);
+  }
+
+  // A beat landed (rhythm.js): if she's dancing, drop the groove's down-beat right on it and pop
+  // her mane; a strong one now and then gets a spin or a hop. No big moves while busy.
+  beat(strength = 0.5) {
+    if (!this.dancing || this.busy || this.act || this.stance !== 'stand' || reducedMotion.matches) return;
+    // restart the dance loop so its first (down-beat) drawing lands now
+    if (this.base?.name === 'dance') this.base.start = performance.now();
+    this.manePop = Math.min(0.5, 0.18 + strength * 0.4);
+    if (strength > 0.8 && performance.now() - (this.lastDanceMove || 0) > 4000 && Math.random() < 0.4) {
+      this.lastDanceMove = performance.now();
+      this.perform(pick(['spin', 'hop', 'split']), this.towardCenter());
+    } else if (strength > 0.55 && Math.random() < 0.3) {
+      const h = this.head();
+      this.fx.burst(h.x, h.y - 30 * this.scale, { count: 6, power: 0.4, spread: 60 * this.scale });
+    }
   }
 
   // A reaction, played as an act: 'rage', 'huff', 'hurt', 'pout', 'forgive', 'shy', 'giggle',

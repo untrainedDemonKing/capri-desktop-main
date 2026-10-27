@@ -19,7 +19,8 @@
     "check:llm": "node scripts/check-llm.js",
     "test:hooks": "node --test tests/hooks.test.js",
     "dist": "electron-builder --win",
-    "test:character": "node --test tests/character.test.js"
+    "test:character": "node --test tests/character.test.js",
+    "test:senses": "node --test tests/senses.test.js"
   },
   "keywords": [
     "claude-code",

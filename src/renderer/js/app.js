@@ -12,6 +12,10 @@ import { Custom } from './custom.js';
 import { Heart } from './heart.js';
 import { Life } from './life.js';
 import { Speech } from './speech.js';
+import { Eyes } from './eyes.js';
+import { Rhythm } from './rhythm.js';
+import { Hands } from './hands.js';
+import { Ears } from './ears.js';
 import { applyTheme, resolveTheme } from './themes.js';
 import { linesFor } from './lines.js';
 import { lifeLines } from './lines-life.js';
@@ -258,6 +262,55 @@ async function boot() {
   life.configure(config);
   life.start();
   chat.life = life;
+
+  // Her senses and her hands, all off until you turn them on (each in her menu).
+  // Eyes: she takes a look at your screen and reacts (eyes.js, screen.js).
+  const eyes = new Eyes({ host, brain, heart, panel, capri, voice, life });
+  eyes.configure(config);
+  chat.eyes = eyes;
+  // Hands: windows and messages on your PC, only when you ask (hands.js, control.js).
+  const hands = new Hands({ host, capri, panel, voice, brain });
+  hands.configure(config);
+  chat.hands = hands;
+  // She moves to your real music (rhythm.js): the beat drives her, and she keeps her headphones on.
+  const rhythm = new Rhythm({ host, capri });
+  rhythm.onPlaying = (playing) => {
+    capri.setDancing(playing && capri.stance === 'stand');
+    if (playing) life.onMedia({ ...life.media, playing: true }); // keep the headphones/comments in step
+  };
+  rhythm.configure(config);
+  // Ears: you talk, she writes it down and answers (ears.js, stt.js); speech.js reads her answer out.
+  const ears = new Ears({ host, capri, panel, voice, brain, speech });
+  ears.configure(config);
+  ears.onTranscript = (text) => {
+    // show what you said and send it to her chat (open it first if need be)
+    if (!chat.open) chat.start().then(() => setTimeout(() => chat.send(text), 400));
+    else chat.send(text);
+  };
+  // the always-visible badge: a sense is never silently on
+  const sensesEl = document.getElementById('senses');
+  const eyeEl = sensesEl.querySelector('.senses__eye');
+  const micEl = sensesEl.querySelector('.senses__mic');
+  const showSenses = ({ listening = false } = {}) => {
+    const ll = lifeLines(brain.lang);
+    eyeEl.hidden = !eyes.enabled;
+    eyeEl.querySelector('.senses__label').textContent = ll.eyes.badge;
+    micEl.hidden = !ears.enabled;
+    micEl.classList.toggle('is-live', listening);
+    micEl.querySelector('.senses__label').textContent = listening ? ll.ears.listening : 'MIC';
+    sensesEl.hidden = eyeEl.hidden && micEl.hidden;
+  };
+  ears.onState = (state) => {
+    host.senseState({ eyes: eyes.enabled, ears: ears.enabled, listening: state === 'listening' });
+    showSenses({ listening: state === 'listening' });
+    if (state === 'listening') capri.perform?.('curious', capri.towardCenter());
+  };
+  showSenses();
+  // while she's talking, her ears don't listen to her own voice
+  const wasOnTalk = speech.onTalk;
+  speech.onTalk = () => { ears.heardSelf(true); wasOnTalk?.(); };
+  speech.onDone = () => ears.heardSelf(false);
+
   // Getting her chat going with buttons (setup.js): Ollama and a model, a key, or an address
   const setup = new Setup({ guide, panel, host, brain, capri, voice });
   guide.setup = setup;
@@ -357,7 +410,14 @@ async function boot() {
   host.onWindows((data) => {
     capri.setWindows(data);
     brain.onWindows(data);
+    if (data && data.fg !== lastFg) {
+      lastFg = data.fg;
+      eyes.onForeground(); // the window in front changed: worth a glance soon
+    }
   });
+  let lastFg = null;
+  // she glances at the screen on her own, now and then, when she's allowed and things are calm
+  setInterval(() => eyes.tick(), 2500);
   // the windows as they are now: the watcher only speaks again when something changes
   host.windowsNow().then((data) => data && capri.setWindows(data));
 
@@ -378,6 +438,12 @@ async function boot() {
     heart.configure(cfg);
     life.configure(cfg);
     speech.configure(cfg);
+    eyes.configure(cfg);
+    hands.configure(cfg);
+    rhythm.configure(cfg).catch(() => {});
+    ears.configure(cfg);
+    host.senseState({ eyes: eyes.enabled, ears: ears.enabled, listening: false });
+    showSenses();
     capri.lang = cfg.lang;
     if ((cfg.theme || 'classic') !== themeSetting) {
       // new colours: a twirl to show them off (and a word, unless her chat already said one)
@@ -470,6 +536,59 @@ async function boot() {
     speech.say(tv.test, { mood: heart.state.mood, force: true });
   }
 
+  // Which model she sees your screen with (her menu › Senses): just the model name; the key is her
+  // chat provider's, already set up.
+  async function setupVision() {
+    const te = lifeLines(brain.lang).eyes;
+    let got = null;
+    await guide.scene(async () => {
+      const cfg = await host.getConfig();
+      got = await guide.askText({ face: 'look', line: te.setup, quote: te.setupHow, placeholder: cfg.visionModel || te.setupPlaceholder, send: brain.t.setup.save, actions: [{ id: 'skip', label: lifeLines(brain.lang).ears.skip }] });
+    });
+    if (!got || got.action) return;
+    await host.setConfig({ visionModel: got.text.trim(), vision: true });
+    capri.perform('curious', capri.towardCenter());
+    panel.say({ kind: 'done', face: 'smug', line: te.saved, hold: 5000 });
+    setTimeout(() => eyes.look({ ask: true }), 600);
+  }
+
+  // Which service turns your voice into text (her menu › Senses): engine, then its key or address.
+  async function setupEars() {
+    const te = lifeLines(brain.lang).ears;
+    let saved = false;
+    await guide.scene(async () => {
+      const cfg = await host.getConfig();
+      const engine = await guide.ask({
+        face: 'look', line: te.setup, quote: te.setupHow,
+        actions: [...['groq', 'openai', 'custom'].map((id) => ({ id, label: te.engines[id], primary: id === cfg.sttEngine })), { id: 'later', label: te.later }],
+      });
+      if (!engine || engine === 'later') return;
+      const choice = { engine };
+      if (engine === 'custom') {
+        const g = await guide.askText({ face: 'look', line: te.url, quote: te.urlHow, placeholder: cfg.sttUrl || 'http://127.0.0.1:8000/v1', actions: cfg.sttUrl ? [{ id: 'skip', label: te.skip }] : [] });
+        if (!g) return;
+        if (g.text) choice.url = g.text;
+      } else {
+        const slot = engine === 'groq' ? 'groq' : 'openai';
+        const has = cfg.keys?.includes(slot);
+        const name = te.engines[engine];
+        const g = await guide.askText({
+          face: 'look', line: fmt(te.key, { name }), quote: fmt(te.keyHow, { name }), secret: true, placeholder: 'gsk-… / sk-…', send: te.save,
+          actions: [{ id: 'where', label: te.where }, ...(has ? [{ id: 'skip', label: te.skip }] : [])],
+          onAction: (id) => { if (id !== 'where') return false; host.sttKeyPage(engine); return true; },
+        });
+        if (!g || (!g.text && !has)) return;
+        if (g.text) choice.key = g.text;
+      }
+      await host.sttSetup(choice);
+      saved = true;
+    });
+    if (!saved) return;
+    host.setConfig({ ears: true });
+    capri.perform('hop');
+    panel.say({ kind: 'done', face: 'grin', line: te.saved, hold: 6000 });
+  }
+
   host.onCommand(async (cmd) => {
     const t = brain.t;
     switch (cmd.name) {
@@ -536,6 +655,23 @@ async function boot() {
         capri.wake();
         panel.say({ kind: 'info', face: 'grin', line: lifeLines(brain.lang).voice.test, hold: 5000 });
         speech.say(lifeLines(brain.lang).voice.test, { mood: heart.state.mood, force: true });
+        break;
+      case 'lookNow': // her menu › Senses › Look at my screen
+        if (capri.stowed) {
+          host.setConfig({ visible: true });
+          await capri.unstow();
+        }
+        capri.wake();
+        eyes.look({ ask: true });
+        break;
+      case 'setupVision': // her menu › Senses › Vision model
+        setupVision();
+        break;
+      case 'setupEars': // her menu › Senses › Speech-to-text
+        setupEars();
+        break;
+      case 'pushToTalk': // the shortcut (main.js), or the mic button
+        ears.toggle();
         break;
       case 'feel': // --dev: as if you'd sent her this message (her feelings only), or a reaction / an event
         if (cmd.text) heart.feel(cmd.text);
@@ -639,7 +775,7 @@ async function boot() {
   });
 
   // the overlay opened in a plain browser (tests, screenshots): its pieces, to drive it from there
-  if (location.protocol === 'http:') window.__capri = { capri, fx, panel, brain, heart, life, chat, speech, voice };
+  if (location.protocol === 'http:') window.__capri = { capri, fx, panel, brain, heart, life, chat, speech, voice, eyes, hands, rhythm, ears };
 
   // entrance: her face big in the corner says hi, then she dives down to her spot
   // (put away last time: she starts in her biochip)

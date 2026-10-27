@@ -83,6 +83,30 @@ top of her menu (her menu › Character › Emotions turns it off).
 
 ![What she gets up to](docs/life.png)
 
+### Her senses and her hands
+
+All off by default — each is a live use of your screen, sound, mic, or keyboard, so you turn it on yourself (her menu ›
+Senses / Hands), and while a sense is on a badge in the corner says so (◉ I SEE, ● MIC). Nothing is recorded, and
+each thing only ever goes to the service you picked (a local one keeps it on your PC).
+
+![She sees your screen, and types a message you confirm](docs/senses.png)
+
+- **She sees your screen** (eyes.js, screen.js): now and then, and whenever you ask ("what's on my screen?"), she takes
+  a small screenshot and reacts in character. She hides herself for the shot, the picture is never stored and goes only
+  to the vision model you set (Ollama `qwen2.5vl`/`llava`, or a cloud model like `gpt-4o-mini`). Her chat knows what she saw.
+- **She dances to your real music** (rhythm.js): she taps the system's loopback audio, finds the beat in the bass, and
+  bobs, sways and spins in time — bigger when it's louder. Just the loudness and the beat; no title, no recording.
+- **She hears you and talks back** (ears.js, stt.js): press **Ctrl+Alt+Space** (or the mic button) and talk; she writes
+  it down and answers — out loud, if you gave her a voice, so you can talk hands-free. Recording stops on its own when
+  you go quiet. Conversation mode keeps the mic open for back-and-forth. Transcription: Groq (free tier, good at Russian),
+  OpenAI, or a whisper server on your PC.
+- **Her hands** (hands.js, control.js — Windows): when you ask, she arranges windows (minimize, maximize, restore, bring
+  to front, show the desktop) and writes messages in Telegram, Discord, WhatsApp or Slack. She types the message out but
+  **never sends it until you confirm** — you see who it's for and what it says first — and she stops rather than type into
+  the wrong window if focus slips. She never touches her own, Claude Code's or Ollama's windows.
+
+![She dances to the beat](docs/dance.png)
+
 ### She gets around
 
 - **She sits on your windows**: perched on the top edge of a window, legs dangling and kicking one after the other.
@@ -362,6 +386,11 @@ Her voice, if you pick a speech service for it (OpenAI, ElevenLabs): what she sa
 ever goes into her chat's prompt, so she can talk about it. Her moods, grudges and what she's been up to stay in her
 own storage on your PC.
 
+Her senses, when you turn them on: a screenshot goes only to the vision model you set (a local one keeps it here) and
+is never stored; your voice goes only to the transcription service you set (a server on your PC keeps it here) and the
+recording is never stored; the system audio she dances to is processed locally (loudness and beat only) and never
+recorded or sent. Her hands run entirely on your PC and send nothing anywhere.
+
 ## Art direction
 
 The goal: she should feel like she stepped out of the anime, not like a widget.
@@ -448,8 +477,15 @@ src/renderer/js/
   life.js                what she does on her own, the music, noticing you
   themes.js              her colours
   speech.js              her voice: the system's, or a speech service through her many-minds effect
+  eyes.js                when she looks at your screen, reading the vision model's answer, reacting
+  rhythm.js              the beat: system audio -> beat detector -> she dances
+  hands.js               reading window/message commands, and the confirm-before-send flow
+  ears.js                the mic, recording, silence detection, conversation mode
   fx-life.js             her moods' marks and her activities' props
 src/main/tts.js          speech services (OpenAI, ElevenLabs, OpenAI-compatible)
+src/main/stt.js          speech-to-text (Groq, OpenAI, OpenAI-compatible)
+src/main/screen.js       a screenshot (desktopCapturer); llm.js see() runs the vision model
+src/main/control.js      her hands: windows and messages via PowerShell, focused on the right window only
 src/main/media.js / .ps1 what's playing, from Windows' media controls
 ```
 
