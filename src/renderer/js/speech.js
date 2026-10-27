@@ -50,6 +50,7 @@ export class Speech {
     this.current = null;
     this.source = null;
     this.onTalk = null;  // () => void, a beat of her talking (her body nods)
+    this.onStart = null; // () => void, she starts talking (ears.js: stop listening to her own voice)
     this.onDone = null;  // () => void, she stopped talking (ears.js: it can listen again)
     this.onError = null; // (message) => void, the speech service failed (she falls back to the system voice)
     this.systemVoices = [];
@@ -89,6 +90,7 @@ export class Speech {
     const token = {};
     this.current = token;
     this.voice.speaking = true;
+    this.onStart?.();
     try {
       if (this.engine !== 'system') {
         const ok = await this.cloud(words, mood, token);
@@ -164,8 +166,8 @@ export class Speech {
       this.onError?.(res?.error || 'failed', res?.code);
       return false;
     }
-    const ctx = this.voice.ensure();
-    if (ctx.state === 'suspended') await ctx.resume();
+    const ctx = this.voice.wakeUp();
+    if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
     let buffer;
     try {
       const bytes = res.audio instanceof ArrayBuffer ? res.audio : res.audio.buffer.slice(res.audio.byteOffset, res.audio.byteOffset + res.audio.byteLength);

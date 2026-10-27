@@ -5,9 +5,9 @@
 // write a message in Telegram, Discord, WhatsApp or Slack.
 //
 // Safety:
-// - Everything she types goes through the clipboard (Ctrl+V), and the clipboard is put back as it
-//   was afterwards. Your message text is never pasted into the PowerShell script, only onto the
-//   clipboard.
+// - Everything she types goes through the clipboard (Ctrl+V), and the text you had copied is put
+//   back afterwards (a window op that types nothing never touches the clipboard). Your message text
+//   is never written into the PowerShell script as code, only as base64 data for the clipboard.
 // - A key or a paste only happens once the window it is meant for is really in the foreground. If
 //   anything else steals focus in between, she stops instead of typing into the wrong place.
 // - A message is two steps: prepareMessage() opens the chat and types the message WITHOUT sending
@@ -42,7 +42,7 @@ public static class CapriHands {
   [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
 
   // The visible top-level windows of a program, by its process name, else by a word of its title
-  // (front first). Never Capri's own windows.
+  // (front first). Never Capri's own windows, nor the AI she runs on (Claude, Ollama).
   public static List<IntPtr> Find(string name) {
     var found = new List<IntPtr>();
     var titled = new List<IntPtr>();
@@ -57,7 +57,7 @@ public static class CapriHands {
       GetWindowThreadProcessId(h, out pid);
       string proc = "";
       try { proc = Process.GetProcessById((int)pid).ProcessName.ToLowerInvariant(); } catch {}
-      if (proc == "capri" || proc == "electron") return true;
+      if (proc == "capri" || proc == "electron" || proc == "claude" || proc.StartsWith("ollama")) return true;
       if (proc == want || proc.Contains(want)) found.Add(h);
       else if (sb.ToString().ToLowerInvariant().Contains(want)) titled.Add(h);
       return true;
@@ -103,7 +103,12 @@ function Ensure($h) {
   if (-not [CapriHands]::Focus($h)) { throw 'lostfocus' }
 }
 function Keys($h, $keys) { Ensure $h; $ws.SendKeys($keys); Start-Sleep -Milliseconds 90 }
-function Paste($h, $b64) { Set-Clipboard -Value (Txt $b64); Start-Sleep -Milliseconds 90; Ensure $h; $ws.SendKeys('^v'); Start-Sleep -Milliseconds 160 }
+# the clipboard is only touched by a paste: kept the first time, put back at the end (run())
+$global:clipOld = $null; $global:clipSaved = $false
+function Paste($h, $b64) {
+  if (-not $global:clipSaved) { try { $global:clipOld = Get-Clipboard -Raw } catch {}; $global:clipSaved = $true }
+  Set-Clipboard -Value (Txt $b64); Start-Sleep -Milliseconds 90; Ensure $h; $ws.SendKeys('^v'); Start-Sleep -Milliseconds 160
+}
 `;
 
 const b64 = (text) => Buffer.from(String(text ?? ''), 'utf8').toString('base64');
@@ -114,13 +119,15 @@ function run(script, timeout = 30000) {
   if (!WIN) return Promise.reject(Object.assign(new Error('Windows only'), { code: 'nowin' }));
   return new Promise((resolve, reject) => {
     const full = `[Console]::OutputEncoding = [Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; ${HELPER}
-$old = $null; try { $old = Get-Clipboard -Raw } catch {}
 try {
 ${script}
 } catch {
   [Console]::Out.WriteLine('ERR ' + $_.Exception.Message)
 } finally {
-  if ($old -ne $null) { try { Set-Clipboard -Value $old } catch {} } else { try { Set-Clipboard -Value ' ' } catch {} }
+  # what you had copied, back (text; with nothing copied before, it's left blank, not with her text)
+  if ($global:clipSaved) {
+    if ($global:clipOld -ne $null) { try { Set-Clipboard -Value $global:clipOld } catch {} } else { try { Set-Clipboard -Value ' ' } catch {} }
+  }
 }`;
     const encoded = Buffer.from(full, 'utf16le').toString('base64');
     const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], { windowsHide: true });

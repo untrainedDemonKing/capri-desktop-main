@@ -74,15 +74,17 @@ export function applyTheme(id, { capri, root = document.documentElement } = {}) 
 }
 
 // What she understands in her chat: "перекрасься в синий", "turn pink", "make yourself gold"...
+// (Russian words from their start, any ending; the others whole words only: "red" isn't in "tired")
+const word = (ru, other) => new RegExp(`${ru}|(?<![\\p{L}])(?:${other})(?![\\p{L}])`, 'iu');
 const NAMES = [
-  ['netrunner', /син|голуб|бирюз|циан|неттраннер|нетраннер|blue|cyan|teal|netrunner|bleu|azul/i],
-  ['toxic', /зел[её]н|токсич|кислот|салат|green|toxic|acid|lime|vert|verde/i],
-  ['violet', /фиолет|сирен|пурпур|лилов|violet|purple|lilac|morad|roxo/i],
-  ['gold', /золот|ж[её]лт|оранж|gold|yellow|orange|dor[ée]|amarill|amarel|dourad/i],
-  ['sakura', /розов|сакур|pink|sakura|rose|rosa/i],
-  ['ghost', /бел(?:ый|ой|ая|ую|ым|еньк|ою)|сер(?:ый|ой|ая|ую|ым|еньк|ою)|призрак|монохром|white|grey|gray|ghost|mono|blanc|blanco|branc/i],
-  ['classic', /красн|обычн|стандарт|классич|верни\s+(?:как\s+было|цвет)|red|classic|default|rouge|rojo|vermelh/i],
-  ['mood', /по\s+настроени|под\s+настроени|mood|humeur|[aá]nimo|humor/i],
+  ['netrunner', word('син|голуб|бирюз|циан|неттраннер|нетраннер', 'blue|cyan|teal|netrunner|bleu|azul')],
+  ['toxic', word('зел[её]н|токсич|кислот|салат', 'green|toxic|acid|lime|vert|verde')],
+  ['violet', word('фиолет|сирен|пурпур|лилов', 'violet|purple|lilac|morad[ao]|roxo|violette')],
+  ['gold', word('золот|ж[её]лт|оранж', 'gold|golden|yellow|orange|dor[ée]e?|amarill[ao]|amarel[ao]|dourad[ao]')],
+  ['sakura', word('розов|сакур', 'pink|sakura|rose|rosa')],
+  ['ghost', word('бел(?:ый|ой|ая|ую|ым|еньк|ою)|сер(?:ый|ой|ая|ую|ым|еньк|ою)|призрак|монохром', 'white|grey|gray|ghost|mono|monochrome|blanc|blanche|blanco|blanca|branc[ao]')],
+  ['classic', word('красн|обычн|стандарт|классич|верни\\s+(?:как\\s+было|цвет)', 'red|classic|default|rouge|rojo|roja|vermelh[ao]')],
+  ['mood', word('по\\s+настроени|под\\s+настроени', 'mood|humeur|[aá]nimo|humor')],
 ];
 // a message asking her to change colour (needs a colour word too)
 const RECOLOUR = /перекрас|верни\s+(?:как\s+было|цвет|свой\s+цвет)|покрась|смени\s+цвет|поменяй\s+цвет|сделай\s+(?:себя|себе|волосы|гриву)|стань\s+\p{L}+|цвет\s+(?:волос|гривы)|recolou?r|turn\s+(?:yourself\s+)?\w+|change\s+(?:your\s+)?colou?r|dye|make\s+yourself|colou?r\s+(?:yourself|your\s+hair)|change\s+de\s+couleur|cambia\s+de\s+color|mude\s+de\s+cor/iu;

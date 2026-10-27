@@ -215,6 +215,7 @@ export class Mood {
     this.cause = null;       // { tag, quote, at }: why she's angry or sad, for her chat
     this.lastContact = now;  // when you last paid her any attention (boredom grows from it)
     this.recent = [];        // your last messages, [{ text, at }]
+    this.tolerance = 0;      // 0..1: how used she is to your swearing (bond.js): from 0.6, it's just how you talk
     this.pokes = [];         // when you clicked her lately
     this.drags = [];
     this.listeners = new Set();
@@ -248,9 +249,12 @@ export class Mood {
     this.recent = [...this.recent.filter((m) => now - m.at < 10 * MINUTE), { text: String(text), at: now }].slice(-8);
     const before = { ...this.v };
     this.contact(now);
-    for (const tag of tags) {
+    // she knows you: swearing that isn't at her is just how you talk (the tag stays, for bond.js)
+    const counted = this.tolerance >= 0.6 ? tags.filter((t) => t !== 'rude') : tags;
+    for (const tag of counted) {
       // really furious, one "sorry" only takes the edge off: it takes two
       if (tag === 'apology' && before.anger >= 0.6) this.apply({ ...EFFECTS.apology, anger: -0.3 });
+      else if (tag === 'rude') this.apply({ anger: EFFECTS.rude.anger * (1 - this.tolerance) }); // less and less, as she gets used to it
       else this.apply(EFFECTS[tag]);
     }
     // a string of insults hurts more than one
@@ -258,7 +262,7 @@ export class Mood {
     const strong = ['insult', 'threat', 'justBot', 'wrongName', 'spam', 'corpo', 'yell'].find((t) => tags.includes(t));
     if (strong) this.cause = { tag: strong, quote: String(text).slice(0, 80), at: now };
     if (tags.includes('apology') && this.v.anger < 0.3) this.cause = null;
-    const reaction = reactionTo(tags, before, this.v);
+    const reaction = reactionTo(counted, before, this.v);
     this.changed(now);
     return { tags, reaction, ...this.current };
   }

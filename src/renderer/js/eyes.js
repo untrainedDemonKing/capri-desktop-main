@@ -49,9 +49,13 @@ export class Eyes {
   tick(now = performance.now()) {
     if (!this.enabled || !this.every || now < this.nextGlance) return;
     this.nextGlance = now + Math.max(this.every, MIN_GAP);
-    // only when things are calm and something changed on screen a moment ago
-    if (!this.free() || now - this.fgSeen > 60000 || now - this.fgSeen < CHANGE_GAP) return;
-    this.look({ reason: 'glance' });
+    if (!this.free()) return;
+    // a glance when you switched to another window a moment ago (once it's settled), or when she
+    // hasn't looked in a while (a long video, a game: the window in front never changes)
+    const since = now - this.fgSeen;
+    const switched = this.fgSeen > 0 && since >= CHANGE_GAP && since <= 60000 && this.lastLook < this.fgSeen;
+    const stale = now - this.lastLook > this.every * 4;
+    if (switched || stale) this.look({ reason: 'glance' });
   }
 
   free() {

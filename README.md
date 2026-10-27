@@ -107,6 +107,40 @@ each thing only ever goes to the service you picked (a local one keeps it on you
 
 ![She dances to the beat](docs/dance.png)
 
+### She gets to know you
+
+On by default (her menu › Character › Learns about me), and it all stays on your PC (`bond.json` in her data folder).
+
+![She grows closer and remembers who you are](docs/bond.png)
+
+- **How you write**: message length, emoji, swearing, formal or casual, how often you laugh or ask things, the hours
+  you're around. Counts and averages only; your messages aren't kept here. Write short and she answers short; swear out
+  of habit (not at her) and she stops bristling at it.
+- **How you take her answers**: you laugh, thank her, say "cool" after a short cheeky answer, and she leans that way;
+  "nonsense", "boring", "that's wrong" and she leans away. Plain asks work at once and stick: "shorter", "tell me
+  more", "no slang", "be serious", "be nicer", "roast me".
+- **What you tell her about yourself**: every few messages (and when you close the chat) her own chat model writes a few
+  lines in her notebook: what you do, what you like and don't, how you like to be talked to. Never passwords, phone
+  numbers, addresses, card or document numbers, health or money (and a filter cuts them anyway). With Claude Code as her
+  chat, no notebook: it works in your project.
+
+The longer you're together, the closer she gets: **strangers → getting to know each other → friends → close → one of
+us**. She tells you when it changes (♥), and it shows: a stranger gets questions about themselves, a friend gets teased
+and reminded of what they said, someone close gets the truth even when it stings. Be rude to her all the time and she
+won't let you close.
+
+Ask "**what do you know about me?**", see it all in her menu (Character › What she knows about me…, with a button to
+wipe it), or say "**forget everything about me**".
+
+### She rests lightly
+
+Asleep (down to her mask) or put away in her chip (Ctrl+Alt+C), she costs next to nothing: she's drawn on a timer and
+only when something changes (a few frames a second, not every refresh of a 60–144 Hz screen), the PowerShell helpers
+watching your windows and music stop, she checks on you less often, her audio naps after 20 s of silence and the beat
+listener pauses. In our measurement her window's work while asleep dropped **4–5×** and screen-frame wake-ups
+**30–100×**. Anything that calls her (a click, Claude, her menu, the shortcut) brings it all back at once. Awake, she's drawn
+on twos (12 drawings a second, like the anime) and doesn't wake the CPU in between.
+
 ### She gets around
 
 - **She sits on your windows**: perched on the top edge of a window, legs dangling and kicking one after the other.
@@ -391,6 +425,10 @@ is never stored; your voice goes only to the transcription service you set (a se
 recording is never stored; the system audio she dances to is processed locally (loudness and beat only) and never
 recorded or sent. Her hands run entirely on your PC and send nothing anywhere.
 
+What she learns about you (your style, what you like from her, her notebook) stays in `bond.json` on your PC. Her
+notebook is written by the chat model you already talk to her with (a local one keeps it all here); turn it off in her
+menu › Character.
+
 ## Art direction
 
 The goal: she should feel like she stepped out of the anime, not like a widget.
@@ -482,6 +520,7 @@ src/renderer/js/
   hands.js               reading window/message commands, and the confirm-before-send flow
   ears.js                the mic, recording, silence detection, conversation mode
   fx-life.js             her moods' marks and her activities' props
+  bond.js                she gets to know you: your style, how you take her answers, her notebook, how close you are
 src/main/tts.js          speech services (OpenAI, ElevenLabs, OpenAI-compatible)
 src/main/stt.js          speech-to-text (Groq, OpenAI, OpenAI-compatible)
 src/main/screen.js       a screenshot (desktopCapturer); llm.js see() runs the vision model

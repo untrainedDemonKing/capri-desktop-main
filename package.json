@@ -20,7 +20,9 @@
     "test:hooks": "node --test tests/hooks.test.js",
     "dist": "electron-builder --win",
     "test:character": "node --test tests/character.test.js",
-    "test:senses": "node --test tests/senses.test.js"
+    "test:senses": "node --test tests/senses.test.js",
+    "test:bond": "node --test tests/bond.test.js",
+    "test": "node --test tests/*.test.js"
   },
   "keywords": [
     "claude-code",

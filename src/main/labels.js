@@ -7,7 +7,7 @@ const TRAY = {
   fr: {
     name: 'Français',
     mood: (m) => `Humeur : ${m}`, moods: { calm: 'calme', happy: 'de bonne humeur', angry: 'en colère', annoyed: 'agacée', sad: 'triste', shy: 'gênée', bored: 's’ennuie' },
-    character: 'Caractère', emotions: 'Émotions (colère, rires, bouderies)', life: 'Ses propres activités', dj: 'Mode DJ (elle change de morceau)', musicAware: 'Savoir ce qui joue',
+    character: 'Caractère', emotions: 'Émotions (colère, rires, bouderies)', life: 'Ses propres activités', dj: 'Mode DJ (elle change de morceau)', musicAware: 'Savoir ce qui joue', learn: 'Elle apprend à me connaître', bond: 'Ce qu’elle sait de moi…',
     colors: 'Couleurs', themes: { classic: 'Rouge (comme dans l’anime)', netrunner: 'Netrunner (cyan)', toxic: 'Toxique (vert acide)', violet: 'Violet', gold: 'Or', sakura: 'Sakura (rose)', ghost: 'Fantôme (blanc)', mood: 'Selon son humeur' },
     voice: 'Voix', voiceOff: 'Muette (bips seulement)', voiceChat: 'Lit ses réponses du chat', voiceAll: 'Lit tout ce qu’elle dit', voiceEngine: 'Moteur', engines: { system: 'Voix du système (hors ligne, gratuit)', openai: 'OpenAI (clé)', elevenlabs: 'ElevenLabs (clé)', custom: 'Serveur compatible OpenAI (local)' }, voiceFx: 'Effet « plusieurs esprits »', voiceSetup: 'Clé, adresse ou voix…', voiceTest: 'Tester sa voix', voiceKeyPage: 'Où trouver une clé ?',
     senses: 'Sens', vision: 'Qu’elle voie mon écran', lookNow: 'Regarde mon écran', rhythm: 'Bouger sur ma musique', ears: 'M’écouter (micro)', converse: 'Mode conversation', pushToTalk: 'Pour parler', visionSetup: 'Modèle de vision…', earsSetup: 'Reconnaissance vocale…', hands: 'Mains', handsOn: 'Qu’elle agisse sur mes fenêtres', handsType: 'Qu’elle écrive des messages',
@@ -27,7 +27,7 @@ const TRAY = {
   en: {
     name: 'English',
     mood: (m) => `Mood: ${m}`, moods: { calm: 'calm', happy: 'in a good mood', angry: 'angry', annoyed: 'annoyed', sad: 'sad', shy: 'flustered', bored: 'bored' },
-    character: 'Character', emotions: 'Emotions (anger, laughs, sulking)', life: 'Her own activities', dj: 'DJ mode (she skips tracks)', musicAware: 'Know what’s playing',
+    character: 'Character', emotions: 'Emotions (anger, laughs, sulking)', life: 'Her own activities', dj: 'DJ mode (she skips tracks)', musicAware: 'Know what’s playing', learn: 'Learns about me (adapts to me)', bond: 'What she knows about me…',
     colors: 'Colours', themes: { classic: 'Red (like the anime)', netrunner: 'Netrunner (cyan)', toxic: 'Toxic (acid green)', violet: 'Violet', gold: 'Gold', sakura: 'Sakura (pink)', ghost: 'Ghost (white)', mood: 'Follow her mood' },
     voice: 'Voice', voiceOff: 'Silent (blips only)', voiceChat: 'Reads her chat answers', voiceAll: 'Reads everything she says', voiceEngine: 'Engine', engines: { system: 'System voice (offline, free)', openai: 'OpenAI (key)', elevenlabs: 'ElevenLabs (key)', custom: 'OpenAI-compatible server (local)' }, voiceFx: '“Many minds” effect', voiceSetup: 'Key, address or voice…', voiceTest: 'Test her voice', voiceKeyPage: 'Where do I get a key?',
     senses: 'Senses', vision: 'Let her see my screen', lookNow: 'Look at my screen', rhythm: 'Move to my music', ears: 'Listen to me (mic)', converse: 'Conversation mode', pushToTalk: 'Press to talk', visionSetup: 'Vision model…', earsSetup: 'Speech-to-text…', hands: 'Hands', handsOn: 'Let her work my windows', handsType: 'Let her type messages',
@@ -47,7 +47,7 @@ const TRAY = {
   es: {
     name: 'Español',
     mood: (m) => `Humor: ${m}`, moods: { calm: 'tranquila', happy: 'de buen humor', angry: 'enfadada', annoyed: 'molesta', sad: 'triste', shy: 'avergonzada', bored: 'aburrida' },
-    character: 'Carácter', emotions: 'Emociones (enfados, risas, berrinches)', life: 'Sus propias actividades', dj: 'Modo DJ (cambia de canción)', musicAware: 'Saber qué suena',
+    character: 'Carácter', emotions: 'Emociones (enfados, risas, berrinches)', life: 'Sus propias actividades', dj: 'Modo DJ (cambia de canción)', musicAware: 'Saber qué suena', learn: 'Aprende a conocerme', bond: 'Lo que sabe de mí…',
     colors: 'Colores', themes: { classic: 'Rojo (como en el anime)', netrunner: 'Netrunner (cian)', toxic: 'Tóxico (verde ácido)', violet: 'Violeta', gold: 'Oro', sakura: 'Sakura (rosa)', ghost: 'Fantasma (blanco)', mood: 'Según su humor' },
     voice: 'Voz', voiceOff: 'Muda (solo pitidos)', voiceChat: 'Lee sus respuestas del chat', voiceAll: 'Lee todo lo que dice', voiceEngine: 'Motor', engines: { system: 'Voz del sistema (sin conexión, gratis)', openai: 'OpenAI (clave)', elevenlabs: 'ElevenLabs (clave)', custom: 'Servidor compatible con OpenAI (local)' }, voiceFx: 'Efecto «muchas mentes»', voiceSetup: 'Clave, dirección o voz…', voiceTest: 'Probar su voz', voiceKeyPage: '¿Dónde consigo una clave?',
     senses: 'Sentidos', vision: 'Que vea mi pantalla', lookNow: 'Mira mi pantalla', rhythm: 'Moverse con mi música', ears: 'Escucharme (micro)', converse: 'Modo conversación', pushToTalk: 'Para hablar', visionSetup: 'Modelo de visión…', earsSetup: 'Voz a texto…', hands: 'Manos', handsOn: 'Que maneje mis ventanas', handsType: 'Que escriba mensajes',
@@ -67,7 +67,7 @@ const TRAY = {
   pt: {
     name: 'Português (Brasil)',
     mood: (m) => `Humor: ${m}`, moods: { calm: 'calma', happy: 'de bom humor', angry: 'brava', annoyed: 'irritada', sad: 'triste', shy: 'envergonhada', bored: 'entediada' },
-    character: 'Personalidade', emotions: 'Emoções (raiva, risadas, birra)', life: 'Atividades próprias', dj: 'Modo DJ (ela troca de música)', musicAware: 'Saber o que está tocando',
+    character: 'Personalidade', emotions: 'Emoções (raiva, risadas, birra)', life: 'Atividades próprias', dj: 'Modo DJ (ela troca de música)', musicAware: 'Saber o que está tocando', learn: 'Aprende a me conhecer', bond: 'O que ela sabe de mim…',
     colors: 'Cores', themes: { classic: 'Vermelho (como no anime)', netrunner: 'Netrunner (ciano)', toxic: 'Tóxico (verde ácido)', violet: 'Violeta', gold: 'Ouro', sakura: 'Sakura (rosa)', ghost: 'Fantasma (branco)', mood: 'Conforme o humor' },
     voice: 'Voz', voiceOff: 'Muda (só bipes)', voiceChat: 'Lê as respostas do chat', voiceAll: 'Lê tudo o que diz', voiceEngine: 'Motor', engines: { system: 'Voz do sistema (offline, grátis)', openai: 'OpenAI (chave)', elevenlabs: 'ElevenLabs (chave)', custom: 'Servidor compatível com OpenAI (local)' }, voiceFx: 'Efeito “muitas mentes”', voiceSetup: 'Chave, endereço ou voz…', voiceTest: 'Testar a voz dela', voiceKeyPage: 'Onde consigo uma chave?',
     senses: 'Sentidos', vision: 'Deixar ela ver minha tela', lookNow: 'Olhar minha tela', rhythm: 'Dançar com minha música', ears: 'Me ouvir (microfone)', converse: 'Modo conversa', pushToTalk: 'Para falar', visionSetup: 'Modelo de visão…', earsSetup: 'Voz para texto…', hands: 'Mãos', handsOn: 'Deixar ela mexer nas janelas', handsType: 'Deixar ela escrever mensagens',
@@ -87,7 +87,7 @@ const TRAY = {
   ru: {
     name: 'Русский',
     mood: (m) => `Настроение: ${m}`, moods: { calm: 'спокойна', happy: 'в духе', angry: 'злится', annoyed: 'не в духе', sad: 'грустит', shy: 'смущена', bored: 'скучает' },
-    character: 'Характер', emotions: 'Эмоции (злость, смех, обиды)', life: 'Свои занятия на экране', dj: 'Режим DJ (сама переключает треки)', musicAware: 'Знать, что играет',
+    character: 'Характер', emotions: 'Эмоции (злость, смех, обиды)', life: 'Свои занятия на экране', dj: 'Режим DJ (сама переключает треки)', musicAware: 'Знать, что играет', learn: 'Узнаёт меня (саморазвитие)', bond: 'Что она обо мне знает…',
     colors: 'Цвет', themes: { classic: 'Красный (как в аниме)', netrunner: 'Нетраннер (циан)', toxic: 'Токсичный (кислотно-зелёный)', violet: 'Фиолетовый', gold: 'Золото', sakura: 'Сакура (розовый)', ghost: 'Призрак (белый)', mood: 'По настроению' },
     voice: 'Голос', voiceOff: 'Молчит (только писк)', voiceChat: 'Озвучивает ответы в чате', voiceAll: 'Озвучивает всё, что говорит', voiceEngine: 'Движок', engines: { system: 'Системный голос (офлайн, бесплатно)', openai: 'OpenAI (ключ)', elevenlabs: 'ElevenLabs (ключ)', custom: 'Свой сервер, совместимый с OpenAI' }, voiceFx: 'Эффект «множества разумов»', voiceSetup: 'Ключ, адрес или голос…', voiceTest: 'Проверить голос', voiceKeyPage: 'Где взять ключ?',
     senses: 'Чувства', vision: 'Разрешить видеть мой экран', lookNow: 'Посмотри на экран', rhythm: 'Двигаться под мою музыку', ears: 'Слушать меня (микрофон)', converse: 'Режим разговора', pushToTalk: 'Чтобы говорить', visionSetup: 'Модель зрения…', earsSetup: 'Распознавание речи…', hands: 'Руки', handsOn: 'Разрешить управлять окнами', handsType: 'Разрешить писать сообщения',

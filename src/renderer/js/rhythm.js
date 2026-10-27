@@ -16,7 +16,8 @@ export class Rhythm {
     this.analyser = null;
     this.stream = null;
     this.data = null;
-    this.raf = 0;
+    this.timer = 0;
+    this.paused = false;
     this.energy = [];        // recent low-band energy, for the rolling average
     this.lastBeat = 0;
     this.beats = [];         // recent beat times, for the tempo
@@ -51,16 +52,26 @@ export class Rhythm {
     this.analyser.smoothingTimeConstant = 0.6;
     src.connect(this.analyser);
     this.data = new Uint8Array(this.analyser.frequencyBinCount);
+    // 30 ms while there's sound (enough to catch a kick), a lazy 250 ms in silence, and nothing at all
+    // while she's resting deeply (pause())
     const loop = () => {
-      this.raf = requestAnimationFrame(loop);
-      this.step();
+      if (!this.ctx) return;
+      if (!this.paused) this.step();
+      this.timer = setTimeout(loop, this.paused ? 1000 : this.playing || this.level > 0.01 ? 30 : 250);
     };
-    this.raf = requestAnimationFrame(loop);
+    loop();
+  }
+
+  // Resting deeply (app.js): stop listening for beats, the stream kept so waking is instant.
+  pause(on) {
+    this.paused = Boolean(on);
+    if (this.paused && this.ctx?.state === 'running') this.ctx.suspend().catch(() => {});
+    if (!this.paused && this.ctx?.state === 'suspended') this.ctx.resume().catch(() => {});
   }
 
   stop() {
-    cancelAnimationFrame(this.raf);
-    this.raf = 0;
+    clearTimeout(this.timer);
+    this.timer = 0;
     for (const track of this.stream?.getTracks() || []) track.stop();
     this.stream = null;
     this.analyser = null;
@@ -106,7 +117,7 @@ export class Rhythm {
 
     // a beat: the low band jumps well above its recent average, and not too soon after the last
     this.energy.push(low);
-    if (this.energy.length > 43) this.energy.shift(); // ~0.7s at 60fps
+    if (this.energy.length > 24) this.energy.shift(); // ~0.7 s at one look every 30 ms
     const avg = this.energy.reduce((s, v) => s + v, 0) / this.energy.length;
     const variance = this.energy.reduce((s, v) => s + (v - avg) ** 2, 0) / this.energy.length;
     const threshold = avg * (1.35 + variance * 12);

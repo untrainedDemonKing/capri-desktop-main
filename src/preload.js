@@ -75,4 +75,10 @@ contextBridge.exposeInMainWorld('host', {
   prepareMessage: (request) => ipcRenderer.invoke('hands:prepare', request),
   sendMessage: (prepared) => ipcRenderer.invoke('hands:send', prepared),
   senseState: (state) => ipcRenderer.send('sense:state', state),
+  // how deeply she rests (awake | sleep | deep): main stops its watchers while she's tucked away
+  restLevel: (level) => ipcRenderer.send('rest:level', level),
+  // what she's learned about you (bond.js): kept in bond.json, written by your own chat model
+  bondLoad: () => ipcRenderer.invoke('bond:load'),
+  bondSave: (data) => ipcRenderer.send('bond:save', data),
+  bondReflect: (request) => ipcRenderer.invoke('bond:reflect', request),
 });

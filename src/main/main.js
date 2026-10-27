@@ -60,6 +60,7 @@ let mediaWatch = null;  // what's playing (media.js), while she's allowed to kno
 let presenceTimer = null;
 let senseState = {};    // which senses are live right now (the overlay says): { eyes, ears, listening }
 let pttKey = null;      // the push-to-talk shortcut currently registered
+let restLevel = 'awake'; // how deeply she rests (rest()): 'awake', 'sleep' or 'deep'
 
 const userSoundsDir = () => path.join(app.getPath('userData'), 'sounds');
 
@@ -79,6 +80,25 @@ function saveMemory(patch) {
     console.error('[capri] could not save her memory:', err.message);
   }
 }
+// What she's learned about you (bond.js): kept on this PC only, next to her memory.
+const bondFile = () => path.join(app.getPath('userData'), 'bond.json');
+function readBond() {
+  try {
+    return JSON.parse(fs.readFileSync(bondFile(), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+function saveBond(data) {
+  try {
+    const tmp = `${bondFile()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(data)); // whole or not at all: a crash mid-write never leaves half a file
+    fs.renameSync(tmp, bondFile());
+  } catch (err) {
+    console.error('[capri] could not save what she learned:', err.message);
+  }
+}
+
 function forgetChats() {
   llm.resetClaude();
   saveMemory({ history: [], claude: null });
@@ -341,6 +361,10 @@ function rebuildTray() {
         { label: t.life, type: 'checkbox', checked: cfg.life !== false, click: (item) => updateConfig({ life: item.checked }) },
         { label: t.musicAware, type: 'checkbox', checked: cfg.musicAware !== false, enabled: process.platform === 'win32', click: (item) => updateConfig({ musicAware: item.checked }) },
         { label: t.dj, type: 'checkbox', checked: cfg.dj !== false, enabled: process.platform === 'win32' && cfg.musicAware !== false, click: (item) => updateConfig({ dj: item.checked }) },
+        { type: 'separator' },
+        // she gets to know you and adapts (bond.js); what she learned, and a button to wipe it
+        { label: t.learn, type: 'checkbox', checked: cfg.learn !== false, click: (item) => updateConfig({ learn: item.checked }) },
+        { label: t.bond, click: () => sendCommand('bond') },
       ],
     },
     // her senses: she can see your screen, move to your music, and listen to your voice. All off
@@ -581,7 +605,7 @@ async function pickClaudeFolder() {
 
 // What's playing (media.js), while her menu lets her know it.
 function watchMedia() {
-  const on = config.load().musicAware !== false;
+  const on = config.load().musicAware !== false && restLevel !== 'deep';
   if (on && !mediaWatch) {
     mediaWatch = startMediaWatch({ onUpdate: (now) => overlay?.webContents.send('media:now', now) });
   } else if (!on && mediaWatch) {
@@ -648,7 +672,45 @@ function watchPresence() {
   presenceTimer = setInterval(() => {
     if (!overlay || overlay.isDestroyed()) return;
     overlay.webContents.send('presence', { idle: powerMonitor.getSystemIdleTime() });
-  }, 5000);
+  }, restLevel === 'deep' ? 15000 : 5000);
+}
+
+// Where the other windows are (windows.js), so she can sit on them. Restartable: it stops while
+// she rests deeply (rest()).
+function watchWindows() {
+  if (windowWatch) return;
+  windowWatch = startWindowWatch({
+    overlay,
+    onUpdate: (data) => {
+      // a click on the taskbar brings it up over her: sitting on it, her legs would vanish behind it
+      if (data.taskbar && !lastWindows?.taskbar && config.load().rest === 'taskbar') raiseOverlay();
+      lastWindows = data;
+      overlay?.webContents.send('windows:update', data);
+    },
+  });
+}
+
+// How deeply she rests (the overlay says, rest:level): 'awake', 'sleep' (dozing, still drawn), or
+// 'deep' (down to her mask, or put away in her chip). Resting deeply, the helpers that watch your
+// windows and your music stop altogether (two PowerShell processes polling, gone), and she checks
+// whether you're there less often. Anything that wakes her (a click, Claude, her menu, the
+// shortcut) brings them back a moment later.
+function rest(level) {
+  if (!['awake', 'sleep', 'deep'].includes(level) || level === restLevel) return;
+  const was = restLevel;
+  restLevel = level;
+  if (DEV) console.log(`[capri] rest: ${was} -> ${level}`);
+  if (level === 'deep') {
+    windowWatch?.stop();
+    windowWatch = null;
+    lastWindows = null;
+    mediaWatch?.stop();
+    mediaWatch = null;
+  } else if (was === 'deep') {
+    watchWindows();
+    watchMedia();
+  }
+  watchPresence();
 }
 
 function createTray() {
@@ -712,6 +774,21 @@ function registerIpc() {
   });
   ipcMain.on('chat:stop', (_e, id) => chats.get(id)?.abort());
   ipcMain.handle('chat:memory', () => readMemory().history || []);
+  // her bond with you (bond.js): load, save, and a line in her notebook from your last chats, written
+  // by your chat model in one quiet go (never Claude Code: it would be working in your project)
+  ipcMain.handle('bond:load', () => readBond());
+  ipcMain.on('bond:save', (_e, data) => data && typeof data === 'object' && saveBond(data));
+  ipcMain.handle('bond:reflect', async (_e, { messages } = {}) => {
+    const cfg = config.load();
+    if (cfg.provider === 'claude') return { ok: false, code: 'agent' };
+    if (!Array.isArray(messages) || !messages.length) return { ok: false, code: 'empty' };
+    try {
+      const text = await llm.chat(cfg.provider, llmConfig(cfg), { model: pickModel(cfg), messages }, () => {}, AbortSignal.timeout(90000));
+      return { ok: true, text };
+    } catch (err) {
+      return { ok: false, error: err.message, code: err.code || null };
+    }
+  });
   ipcMain.on('chat:remember', (_e, history) => Array.isArray(history) && saveMemory({ history }));
   ipcMain.on('chat:ollama', () => shell.openExternal(OLLAMA_SITE));
   // setting her up with buttons (setup.js): Ollama and a model, or a key, or an address
@@ -872,7 +949,11 @@ function registerIpc() {
     if (!handsOn() || !config.load().handsType) throw Object.assign(new Error('off'), { code: 'off' });
     return control.prepareMessage(request);
   });
-  ipcMain.handle('hands:send', (_e, prepared) => control.sendPrepared(prepared).then(() => true, (err) => ({ error: { message: err.message, code: err.code } })));
+  ipcMain.handle('hands:send', (_e, prepared) => (handsOn() && config.load().handsType
+    ? control.sendPrepared(prepared).then(() => true, (err) => ({ error: { message: err.message, code: err.code } }))
+    : { error: { code: 'off', message: 'off' } })); // turned off between typing it and your yes: not sent
+  // how deeply she rests: the helpers watching your windows and music stop while she's out
+  ipcMain.on('rest:level', (_e, level) => rest(String(level)));
   // her senses' indicator by the clock (an eye, a mic, a note): only the tray line cares
   ipcMain.on('sense:state', (_e, state) => { senseState = state || {}; });
   // how she feels, for her menu's top line (only when the mood itself changes)
@@ -1000,15 +1081,7 @@ function main() {
     registerIpc();
     createOverlay();
     createTray();
-    windowWatch = startWindowWatch({
-      overlay,
-      onUpdate: (data) => {
-        // a click on the taskbar brings it up over her: sitting on it, her legs would vanish behind it
-        if (data.taskbar && !lastWindows?.taskbar && config.load().rest === 'taskbar') raiseOverlay();
-        lastWindows = data;
-        overlay?.webContents.send('windows:update', data);
-      },
-    });
+    watchWindows();
     createBridge({
       port: PORT,
       // her own Claude Code chat's hooks would cover its answer with theirs

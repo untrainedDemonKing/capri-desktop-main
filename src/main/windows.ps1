@@ -79,15 +79,22 @@ public static class CapriWindows {
 [CapriWindows]::Init()
 $last = ''
 $tick = 0
+$same = 0
 while ($true) {
   $snap = [CapriWindows]::Snapshot($Self)
   if ($snap -ne $last) {
     [Console]::Out.WriteLine($snap)
     [Console]::Out.Flush()
     $last = $snap
+    $same = 0
+  } else {
+    $same++
   }
   # stop with Capri, even if she crashed without telling us
   $tick++
   if ($ParentPid -and ($tick % 20 -eq 0) -and -not (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) { break }
-  Start-Sleep -Milliseconds 150
+  # nothing moving: look less often (a still desktop costs almost nothing); back to every 150 ms the
+  # moment anything moves, so she still rides along with a window you drag
+  $wait = if ($same -lt 8) { 150 } elseif ($same -lt 40) { 250 } else { 450 }
+  Start-Sleep -Milliseconds $wait
 }

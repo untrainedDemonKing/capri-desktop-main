@@ -7,6 +7,7 @@ import { rand, pick } from './util.js';
 // a minor-pentatonic set for the talking blips; three detuned voices = a chorus of minds
 const BLIP_NOTES = [62, 65, 67, 69, 72, 74, 77, 79];
 const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+const NAP_MS = 20000; // this long with no sound: her audio goes to sleep (costs nothing until the next one)
 
 export const CUES = [
   'teleport-out', 'teleport-in', 'done', 'alert', 'error', 'hello', 'blip', 'tick', 'star', 'land', 'rise', 'bolt', 'charge', 'possess',
@@ -50,6 +51,25 @@ export class Voice {
     return ctx;
   }
 
+  // Her audio, running (a sound is about to play). A running AudioContext keeps the audio thread
+  // ticking even in silence, so after a while with nothing to play it's put to sleep (napLater).
+  wakeUp() {
+    const ctx = this.ensure();
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    this.napLater();
+    return ctx;
+  }
+
+  napLater() {
+    clearTimeout(this.napTimer);
+    this.napTimer = setTimeout(() => {
+      // still talking (speech.js plays through this context): try again later
+      if (this.speaking) return this.napLater();
+      if (this.ctx?.state === 'running') this.ctx.suspend().catch(() => {});
+      return undefined;
+    }, NAP_MS);
+  }
+
   configure({ muted, volume }) {
     if (typeof muted === 'boolean') this.muted = muted;
     if (typeof volume === 'number') {
@@ -74,8 +94,7 @@ export class Voice {
 
   play(cue, opts = {}) {
     if (this.muted) return;
-    const ctx = this.ensure();
-    if (ctx.state === 'suspended') ctx.resume();
+    const ctx = this.wakeUp();
     const custom = this.custom.get(cue);
     if (custom) {
       const src = ctx.createBufferSource();

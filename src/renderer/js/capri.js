@@ -16,6 +16,7 @@ const COLORS_RED = () => COLORS.red; // her theme's main colour (themes.js chang
 const ON_TWOS = 1000 / 12;
 const ON_ONES = 1000 / 24;
 const ASLEEP = 1000 / 6;
+const HIDDEN_POLL = 1000; // hidden (her mask, her chip): a lazy safety check (every way back nudges her loop)
 const SLEEP_AFTER = 10 * 60 * 1000;
 const DOZE_AFTER = 20 * 1000; // asleep this long, she comes apart down to her mask
 const GRAVITY = 2600; // px/s²
@@ -132,7 +133,9 @@ export class Capri {
     this.setScale(this.scale);
     this.bindPointer();
     this.loop = this.loop.bind(this);
-    requestAnimationFrame(this.loop);
+    this.loopRaf = 0;
+    this.loopTimer = 0;
+    this.frame();
   }
 
   // ---------- geometry ----------
@@ -353,12 +356,54 @@ export class Capri {
     return this.mode === 'sleep' ? ASLEEP : ON_TWOS;
   }
 
+  // Her clock. She's drawn on twos (12 a second), on ones for action, 6 a second asleep: instead of
+  // waking up on every screen refresh (60, 144 times a second) to find there's nothing to draw, the
+  // loop sleeps until her next drawing is due, and only rides the screen's frames while something
+  // moves continuously (a teleport, a fall, a drag). Hidden (her mask, her chip), it just runs a
+  // lazy check now and then (everything that brings her back nudges it awake).
   loop(now) {
-    requestAnimationFrame(this.loop);
-    if (this.hidden) return;
-    if (now - this.lastDraw < this.interval() - 1) return;
-    this.drawFrame(now);
-    this.behave(now);
+    this.loopRaf = 0;
+    if (this.hidden) {
+      this.schedule(HIDDEN_POLL);
+      return;
+    }
+    if (now - this.lastDraw >= this.interval() - 1) {
+      this.drawFrame(now);
+      this.behave(now);
+    }
+    const smooth = this.busy || this.dragging || this.stance === 'fall' || this.act?.player.act.fps === 24;
+    if (smooth) this.frame();
+    else this.schedule(this.interval() - (performance.now() - this.lastDraw) - 6);
+  }
+
+  // Her loop on the next screen frame (one pending at a time: never two loops running side by side).
+  frame() {
+    clearTimeout(this.loopTimer);
+    this.loopTimer = 0;
+    if (!this.loopRaf) this.loopRaf = requestAnimationFrame(this.loop);
+  }
+
+  // Her loop in `ms`, then on the frame after that (so drawings stay frame-aligned).
+  schedule(ms) {
+    if (ms <= 4) {
+      this.frame();
+      return;
+    }
+    clearTimeout(this.loopTimer);
+    if (this.loopRaf) {
+      cancelAnimationFrame(this.loopRaf);
+      this.loopRaf = 0;
+    }
+    this.loopTimer = setTimeout(() => {
+      this.loopTimer = 0;
+      this.frame();
+    }, ms);
+  }
+
+  // Something wants her drawn now (back from her mask or her chip, a drag, an action on ones):
+  // don't wait out the timer.
+  nudge() {
+    if (!this.hidden) this.frame();
   }
 
   drawFrame(now = performance.now()) {
@@ -542,6 +587,7 @@ export class Capri {
       return Promise.resolve();
     }
     const next = new Player(name, { dir, reach });
+    this.nudge(); // an act starts on the next frame, not after the loop's nap
     if (this.act && this.act.player.priority > next.priority) return Promise.resolve();
     this.endAct(false);
     return new Promise((done) => {
@@ -578,7 +624,9 @@ export class Capri {
     if (this.stance === 'peek') return 'peek';
     if (this.stance === 'fall') return 'fall';
     if (this.mode === 'sleep') return 'sleep';
-    if (this.activityAct) return this.activityAct; // busy with something of hers (life.js)
+    // busy with something of hers (life.js); the real beat (rhythm.js) beats her plain music bob
+    if (this.activityAct && !(this.dancing && this.activityAct === 'bop')) return this.activityAct;
+    if (this.dancing) return 'dance';
     if (this.mode === 'idle') return MOOD_STAND[this.moodName] || 'stand';
     return 'stand';
   }
@@ -615,7 +663,7 @@ export class Capri {
     if (on === this.dancing) return;
     this.dancing = on;
     this.danceLevel = 0;
-    this.setActivity(on ? 'dance' : null);
+    if (this.stance === 'stand' && !this.pointing) this.base = this.restBase();
   }
 
   // A beat landed (rhythm.js): if she's dancing, drop the groove's down-beat right on it and pop
@@ -1320,6 +1368,7 @@ export class Capri {
     }
     this.busy = true;
     this.wake();
+    this.nudge();
     this.onTeleport?.('start');
     const fromHead = await this.vanish();
     await sleep(70);
@@ -1426,6 +1475,7 @@ export class Capri {
     this.onDoze?.('end');
     this.hidden = false;
     this.root.hidden = false;
+    this.nudge();
     Object.assign(this.p, { alpha: 0, collapse: 0.6, dissolve: 0.5, glitch: 0, split: 0, sparkle: 1 });
     const win = this.dozedOn && this.perchWin(this.dozedOn.id);
     if (win && this.canSit(win) && !this.covered(win, win.x + this.dozedOn.dx)) {
@@ -1446,6 +1496,7 @@ export class Capri {
     this.onUnstow?.();
     this.hidden = false;
     this.root.hidden = false;
+    this.nudge();
     if (this.mode === 'sleep') this.setMode('idle');
     this.lastActivity = performance.now();
     Object.assign(this.p, { alpha: 0, collapse: 1, dissolve: 0.5, glitch: 0, split: 0 });
@@ -1636,6 +1687,7 @@ export class Capri {
     this.setStance('fall');
     this.vy = 0;
     this.lastFall = performance.now();
+    this.nudge(); // falling is smooth motion: frame by frame from now
     if (reducedMotion.matches) this.updateFall(this.lastFall + 10000);
   }
 
@@ -1823,6 +1875,7 @@ export class Capri {
   setHidden(hidden) {
     this.hidden = hidden;
     this.root.hidden = hidden;
+    if (!hidden) this.nudge();
   }
 
   // ---------- pointer ----------
@@ -1843,6 +1896,7 @@ export class Capri {
         const dx = e.clientX - down.x, dy = e.clientY - down.y;
         if (!this.dragging && Math.hypot(dx, dy) > 5 && !this.busy) {
           this.dragging = true;
+          this.nudge();
           if (this.upside) {
             // flip back upright under the pointer
             down.pos = { x: down.pos.x, y: down.y + (SPRITE.feet.y - SPRITE.head.y) * this.scale };

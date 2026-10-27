@@ -14,6 +14,8 @@ const SILENCE_MS = 1100;      // this long quiet after speech: your turn is over
 const MAX_UTTERANCE = 15000;  // never record longer than this at a stretch
 const MIN_SPEECH_MS = 300;    // shorter than this: probably nothing, ignore
 const VOICE_LEVEL = 0.012;    // above this RMS counts as speech
+const VAD_MS = 40;            // how often the level is checked (25 times a second is plenty)
+const ECHO_MS = 450;          // after she stops talking, a moment before her own echo is gone
 
 export class Ears {
   constructor({ host, capri, panel, voice, brain, speech }) {
@@ -67,6 +69,7 @@ export class Ears {
   // She's speaking (app.js tells us): hold the mic so she doesn't transcribe herself.
   heardSelf(on) {
     this.speaking = on;
+    if (!on) this.echoUntil = performance.now() + ECHO_MS;
   }
 
   // Press-to-talk: start recording one thing you say, or stop and send it now.
@@ -90,11 +93,11 @@ export class Ears {
     this.single = true;
   }
 
+  // Conversation mode: the mic stays open; a turn starts when you start talking (vad).
   async startConverse() {
     if (!(await this.openMic())) return;
-    this.setState('idle');
     this.single = false;
-    this.startRecording();
+    this.setState('idle');
   }
 
   stopConverse() {
@@ -117,17 +120,13 @@ export class Ears {
     this.analyser.fftSize = 1024;
     src.connect(this.analyser);
     this.vadData = new Uint8Array(this.analyser.fftSize);
-    const loop = () => {
-      this.raf = requestAnimationFrame(loop);
-      this.vad();
-    };
-    this.raf = requestAnimationFrame(loop);
+    this.vadTimer = setInterval(() => this.vad(), VAD_MS);
     return true;
   }
 
   shutMic() {
-    cancelAnimationFrame(this.raf);
-    this.raf = 0;
+    clearInterval(this.vadTimer);
+    this.vadTimer = 0;
     try {
       this.recorder?.state === 'recording' && this.recorder.stop();
     } catch {
@@ -170,7 +169,7 @@ export class Ears {
     for (const v of this.vadData) sum += ((v - 128) / 128) ** 2;
     const rms = Math.sqrt(sum / this.vadData.length);
     const now = performance.now();
-    const voice = rms > VOICE_LEVEL && !this.speaking;
+    const voice = rms > VOICE_LEVEL && !this.speaking && now > (this.echoUntil || 0);
     if (voice) {
       this.voiceSince = this.voiceSince || now;
       this.silenceSince = now;

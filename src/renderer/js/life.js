@@ -43,8 +43,10 @@ export class Life {
     this.media = {};     // what's playing: { app, title, artist, playing }
     this.track = null;   // { key, since, commented }
     this.phones = null;  // her headphones (a prop), while music plays
+    this.audio = false;  // sound is coming out of the PC (rhythm.js), whatever the player
     this.away = false;
     this.awaySince = 0;
+    this.paused = false; // resting deeply (app.js): her clock stops
     const now = performance.now();
     this.nextAt = now + rand(...FIRST_AFTER);
     this.nextSkipAt = now + rand(6 * 60000, 12 * 60000);
@@ -82,6 +84,7 @@ export class Life {
   // ---------- the clock ----------
 
   tick() {
+    if (this.paused) return; // resting deeply (app.js): nothing to do until she's back
     const now = performance.now();
     if (this.run) {
       // something more important came up: she drops what she was doing
@@ -346,13 +349,20 @@ export class Life {
     if (!this.media.playing && was.playing) this.stopPhones();
   }
 
+  // Sound on or off (rhythm.js): her headphones follow it too.
+  setAudio(on) {
+    this.audio = Boolean(on);
+    if (!this.audio && !this.media.playing) this.stopPhones();
+  }
+
   // While music plays: headphones and bopping, a word about the track, and DJ mode.
   music(now) {
     const m = this.media;
+    const playing = m.playing || this.audio;
     const free = this.free();
-    if (!m.playing || this.run || this.capri.stance !== 'stand' || !free) {
+    if (!playing || this.run || this.capri.stance !== 'stand' || !free) {
       // the panel coming up for a moment doesn't take her headphones off
-      if (this.phones && (!m.playing || this.run || this.capri.stance !== 'stand' || !this.free({ panel: false }))) this.stopPhones();
+      if (this.phones && (!playing || this.run || this.capri.stance !== 'stand' || !this.free({ panel: false }))) this.stopPhones();
       return;
     }
     if (!this.phones) {
@@ -372,7 +382,7 @@ export class Life {
       if (Math.random() < 0.45 && vars.artist) this.say(fmt(pick(lines), vars), { face: mood === 'angry' ? 'look' : 'smug', hold: 3600 });
     }
     // DJ mode: bored of this one, she skips it (never one you just put on)
-    if (this.dj && track && age > 50000 && now > this.nextSkipAt) {
+    if (this.dj && m.playing && track && age > 50000 && now > this.nextSkipAt) { // only a track the player says is on
       const mood = this.heart.mood.mood;
       const chance = ['bored', 'annoyed', 'angry'].includes(mood) ? 0.006 : 0.0015;
       if (Math.random() < chance) this.skip();

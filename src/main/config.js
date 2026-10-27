@@ -37,6 +37,7 @@ const DEFAULTS = {
   life: true,        // she finds things to do on her own (hacking, games, graffiti...)
   dj: true,          // DJ mode: while music plays she skips a track herself now and then
   musicAware: true,  // she knows what's playing (title and artist, from Windows' media controls)
+  learn: true,       // she gets to know you and adapts to you (bond.js, kept in bond.json on this PC)
   voiceMode: 'chat', // her voice: 'off', 'chat' (her chat answers) or 'all' (everything she says)
   ttsEngine: 'system', // 'system' (Windows' voices, offline), 'openai', 'elevenlabs' or 'custom' (tts.js)
   ttsVoice: '',      // the speech service's voice (empty: tts.js DEFAULTS)

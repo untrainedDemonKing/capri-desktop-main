@@ -16,6 +16,7 @@ import { Eyes } from './eyes.js';
 import { Rhythm } from './rhythm.js';
 import { Hands } from './hands.js';
 import { Ears } from './ears.js';
+import { Bond } from './bond.js';
 import { applyTheme, resolveTheme } from './themes.js';
 import { linesFor } from './lines.js';
 import { lifeLines } from './lines-life.js';
@@ -111,6 +112,11 @@ async function boot() {
   };
   heart.configure(config);
   heart.start();
+  // Her bond with you (bond.js): she learns who she's talking to, adapts to you, and grows closer.
+  const bond = new Bond({ host, brain, heart });
+  bond.configure(config);
+  bond.start().catch(() => {});
+  brain.bond = bond;
   // Her voice (speech.js): her chat answers read out, or everything she says
   const speech = new Speech({ voice, host });
   speech.configure(config);
@@ -134,13 +140,17 @@ async function boot() {
     host.setInteractive(on);
   };
   const onChip = () => Boolean(chip.visible && mouse && chip.contains(mouse.x, mouse.y, 0));
+  let onHer = false; // the pointer is on her body (as of the last refreshHit)
   const refreshHit = () => {
+    onHer = false;
     if (capri.dragging) return setInteractive(true);
     if (!mouse) return setInteractive(false);
     const r = panel.rect();
     const onPanel = r && mouse.x >= r.left && mouse.x <= r.right && mouse.y >= r.top && mouse.y <= r.bottom;
-    document.body.style.cursor = onChip() ? 'pointer' : '';
-    return setInteractive(Boolean(onPanel || capri.hit(mouse.x, mouse.y) || onChip()));
+    const chipHit = onChip();
+    document.body.style.cursor = chipHit ? 'pointer' : '';
+    onHer = capri.hit(mouse.x, mouse.y);
+    return setInteractive(Boolean(onPanel || onHer || chipHit));
   };
   // Her biochip: her eyes on it follow the pointer over it, and she comes out when you click it
   // (only then, so the pointer passing through that corner doesn't call her back).
@@ -172,10 +182,9 @@ async function boot() {
     hoverChip();
     // tickling her, patting her head (heart.js)
     if (!capri.hidden && capri.stance !== 'fall') {
-      const on = capri.hit(mouse.x, mouse.y);
-      const h = capri.head();
-      const onHead = on && Math.hypot(mouse.x - h.x, mouse.y - (h.y - 34 * capri.scale)) < 62 * capri.scale;
-      heart.pointer(on, onHead);
+      const h = onHer && capri.head();
+      const onHead = onHer && Math.hypot(mouse.x - h.x, mouse.y - (h.y - 34 * capri.scale)) < 62 * capri.scale;
+      heart.pointer(onHer, onHead);
     }
   });
   document.addEventListener('mouseleave', () => {
@@ -188,16 +197,21 @@ async function boot() {
   // sleep say), and main.js puts in a new one.
   let seen = null;
   let rearmedAt = -Infinity;
-  setInterval(async () => {
+  let restLevel = 'awake'; // how deeply she rests (updateRest below)
+  const watchPointer = async () => {
     const at = await host.cursor().catch(() => null);
     const before = seen;
     seen = at;
-    if (!at?.inside || !before?.inside || (at.x === before.x && at.y === before.y)) return;
     const now = performance.now();
-    if (now - lastMove < WATCH_MS * 1.5 || now - rearmedAt < 20000) return;
-    rearmedAt = now;
-    host.rearm();
-  }, WATCH_MS);
+    const moved = at?.inside && before?.inside && (at.x !== before.x || at.y !== before.y);
+    if (moved && now - lastMove >= WATCH_MS * 1.5 && now - rearmedAt >= 20000) {
+      rearmedAt = now;
+      host.rearm();
+    }
+    // resting deeply, only her mask or chip can be clicked: no need to check as often
+    setTimeout(watchPointer, restLevel === 'deep' ? WATCH_MS * 3 : WATCH_MS);
+  };
+  setTimeout(watchPointer, WATCH_MS);
   window.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (chip.visible && chip.contains(e.clientX, e.clientY, 0)) host.openMenu();
@@ -255,6 +269,7 @@ async function boot() {
   brain.onTalk = () => chat.start();
   chat.heart = heart;
   chat.speech = speech;
+  chat.bond = bond;
   // Her own little life (life.js): things to do, music, noticing you
   const life = new Life({ capri, panel, voice, host, brain, heart, fx });
   life.chat = chat;
@@ -275,8 +290,8 @@ async function boot() {
   // She moves to your real music (rhythm.js): the beat drives her, and she keeps her headphones on.
   const rhythm = new Rhythm({ host, capri });
   rhythm.onPlaying = (playing) => {
-    capri.setDancing(playing && capri.stance === 'stand');
-    if (playing) life.onMedia({ ...life.media, playing: true }); // keep the headphones/comments in step
+    capri.setDancing(playing); // she grooves whenever she's standing (capri.baseAct)
+    life.setAudio(playing);    // headphones on while there's sound, even if no player reports a title
   };
   rhythm.configure(config);
   // Ears: you talk, she writes it down and answers (ears.js, stt.js); speech.js reads her answer out.
@@ -307,9 +322,29 @@ async function boot() {
   };
   showSenses();
   // while she's talking, her ears don't listen to her own voice
-  const wasOnTalk = speech.onTalk;
-  speech.onTalk = () => { ears.heardSelf(true); wasOnTalk?.(); };
+  speech.onStart = () => ears.heardSelf(true);
   speech.onDone = () => ears.heardSelf(false);
+
+  // How deeply she rests: awake, dozing (still drawn, 6 drawings a second), or deep (down to her
+  // mask, or put away in her chip). Resting deeply she costs next to nothing: her body isn't drawn,
+  // the main process stops watching your windows and music, she stops listening for beats, and she
+  // checks things less often. Anything that wakes her brings it all back.
+  const updateRest = () => {
+    const level = capri.dormant || capri.stowed ? 'deep' : capri.mode === 'sleep' ? 'sleep' : 'awake';
+    if (level === restLevel) return;
+    restLevel = level;
+    host.restLevel?.(level);
+    rhythm.pause(level === 'deep');
+    life.paused = level === 'deep';
+  };
+  for (const hook of ['onStow', 'onUnstow', 'onDoze', 'onMode']) {
+    const was = capri[hook];
+    capri[hook] = (...args) => {
+      was?.(...args);
+      updateRest();
+    };
+  }
+  setInterval(updateRest, 3000); // and a check now and then, whatever path she took
 
   // Getting her chat going with buttons (setup.js): Ollama and a model, a key, or an address
   const setup = new Setup({ guide, panel, host, brain, capri, voice });
@@ -436,6 +471,7 @@ async function boot() {
   host.onConfig((cfg) => {
     voice.configure(cfg);
     heart.configure(cfg);
+    bond.configure(cfg);
     life.configure(cfg);
     speech.configure(cfg);
     eyes.configure(cfg);
@@ -550,6 +586,21 @@ async function boot() {
     capri.perform('curious', capri.towardCenter());
     panel.say({ kind: 'done', face: 'smug', line: te.saved, hold: 5000 });
     setTimeout(() => eyes.look({ ask: true }), 600);
+  }
+
+  // What she's learned about you (her menu › Character › What she knows about me), and a way to wipe it.
+  async function showBond() {
+    const tb = lifeLines(brain.lang).bond;
+    let wipe = false;
+    await guide.scene(async () => { // (it brings her out of her chip, if need be)
+      const line = bond.enabled ? bond.summary() : `${bond.summary()} ${tb.off}`;
+      const actions = [{ id: 'keep', label: tb.keep, primary: true }, ...(bond.data.talks ? [{ id: 'forget', label: tb.forget }] : [])];
+      if ((await guide.ask({ face: 'smug', line, badge: tb.badge, actions })) !== 'forget') return;
+      wipe = (await guide.ask({ face: 'wide', line: tb.sure, actions: [{ id: 'wipe', label: tb.wipe }, { id: 'no', label: tb.no, primary: true }] })) === 'wipe';
+    });
+    if (!wipe) return;
+    bond.forget();
+    panel.say({ kind: 'info', face: 'aside', line: pick(tb.forgot), hold: 5000 });
   }
 
   // Which service turns your voice into text (her menu › Senses): engine, then its key or address.
@@ -670,6 +721,9 @@ async function boot() {
       case 'setupEars': // her menu › Senses › Speech-to-text
         setupEars();
         break;
+      case 'bond': // her menu › Character › What she knows about me
+        showBond();
+        break;
       case 'pushToTalk': // the shortcut (main.js), or the mic button
         ears.toggle();
         break;
@@ -775,7 +829,7 @@ async function boot() {
   });
 
   // the overlay opened in a plain browser (tests, screenshots): its pieces, to drive it from there
-  if (location.protocol === 'http:') window.__capri = { capri, fx, panel, brain, heart, life, chat, speech, voice, eyes, hands, rhythm, ears };
+  if (location.protocol === 'http:') window.__capri = { capri, fx, panel, brain, heart, life, chat, speech, voice, eyes, hands, rhythm, ears, bond };
 
   // entrance: her face big in the corner says hi, then she dives down to her spot
   // (put away last time: she starts in her biochip)
