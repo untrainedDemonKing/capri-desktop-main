@@ -29,6 +29,7 @@
     "test:config": "node --test tests/config.test.js",
     "test:chat": "node --test tests/chat.test.js",
     "test:claudecode": "node --test tests/claudecode.test.js",
+    "test:release": "node --test tests/release.test.js",
     "test": "node --test tests/*.test.js"
   },
   "keywords": [
