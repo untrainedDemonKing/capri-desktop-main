@@ -282,21 +282,45 @@ function rendererConfig() {
   return { ...cfg, keys: Object.keys(apiKeys || {}), assistant: activeAssistant().id, lang: resolveLang(cfg.lang), langSetting: cfg.lang, floorGap: overlayArea().gap };
 }
 
+// A setting changed (her menus, her ring, her setup). Only what really changed is acted on: the same
+// value again costs nothing (no file, no message to the overlay, no menu to build).
 function updateConfig(patch) {
-  config.save(patch);
-  if ('rest' in patch) fitOverlay(); // the taskbar in her window or not
-  if ('musicAware' in patch) watchMedia();
-  if ('ears' in patch || 'pushToTalk' in patch) registerPushToTalk();
+  const changed = config.save(patch);
+  if (!changed.length) return rendererConfig();
+  const did = (...keys) => keys.some((k) => changed.includes(k));
+  if (did('rest')) fitOverlay(); // the taskbar in her window or not
+  if (did('musicAware')) watchMedia();
+  if (did('ears', 'pushToTalk')) registerPushToTalk();
   const cfg = rendererConfig();
   overlay?.webContents.send('capri:config', cfg);
   rebuildTray();
   return cfg;
 }
 
+// The tray menu is rebuilt from scratch (a hundred items), so asks for it are gathered: a slider
+// dragged in her ring is dozens of changes a second, the menu follows once, a moment after.
+let trayTimer = 0;
 function rebuildTray() {
+  if (!tray || trayTimer) return;
+  trayTimer = setTimeout(() => {
+    trayTimer = 0;
+    buildTray();
+  }, 120);
+}
+
+// Whether her hooks are in (a read of the assistant's settings file): looked at again after a few
+// seconds, or right away after she installed or removed them herself.
+let hookCache = { at: 0, id: '', value: null };
+function hooksNow(fresh = false) {
+  const id = activeAssistant().id;
+  if (fresh || hookCache.id !== id || Date.now() - hookCache.at > 5000) hookCache = { at: Date.now(), id, value: activeHooks().status() };
+  return hookCache.value;
+}
+
+function buildTray() {
   if (!tray) return;
   const cfg = config.load();
-  const hookState = activeHooks().status();
+  const hookState = hooksNow();
   const watched = activeAssistant();
   const t = Object.fromEntries(Object.entries(TRAY[resolveLang(cfg.lang)]).map(([key, value]) =>
     [key, typeof value === 'string' && watched.id !== 'claude' ? value.replaceAll('Claude Code', watched.name) : value]));
@@ -430,7 +454,7 @@ function rebuildTray() {
         { type: 'separator' },
         ...(chatModels?.length
           ? chatModels.map((name) => ({
-            label: name, type: 'radio', checked: name === pickModel(cfg), click: () => updateConfig({ chatModel: name }),
+            label: llm.modelLabel(cfg.provider, name), type: 'radio', checked: name === pickModel(cfg), click: () => updateConfig({ chatModel: name }),
           }))
           : [{ label: (chatError || t.noOllama).slice(0, 80), enabled: false }]),
         { type: 'separator' },
@@ -487,6 +511,7 @@ function rebuildTray() {
         click: () => {
           if (cfg.render === render) return;
           config.save({ render });
+          config.flush(); // (app.exit() doesn't wait for the file)
           app.relaunch();
           app.exit(0);
         },
@@ -535,6 +560,7 @@ function runHooks(action, { quiet = false } = {}) {
     outcome = { action, ok: false, error: err.message };
   }
   if (!quiet) sendCommand('hooks', outcome);
+  hooksNow(true); // (she changed them: look again)
   rebuildTray();
   return outcome;
 }
@@ -545,8 +571,16 @@ function pickModel(cfg = config.load()) {
   return chatModels.includes(cfg.chatModel) ? cfg.chatModel : chatModels[0];
 }
 
-async function refreshModels() {
+// The models of whoever answers her, asked of them. `cached`: a list from the last minute is good
+// enough (opening her chat asks every time; for a service on the internet, or Claude Code's version
+// check, that's a round trip each). Anything that changes who answers, or their key, asks again.
+let modelsSeen = { who: '', at: 0 };
+async function refreshModels({ cached = false } = {}) {
   const cfg = config.load();
+  const who = `${cfg.provider}|${cfg.customUrl}|${cfg.apiKeys?.[cfg.provider] || ''}`;
+  if (cached && chatModels?.length && !llm.isLocal(cfg.provider, cfg) && modelsSeen.who === who && Date.now() - modelsSeen.at < 60000) {
+    return chatModels;
+  }
   chatError = null;
   chatErrorCode = null;
   chatModels = await llm.models(cfg.provider, llmConfig(cfg)).catch((err) => {
@@ -554,6 +588,7 @@ async function refreshModels() {
     chatErrorCode = err.code || null;
     return null;
   });
+  modelsSeen = { who: chatModels ? who : '', at: Date.now() };
   rebuildTray();
   return chatModels;
 }
@@ -719,7 +754,7 @@ function createTray() {
   tray = new Tray(icon);
   tray.setToolTip('Capri');
   tray.on('click', () => sendCommand('status'));
-  rebuildTray();
+  buildTray();
 }
 
 function registerIpc() {
@@ -740,14 +775,14 @@ function registerIpc() {
   ipcMain.on('menu:open', () => trayMenu?.popup({ window: overlay }));
   // her welcome panel's buttons
   ipcMain.handle('hooks:install', () => runHooks('install', { quiet: true }));
-  ipcMain.handle('claude:found', () => fs.existsSync(path.dirname(activeHooks().status().file))); // Claude Code keeps its settings there
+  ipcMain.handle('claude:found', () => fs.existsSync(path.dirname(hooksNow().file))); // Claude Code keeps its settings there
   ipcMain.on('claude:help', () => shell.openExternal(activeAssistant().help));
   ipcMain.handle('windows:get', () => lastWindows);
   // talking to her (chat.js): is Ollama there, with a model to talk with
   ipcMain.handle('chat:status', async () => {
     const cfg = config.load(true); // keys may have been edited by hand
     const { provider } = cfg;
-    const models = await refreshModels();
+    const models = await refreshModels({ cached: true });
     if (!models) return { ok: false, error: chatError || 'offline', code: chatErrorCode, provider };
     if (!models.length) return { ok: false, error: 'nomodel', provider };
     llm.warm(provider, pickModel()); // loading while you type your first message
@@ -757,23 +792,49 @@ function registerIpc() {
   ipcMain.handle('chat:send', async (_e, { id, messages }) => {
     const abort = new AbortController();
     chats.set(id, abort);
+    // the pieces of her answer go over in groups of a frame or two, not one message per token
+    let streamed = false;
+    let queued = '';
+    let timer = 0;
+    const drain = () => {
+      clearTimeout(timer);
+      timer = 0;
+      if (queued) overlay?.webContents.send('chat:delta', { id, text: queued });
+      queued = '';
+    };
+    const send = (text) => {
+      streamed = true;
+      queued += text;
+      timer ||= setTimeout(drain, 33);
+    };
     try {
-      let streamed = false;
-      const send = (text) => {
-        streamed = true;
-        overlay?.webContents.send('chat:delta', { id, text });
-      };
       const cfg = config.load();
       const text = await chatWithFallback(cfg, messages, send, abort.signal, () => streamed);
+      drain();
       if (cfg.provider === 'claude') saveMemory({ claude: llm.claudeMemory() });
       return { ok: true, text };
     } catch (err) {
+      drain();
+      // the key was refused (or taken away): the list of models is asked for again next time
+      if (['badkey', 'nokey'].includes(err.code)) modelsSeen = { who: '', at: 0 };
       return { ok: false, error: abort.signal.aborted ? 'stopped' : err.message, code: err.code || null };
     } finally {
+      clearTimeout(timer);
       chats.delete(id);
     }
   });
   ipcMain.on('chat:stop', (_e, id) => chats.get(id)?.abort());
+  // her ring menu › AI: the models of whoever answers her now (as last seen), with their names
+  ipcMain.handle('chat:models', () => {
+    const cfg = config.load();
+    return {
+      provider: cfg.provider,
+      current: pickModel(cfg),
+      error: chatError,
+      code: chatErrorCode,
+      models: (chatModels || []).map((id) => ({ id, label: llm.modelLabel(cfg.provider, id) })),
+    };
+  });
   ipcMain.handle('chat:memory', () => readMemory().history || []);
   // her bond with you (bond.js): load, save, and a line in her notebook from your last chats, written
   // by your chat model in one quiet go (never Claude Code: it would be working in your project)
@@ -1106,6 +1167,8 @@ function main() {
   });
 
   app.on('will-quit', () => {
+    config.flush(); // the last changes, written now
+    clearTimeout(trayTimer);
     globalShortcut.unregisterAll();
     windowWatch?.stop();
     mediaWatch?.stop();

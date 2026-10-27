@@ -86,6 +86,12 @@ export function place({ cx, cy, size, vw, vh, cardW = CARD_W, gap = 18, margin =
 
 const ICONS = {
   bond: [['path', { d: 'M12 21 L3.5 12.5 A5 5 0 0 1 12 6.4 A5 5 0 0 1 20.5 12.5 Z', class: 'is-fill' }]],
+  brain: [
+    ['circle', { cx: 6, cy: 12, r: 2.8, class: 'is-fill' }],
+    ['circle', { cx: 18, cy: 6, r: 2.8, class: 'is-fill' }],
+    ['circle', { cx: 18, cy: 18, r: 2.8, class: 'is-fill' }],
+    ['path', { d: 'M8.5 10.9 L15.5 7.1 M8.5 13.1 L15.5 16.9' }],
+  ],
   mic: [
     ['path', { d: 'M9 3 H15 V12 A3 3 0 0 1 9 12 Z', class: 'is-fill' }],
     ['path', { d: 'M5 11 A7 7 0 0 0 19 11 M12 18 V21.5 M8.5 21.5 H15.5' }],
@@ -393,7 +399,11 @@ export class Ring {
         this.flush();
         this.dragging = false;
       },
-      refresh: () => this.refresh(),
+      // draw the card again; `top`: from the top (something was opened at the top of it)
+      refresh: (top = false) => {
+        this.refresh();
+        if (top) this.body.scrollTop = 0;
+      },
       hide: () => this.hide(),
       // keep something running while this tab is selected, even if the card is redrawn (the mic's meter)
       hold: (key, start, stop) => this.hold(key, start, stop),

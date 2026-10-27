@@ -9,8 +9,9 @@ import { fmt } from './util.js';
 import { plural, dateOf } from './bond.js';
 import { micThreshold, meterLevel } from './ears.js';
 import { el, heading, note, row, button, buttons, toggle, pick, seg, slider, chips, quote } from './ring-ui.js';
+import { PROVIDERS, GROUPS, needsKey, isLocal } from './brain-providers.js';
 
-export const ORDER = ['bond', 'mic', 'senses', 'character', 'colours', 'voice', 'more', 'chat'];
+export const ORDER = ['bond', 'brain', 'mic', 'senses', 'character', 'colours', 'voice', 'more', 'chat'];
 
 const isWindows = (host) => (host.platform ? host.platform === 'win32' : /win/i.test(globalThis.navigator?.platform || ''));
 const prettyKey = (key) => String(key || 'Control+Alt+Space').replace(/\bControl\b/g, 'Ctrl').replace(/\bCommandOrControl\b/g, 'Ctrl');
@@ -161,6 +162,170 @@ const bond = {
     return root;
   },
 };
+
+// ---------- AI: who answers her ----------
+
+const brain = {
+  sub(c) {
+    return c.cfg.provider ? (PROVIDERS[c.cfg.provider]?.name || c.cfg.provider) : '';
+  },
+  render(c) {
+    const { t, cfg, host, state } = c;
+    const b = t.brain;
+    const root = el('div');
+    const provider = cfg.provider || 'ollama';
+    const keys = cfg.keys || [];
+
+    // what's known about whoever answers her now (the models, or why it can't): asked once per visit
+    if (state.asked !== provider && !state.loading) {
+      state.loading = true;
+      state.asked = provider;
+      Promise.resolve(host.chatModels?.()).catch(() => null).then((info) => {
+        state.loading = false;
+        state.info = { ...(info || { models: [], error: '' }), provider }; // (for the one that was asked about)
+        if (c.open) c.refresh();
+      });
+    }
+    if (state.codeFound === undefined) {
+      state.codeFound = null;
+      Promise.resolve(host.claudeFound?.()).catch(() => false).then((found) => {
+        state.codeFound = Boolean(found);
+        if (c.open) c.refresh();
+      });
+    }
+    const info = state.info?.provider === provider ? state.info : null;
+    const models = info?.models || [];
+    const connected = Boolean(info) && models.length > 0 && !info.error;
+
+    // the state of it all, and a way to check
+    const head = el('div', 'ring__link');
+    const dot = el('i', `ring__dot${connected ? ' is-on' : ''}`);
+    const name = PROVIDERS[provider]?.name || provider;
+    const model = models.find((m) => m.id === info?.current)?.label || info?.current || '';
+    const line = el('div', 'ring__link-text');
+    line.append(el('b', '', connected ? b.on : state.busy || state.loading ? b.checking : b.off));
+    line.append(el('span', '', connected ? fmt(b.using, { name, model }) : info?.error ? String(info.error).slice(0, 110) : name));
+    head.append(dot, line);
+    root.append(head);
+    root.append(buttons(button(b.test, async () => {
+      state.busy = 'test';
+      state.result = '';
+      c.refresh();
+      const res = await host.chatStatus().catch((err) => ({ ok: false, error: err.message }));
+      state.busy = null;
+      state.asked = null; // (asked again)
+      state.result = res?.ok ? fmt(b.works, { n: models.length || 1 }) : `${b.fails} ${String(res?.error || '').slice(0, 100)}`;
+      if (c.open) c.refresh();
+    }, { disabled: Boolean(state.busy) })));
+    if (state.result) root.append(note(state.result, true));
+
+    // the key (or the address) of the one you're setting up
+    const chosen = state.pick;
+    if (chosen && PROVIDERS[chosen]) {
+      const pname = PROVIDERS[chosen].name;
+      const isUrl = chosen === 'custom';
+      root.append(heading(isUrl ? b.urlH : fmt(b.keyH, { name: pname })));
+      const form = el('form', 'ring__form');
+      const input = el('input', 'ring__input');
+      input.type = isUrl ? 'text' : 'password';
+      input.placeholder = isUrl ? b.urlPlaceholder : b.keyPlaceholder;
+      input.spellcheck = false;
+      input.autocomplete = 'off';
+      input.value = state.draft || '';
+      input.addEventListener('input', () => { state.draft = input.value; });
+      form.append(input, button(b.connect, () => form.requestSubmit(), { primary: true, disabled: Boolean(state.busy) }));
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const value = input.value.trim();
+        if (!value) { input.focus(); return; }
+        connect(c, chosen, isUrl ? { url: value } : { key: value });
+      });
+      root.append(form);
+      if (state.error) root.append(note(`${b.fails} ${state.error}`));
+      if (!isUrl) {
+        root.append(note(fmt(b.keyNote, { name: pname }), true));
+        if (chosen === 'anthropic') root.append(note(b.envNote, true));
+        root.append(buttons(
+          button(b.page, () => host.keyPage(chosen)), // (main.js setup.js KEY_PAGES: every service that takes a key has one)
+          button(b.fromEnv, () => connect(c, chosen, {}), { disabled: Boolean(state.busy) }),
+        ));
+      }
+      c.focus(input);
+    } else if (state.error) root.append(note(`${b.fails} ${state.error}`));
+
+    // who answers
+    for (const group of GROUPS) {
+      root.append(heading(b.groups[group]));
+      const items = Object.entries(PROVIDERS).filter(([, p]) => p.group === group);
+      const box = el('div', 'ring__providers');
+      for (const [id] of items) {
+        const [label, hint] = b.providers[id] || [PROVIDERS[id].name, ''];
+        const on = id === provider;
+        const btn = el('button', `ring__provider${on ? ' is-on' : ''}${state.pick === id ? ' is-pick' : ''}`);
+        btn.type = 'button';
+        btn.append(el('span', 'ring__provider-name', label));
+        const tag = needsKey(id) && keys.includes(id) ? b.hasKey : '';
+        btn.append(el('span', 'ring__provider-hint', [hint, tag && `· ${tag}`].filter(Boolean).join(' ')));
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (state.busy) return;
+          state.error = '';
+          if (needsKey(id) && !keys.includes(id)) { state.pick = id; c.refresh(true); return; } // asks for the key
+          if (id === 'custom') { state.pick = id; c.refresh(true); return; } // and the address
+          state.pick = null;
+          if (id !== provider) connect(c, id);
+        });
+        box.append(btn);
+      }
+      root.append(box);
+    }
+
+    // what's special about the one that answers now
+    if (provider === 'claude') root.append(note(state.codeFound === false ? b.codeMissing : b.codeNote, true));
+    if (provider === 'ollama' && info && !models.length) root.append(note(b.ollamaDown, true));
+    if (isLocal(provider)) root.append(note(b.localNote, true));
+    else if (provider !== 'claude') root.append(note(b.cloudNote, true));
+    if (keys.includes(provider) && needsKey(provider) && state.pick !== provider) {
+      root.append(buttons(button(b.changeKey, () => { state.pick = provider; state.draft = ''; c.refresh(true); })));
+    }
+
+    // the model
+    if (models.length > 1) {
+      root.append(heading(b.modelH));
+      root.append(pick_(models, info.current, (id) => c.set({ chatModel: id })));
+      if (provider === 'anthropic') root.append(note(b.claudeNote, true));
+    } else if (provider === 'anthropic' && connected) root.append(note(b.claudeNote, true));
+
+    root.append(heading(''));
+    root.append(buttons(go(c, b.wizard, 'setupChat')));
+    return root;
+  },
+};
+
+// the models as a column of rows
+const pick_ = (models, current, onPick) => pick(models.map((m) => ({ id: m.id, label: m.label })), current, onPick);
+
+// Connecting: saved and tried, and put back as it was if it doesn't work (main.js setup:use).
+async function connect(c, provider, extra = {}) {
+  const { state, host } = c;
+  state.busy = provider;
+  state.error = '';
+  c.refresh();
+  const res = await host.useProvider({ provider, ...extra }).catch((err) => ({ ok: false, error: err.message }));
+  state.busy = null;
+  if (res?.ok) {
+    state.pick = null;
+    state.draft = '';
+    state.asked = null; // (the models of the new one are asked for)
+    state.result = '';
+    c.cfg.provider = provider;
+    if (extra.key) c.cfg.keys = [...new Set([...(c.cfg.keys || []), provider])];
+  } else {
+    state.pick = provider;
+    state.error = String(res?.error || 'failed').slice(0, 140);
+  }
+  if (c.open) c.refresh();
+}
 
 // ---------- Mic ----------
 
@@ -476,4 +641,4 @@ const more = {
   },
 };
 
-export const TABS = { bond, mic, senses, character, colours, voice, more, chat: { render: () => el('div') } };
+export const TABS = { bond, brain, mic, senses, character, colours, voice, more, chat: { render: () => el('div') } };

@@ -1,7 +1,8 @@
 'use strict';
 
-// Who she talks with: Ollama, any OpenAI-compatible server (local, cloud, or a keyless gateway),
-// or Claude Code itself (headless `claude -p`, so your messages become its prompts).
+// Who she talks with: Ollama, Claude itself (the Anthropic API, through its official SDK:
+// anthropic.js), any OpenAI-compatible server (local, cloud, or a keyless gateway), or Claude Code
+// (headless `claude -p`, so your messages become its prompts).
 // Keys come from config.json's `apiKeys` ({ openai: "sk-..." }) or the provider's env variable.
 
 const os = require('node:os');
@@ -10,9 +11,11 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const ollama = require('./ollama');
+const anthropic = require('./anthropic');
 
 const PROVIDERS = {
   ollama: { label: 'Ollama (local)', kind: 'ollama', local: true },
+  anthropic: { label: 'Claude (Anthropic API key)', kind: 'anthropic', env: 'ANTHROPIC_API_KEY' },
   lmstudio: { label: 'LM Studio (local)', url: 'http://127.0.0.1:1234/v1', local: true },
   llamacpp: { label: 'llama.cpp / vLLM (local :8080)', url: 'http://127.0.0.1:8080/v1', local: true },
   pollinations: {
@@ -72,6 +75,8 @@ async function models(id, cfg) {
   const p = endpoint(id, cfg);
   if (p.kind === 'ollama') return ollama.models().catch(() => null);
   if (p.kind === 'claude') return claudeVersion().then(() => ['Claude Code']);
+  // (no key given: the SDK still looks for its own, in the environment or an `ant auth login` profile)
+  if (p.kind === 'anthropic') return anthropic.models(p.key);
   // what's missing has a code, so her setup knows what to ask for (setup.js)
   if (!p.url) throw Object.assign(new Error('no address set for this server'), { code: 'nourl' });
   if (p.env && !p.key) throw Object.assign(new Error(`no API key (or ${p.env})`), { code: 'nokey' });
@@ -212,6 +217,7 @@ async function chat(id, cfg, { model, messages }, onDelta, signal) {
   if (p.kind === 'ollama') return ollama.chat({ model, messages }, onDelta, signal);
   // Claude Code keeps its own memory of the conversation: only her persona and your last message go
   if (p.kind === 'claude') return claudeChat(cfg, messages.at(-1).content, messages[0].content, onDelta, signal);
+  if (p.kind === 'anthropic') return anthropic.chat(p.key, { model: model || anthropic.DEFAULT_MODEL, messages }, onDelta, signal);
   return openaiChat(p, { model, messages }, onDelta, signal);
 }
 
@@ -224,6 +230,7 @@ const VISION_MODELS = {
   groq: 'meta-llama/llama-4-scout-17b-16e-instruct',
   mistral: 'pixtral-12b-latest',
   pollinations: 'openai',
+  anthropic: anthropic.DEFAULT_MODEL,
 };
 
 // Her eyes: one look at a picture (base64 JPEG), answered in one go (not streamed). `prompt` is
@@ -233,6 +240,8 @@ async function see(id, cfg, { image, prompt, model = null }) {
   const p = endpoint(id, cfg);
   const use = model || cfg.visionModel || VISION_MODELS[id];
   if (p.kind === 'claude') throw Object.assign(new Error('Claude Code has no eyes here'), { code: 'noeyes' });
+  // (a vision model named for another service isn't one of Claude's)
+  if (p.kind === 'anthropic') return anthropic.see(p.key, { model: /^claude-/.test(use || '') ? use : anthropic.DEFAULT_MODEL, image, prompt });
   if (p.kind === 'ollama') {
     if (!use) throw Object.assign(new Error('no vision model set'), { code: 'novision' });
     return ollama.once({ model: use, messages: [{ role: 'user', content: prompt, images: [image] }] }, AbortSignal.timeout(40000));
@@ -262,4 +271,7 @@ function isLocal(id, cfg) {
   return Boolean(PROVIDERS[id].local);
 }
 
-module.exports = { isLocal, PROVIDERS, CLAUDE_MODES, VISION_MODELS, models, warm, chat, see, resetClaude, isChatSession, claudeMemory, restoreClaude };
+// A model as her menus show it (Claude's have names: "Claude Opus 5.5"; the rest are their own ids).
+const modelLabel = (id, model) => (PROVIDERS[id]?.kind === 'anthropic' ? anthropic.label(model) : model);
+
+module.exports = { isLocal, PROVIDERS, CLAUDE_MODES, VISION_MODELS, models, modelLabel, warm, chat, see, resetClaude, isChatSession, claudeMemory, restoreClaude };

@@ -212,7 +212,7 @@ export class Chat {
     // how it makes her feel, shown right away: she bristles, giggles, blushes... (heart.js)
     const felt = this.heart?.feel(text) || { tags: [], reaction: null };
     // she gets to know you a little more with every message (bond.js): how close she is now
-    const grew = this.bond?.observe(text, felt.tags) || 0;
+    const grew = this.bond?.observe(text, this.heart?.enabled ? felt.tags : null) || 0;
     this.shown = '';
     this.panel.setChatBusy(true);
     this.panel.setActions([]); // a close button she offered before goes with a new message
@@ -248,7 +248,8 @@ export class Chat {
       this.history.pop();
       this.panel.setFace('wide');
       // too busy or gone even after trying other models (main.js): said plainly, not the server's JSON
-      this.panel.stream(res.code === 'busy' ? this.t.swamped : res.code === 'gone' ? this.t.gone : `${this.t.failed} ${res.error}`, { done: true });
+      const known = { busy: 'swamped', gone: 'gone', credit: 'credit', badkey: 'badkey', refused: 'refused' }[res.code];
+      this.panel.stream(known ? this.t[known] : `${this.t.failed} ${res.error}`, { done: true });
       this.panel.setChatBusy(false);
       return;
     }

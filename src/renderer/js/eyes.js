@@ -29,6 +29,7 @@ export class Eyes {
     this.scene = null;        // { text, at }: the last thing she saw, for her chat
     this.fgSeen = 0;          // when the foreground window last changed
     this.greeted = false;
+    this.clock = 0;           // the interval that asks tick() (only while she may look: configure)
   }
 
   get t() {
@@ -39,6 +40,13 @@ export class Eyes {
     this.enabled = cfg.vision === true;
     this.every = Math.max(0, (cfg.visionEvery ?? 45)) * 1000;
     if (!this.enabled) this.scene = null;
+    // her glance clock only runs while she's allowed to look on her own (off by default: no timer at all)
+    const want = this.enabled && this.every > 0;
+    if (want && !this.clock) this.clock = setInterval(() => this.tick(), 2500);
+    else if (!want && this.clock) {
+      clearInterval(this.clock);
+      this.clock = 0;
+    }
   }
 
   // the foreground window changed (app.js): worth a glance soon, if she's allowed

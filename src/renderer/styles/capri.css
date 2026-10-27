@@ -6,25 +6,25 @@
 
 @font-face {
   font-family: 'Chakra Petch';
-  src: url('../../../node_modules/@fontsource/chakra-petch/files/chakra-petch-latin-600-normal.woff2') format('woff2');
+  src: url('../../../assets/fonts/chakra-petch-latin-600-normal.woff2') format('woff2');
   font-weight: 600;
   font-display: block;
 }
 @font-face {
   font-family: 'Chakra Petch';
-  src: url('../../../node_modules/@fontsource/chakra-petch/files/chakra-petch-latin-700-normal.woff2') format('woff2');
+  src: url('../../../assets/fonts/chakra-petch-latin-700-normal.woff2') format('woff2');
   font-weight: 700;
   font-display: block;
 }
 @font-face {
   font-family: 'JetBrains Mono';
-  src: url('../../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2') format('woff2');
+  src: url('../../../assets/fonts/jetbrains-mono-latin-400-normal.woff2') format('woff2');
   font-weight: 400;
   font-display: block;
 }
 @font-face {
   font-family: 'JetBrains Mono';
-  src: url('../../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-latin-600-normal.woff2') format('woff2');
+  src: url('../../../assets/fonts/jetbrains-mono-latin-600-normal.woff2') format('woff2');
   font-weight: 600;
   font-display: block;
 }
@@ -32,21 +32,21 @@
 /* Russian: Chakra Petch has no Cyrillic, JetBrains Mono's stands in for it in the display type too */
 @font-face {
   font-family: 'Chakra Petch';
-  src: url('../../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-cyrillic-600-normal.woff2') format('woff2');
+  src: url('../../../assets/fonts/jetbrains-mono-cyrillic-600-normal.woff2') format('woff2');
   font-weight: 600 700;
   font-display: block;
   unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
 }
 @font-face {
   font-family: 'JetBrains Mono';
-  src: url('../../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-cyrillic-400-normal.woff2') format('woff2');
+  src: url('../../../assets/fonts/jetbrains-mono-cyrillic-400-normal.woff2') format('woff2');
   font-weight: 400;
   font-display: block;
   unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
 }
 @font-face {
   font-family: 'JetBrains Mono';
-  src: url('../../../node_modules/@fontsource/jetbrains-mono/files/jetbrains-mono-cyrillic-600-normal.woff2') format('woff2');
+  src: url('../../../assets/fonts/jetbrains-mono-cyrillic-600-normal.woff2') format('woff2');
   font-weight: 600;
   font-display: block;
   unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;

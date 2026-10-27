@@ -65,12 +65,15 @@ const DEFAULTS = {
 };
 
 let cache = null;
+let pending = false; // changes not written yet (they're written a moment after the last one, or by flush())
+let writeTimer = 0;
 
 function file() {
   return path.join(app.getPath('userData'), 'config.json');
 }
 
 function load(fresh = false) {
+  if (fresh) flush(); // (a change not written yet would be lost to the read)
   if (cache && !fresh) return cache;
   try {
     cache = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file(), 'utf8')) };
@@ -80,15 +83,37 @@ function load(fresh = false) {
   return cache;
 }
 
+const same = (a, b) => a === b || (typeof a === 'object' && a !== null && JSON.stringify(a) === JSON.stringify(b));
+
+// Puts the changes in. Returns the keys that really changed (none: nothing was new and nothing is
+// written). The file follows within a quarter of a second, once, whatever the number of changes: a
+// slider dragged in her ring menu is dozens of them a second.
 function save(patch) {
-  cache = { ...load(), ...patch };
+  const before = load();
+  const changed = Object.keys(patch).filter((k) => !same(before[k], patch[k]));
+  if (!changed.length) return changed;
+  cache = { ...before, ...patch };
+  pending = true;
+  clearTimeout(writeTimer);
+  writeTimer = setTimeout(flush, 250);
+  return changed;
+}
+
+// Writes what's waiting, now (before reading it back, and before she quits or restarts). Whole or
+// not at all: a crash in the middle never leaves half a file.
+function flush() {
+  clearTimeout(writeTimer);
+  writeTimer = 0;
+  if (!pending) return;
+  pending = false;
   try {
     fs.mkdirSync(path.dirname(file()), { recursive: true });
-    fs.writeFileSync(file(), JSON.stringify(cache, null, 2));
+    const tmp = `${file()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(cache, null, 2));
+    fs.renameSync(tmp, file());
   } catch (err) {
     console.error('[capri] could not save config:', err.message);
   }
-  return cache;
 }
 
-module.exports = { load, save, file, DEFAULTS };
+module.exports = { load, save, flush, file, DEFAULTS };

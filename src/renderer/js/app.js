@@ -18,7 +18,8 @@ import { Hands } from './hands.js';
 import { Ears } from './ears.js';
 import { Bond } from './bond.js';
 import { Ring } from './ring.js';
-import { applyTheme, resolveTheme } from './themes.js';
+import { applyTheme, resolveTheme, askedTheme } from './themes.js';
+import { classify } from './mood.js';
 import { linesFor } from './lines.js';
 import { lifeLines } from './lines-life.js';
 import { pick, fmt, reducedMotion } from './util.js';
@@ -475,8 +476,8 @@ async function boot() {
     }
   });
   let lastFg = null;
-  // she glances at the screen on her own, now and then, when she's allowed and things are calm
-  setInterval(() => eyes.tick(), 2500);
+  // (she glances at the screen on her own, now and then, when she's allowed and things are calm: eyes.js
+  // keeps that clock itself, and only while vision is on)
   // the windows as they are now: the watcher only speaks again when something changes
   host.windowsNow().then((data) => data && capri.setWindows(data));
 
@@ -866,6 +867,20 @@ async function boot() {
 
   // the overlay opened in a plain browser (tests, screenshots): its pieces, to drive it from there
   if (location.protocol === 'http:') window.__capri = { capri, fx, panel, brain, heart, life, chat, speech, voice, eyes, hands, rhythm, ears, bond, ring };
+
+  // Regular expressions are compiled the first time they run: the patterns that read your messages
+  // (her feelings, her hands, her colours, her notebook) cost ~150 ms on the first one, which would
+  // be a pause under your first message. Run once now, in a quiet moment, instead.
+  setTimeout(() => (window.requestIdleCallback || setTimeout)(() => {
+    const sample = 'привет, как дела? ты классная, спасибо, открой телеграм и напиши маме';
+    for (let i = 0; i < 2; i++) {
+      classify(sample);
+      hands.parse(sample);
+      askedTheme(sample);
+      chat.asked(sample);
+      bond.warm(sample);
+    }
+  }), 6000);
 
   // entrance: her face big in the corner says hi, then she dives down to her spot
   // (put away last time: she starts in her biochip)

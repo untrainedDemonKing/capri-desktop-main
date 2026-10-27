@@ -37,19 +37,20 @@ test('the ring and its card are put where there is room, on either side of her',
   assert.ok(at.top >= 8 && at.top + at.size <= 500);
 });
 
-test('eight sectors are drawn as closed annular shapes with a gap between them', async () => {
+test('nine sectors are drawn as closed annular shapes with a gap between them', async () => {
   const { sectorPath, sectorMid, polar } = await load('ring.js');
   const { ORDER } = await load('ring-tabs.js');
-  assert.equal(ORDER.length, 8);
+  assert.equal(ORDER.length, 9);
   assert.equal(ORDER[0], 'bond');
+  assert.equal(ORDER[1], 'brain');
   const d = sectorPath(0);
   assert.match(d, /^M [\d. ]+ A 222 222 0 0 1 [\d. ]+ L [\d. ]+ L [\d. ]+ A 142 142 0 0 0 [\d. ]+ L [\d. ]+ Z$/);
   assert.notEqual(sectorPath(0), sectorPath(1));
-  // the first sector's middle is straight up from the centre, the third's to the right
+  // the first sector's middle is straight up from the centre, the third's off to the right
   const top = sectorMid(0);
   assert.ok(Math.abs(top.x - 230) < 0.01 && top.y < 230);
   const right = sectorMid(2);
-  assert.ok(right.x > 230 && Math.abs(right.y - 230) < 0.01);
+  assert.ok(right.x > 230 && right.y < 240);
   const [x, y] = polar(100, 0);
   assert.equal(Math.round(x), 330);
   assert.equal(Math.round(y), 230);
@@ -260,6 +261,26 @@ test('hearing your own mic on the output picked: needs the mic on, keeps it open
     if (real) Object.defineProperty(globalThis, 'navigator', real);
     else delete globalThis.navigator;
     delete globalThis.AudioContext;
+  }
+});
+
+test('the AI tab lists the same services the main process knows, and which of them take a key', async () => {
+  const { PROVIDERS, GROUPS, needsKey, isLocal } = await load('brain-providers.js');
+  const main = require('../src/main/llm.js').PROVIDERS;
+  assert.deepEqual(Object.keys(PROVIDERS).sort(), Object.keys(main).sort());
+  for (const [id, p] of Object.entries(PROVIDERS)) {
+    assert.ok(GROUPS.includes(p.group), id);
+    // a service that has a key variable in the main process takes a key here too
+    assert.equal(needsKey(id), Boolean(main[id].env), id);
+    assert.equal(isLocal(id), Boolean(main[id].local), id);
+  }
+  assert.equal(PROVIDERS.anthropic.group, 'claude');
+  assert.equal(main.anthropic.kind, 'anthropic');
+  const { lifeLines } = await load('lines-life.js');
+  for (const lang of ['ru', 'en']) {
+    const b = lifeLines(lang).ring.brain;
+    for (const id of Object.keys(PROVIDERS)) assert.equal(b.providers[id]?.length, 2, `${lang} ${id}`);
+    for (const g of GROUPS) assert.ok(b.groups[g], `${lang} ${g}`);
   }
 });
 

@@ -22,6 +22,7 @@ const MODELS = [
 
 // Where to get a key, by provider (llm.js)
 const KEY_PAGES = {
+  anthropic: 'https://console.anthropic.com/settings/keys',
   groq: 'https://console.groq.com/keys',
   gemini: 'https://aistudio.google.com/apikey',
   openrouter: 'https://openrouter.ai/keys',

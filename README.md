@@ -143,6 +143,8 @@ sector is a tab, shown as a card beside the ring (arrow keys switch, Esc or a cl
   other; four dials for how she is with you (shorter ↔ longer, slang, teasing, warmth) that she turns herself and you
   can turn by hand; and her notebook about you: facts, likes, dislikes, with a ✕ to take back anything wrong and a way
   to write one yourself. "Forget everything about me" is in the same card.
+- **AI**: who answers her chat and how it's connected (see "Talk to her"): Claude by API key, Claude Code, Ollama and
+  other servers on your PC, the cloud services, your own server; the key, the model list, a connection test, the wizard.
 - **Mic**: on/off, which microphone (it reopens on the new one), how sensitive (the line on the meter is where "voice"
   starts), a live waveform and level (the mic is open only while this tab is on screen and the badge by the clock blinks
   to say so), press-to-talk or conversation mode, and whether the badge shows the level too.
@@ -161,6 +163,13 @@ watching your windows and music stop, she checks on you less often, her audio na
 listener pauses. In our measurement her window's work while asleep dropped **4–5×** and screen-frame wake-ups
 **30–100×**. Anything that calls her (a click, Claude, her menu, the shortcut) brings it all back at once. Awake, she's drawn
 on twos (12 drawings a second, like the anime) and doesn't wake the CPU in between.
+
+**Updates are lean too.** A setting set to what it already is does nothing (no file, no message, no menu rebuild); a
+burst of changes (a slider in her ring) is one write to `config.json`, whole or not at all; the tray menu is rebuilt at
+most every 0.12 s; her chat's tokens go to the overlay in groups instead of one message each; a cloud service's model
+list is remembered for a minute; the regular expressions that read your messages are warmed up while she's idle, so
+the first message doesn't stall for ~150 ms. The installer carries only the fonts she uses (`assets/fonts`) and none of
+the SDK's maps or typings.
 
 ### She gets around
 
@@ -240,15 +249,31 @@ The first time, she sets it up with you, with buttons, no terminal:
   other than English) or llama3.2 (2 GB, for smaller PCs). On a tiny model (1B and under) she warns you it may talk
   nonsense and offers a better one.
 - **Online, no account**: Pollinations, nothing to set up.
-- **I have a key**: Groq or Gemini (both have a free tier), OpenRouter, OpenAI, Mistral or DeepSeek. You paste your
-  key in her panel and she checks it. It's kept on your PC, encrypted with your Windows account, and only ever sent to
-  that service.
+- **I have a key**: **Claude** (the Anthropic API), Groq or Gemini (both have a free tier), OpenRouter, OpenAI, Mistral
+  or DeepSeek. You paste your key in her panel and she checks it. It's kept on your PC, encrypted with your Windows
+  account, and only ever sent to that service.
 
-Her menu › **AI model** lets you switch later: **Set it up with her…**, or straight to a service and a model, LM Studio
-(`:1234`), llama.cpp or vLLM (`:8080`), any OpenAI-compatible server (**API key or address…**), or **Claude Code**
-itself: your messages go to `claude -p` in the folder you pick, continuing one conversation, and her hooks show what it
-does. In that last one, permission mode `default` only lets it read (nobody is there to say yes); `acceptEdits` lets it
-edit files without asking. **Forget our conversations** clears what she remembers of your chats.
+**Connecting a model, in her ring menu.** Right-click her › **AI**: whether she's connected, who answers her (Claude,
+Claude Code, on this PC, in the cloud, your own server), a field for the key, **Test the connection**, the model list and
+the setup wizard. Switching is instant, no restart. She tells you plainly when a key is refused, the account is out of
+credit, a service is overloaded or a model declined.
+
+![The AI tab: who answers her, the key, the model](docs/ai.png)
+
+**Claude (API key)** is built in through Anthropic's official SDK (`src/main/anthropic.js`): answers stream in as they
+are written, the model list comes from your account (Claude Opus 5.5 by default: it holds her character best; Sonnet
+5.5 and Haiku 5.5 are cheaper and faster), her replies run at low effort so she doesn't keep you waiting, and where the
+API offers it a declined request is re-run on another model so she doesn't fall silent. Her eyes work on Claude too. Get
+a key at [console.anthropic.com](https://console.anthropic.com/settings/keys) (billed separately from a Claude
+subscription), paste it in the AI tab, **Connect**. With `ANTHROPIC_API_KEY` set, or after `ant auth login`, press
+**Use the system one** and there's nothing to paste.
+
+**Claude Code** (a subscription, no API key): your messages go to `claude -p` in the folder you pick, continuing one
+conversation, and her hooks show what it does. Permission mode `default` only lets it read (nobody is there to say yes);
+`acceptEdits` lets it edit files without asking (tray menu › AI model).
+
+Her tray menu › **AI model** has the same choices (LM Studio `:1234`, llama.cpp or vLLM `:8080`, any OpenAI-compatible
+server: **API key or address…**). **Forget our conversations** clears what she remembers of your chats.
 
 **It's AI.** Her replies are written by the model, not by the show's writers: it's a fan version of her, and the chat
 panel says so every time.
@@ -433,8 +458,10 @@ Nothing. The hook only keeps what the display needs (tool name, file path, comma
 Claude's last message up to 6,000 characters so she can show it to you, all truncated) and sends it to `127.0.0.1` only.
 Your file contents are never sent: for a write, only its size goes through.
 
-Her chat goes to Ollama on your PC (`127.0.0.1:11434`, or `OLLAMA_HOST`) with what she knows of the moment (the
-project's name, Claude's last action, today's counts). Her mission log stays in her own storage on your PC.
+Her chat goes to whoever you picked to answer her: Ollama on your PC (`127.0.0.1:11434`, or `OLLAMA_HOST`) keeps it
+here; Claude (the Anthropic API) or another cloud service gets your messages and what she knows of the moment (the
+project's name, Claude's last action, today's counts). Your API keys are kept encrypted with your Windows account and
+only sent to their own service. Her mission log stays in her own storage on your PC.
 
 Her voice, if you pick a speech service for it (OpenAI, ElevenLabs): what she says goes to that service, nowhere else
 (the system voice and a server on your PC keep it here). What's playing (title and artist) is read on your PC and only
@@ -545,12 +572,20 @@ src/renderer/js/
   ring.js                her circular menu: the ring, where it goes on screen, tabs
   ring-tabs.js           what's on each card: Bond, Mic (level meter, device, sensitivity), Senses, Colours...
   ring-ui.js             its switches, sliders, chips (styles/ring.css, on her colour tokens)
+  brain-providers.js     who can answer her chat, grouped, and which take a key (the AI tab)
+src/main/anthropic.js    Claude through the official SDK: streamed answer, models, vision, refusal fallback
+src/main/llm.js          every "brain": Ollama, Claude, Claude Code, OpenAI-compatible servers
+src/main/config.js       her settings: no-op changes skipped, one atomic write per burst
 src/main/tts.js          speech services (OpenAI, ElevenLabs, OpenAI-compatible)
 src/main/stt.js          speech-to-text (Groq, OpenAI, OpenAI-compatible)
 src/main/screen.js       a screenshot (desktopCapturer); llm.js see() runs the vision model
 src/main/control.js      her hands: windows and messages via PowerShell, focused on the right window only
 src/main/media.js / .ps1 what's playing, from Windows' media controls
 ```
+
+Tests: `npm test` runs them all (`test:character`, `test:senses`, `test:bond`, `test:ring`, `test:claude`, `test:config`,
+`test:hooks` one by one). The Claude connection is tested against a stand-in for the Anthropic API, with the real SDK, so
+no key or network is needed.
 
 To hack on it: `npm run dev` turns on debug routes on the bridge (`/debug/capture` saves a frame of the window to `captures/`,
 `/debug/testwin` opens test windows she can sit on, one per name, `/debug/mouse` moves and clicks a stand-in pointer

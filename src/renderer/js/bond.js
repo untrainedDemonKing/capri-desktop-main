@@ -110,10 +110,10 @@ export class Bond {
 
   // A message from you (chat.js, before her answer). `tags`: what mood.js made of it. Returns the
   // level she just reached, or 0.
-  observe(text, tags = []) {
+  observe(text, tags = null) {
     if (!this.enabled) return 0;
     const raw = String(text || '');
-    if (!tags.length) tags = classify(raw).tags; // her emotions off: what the message is, all the same
+    if (!tags) tags = classify(raw).tags; // her emotions off: what the message is, all the same (else heart.js already read it)
     const d = this.data;
     const now = new Date();
     // what you think of her last answer
@@ -187,6 +187,16 @@ export class Bond {
 
   progress() {
     return progressOf(this.data);
+  }
+
+  // Runs her patterns once on a sample (app.js, in a quiet moment): they compile the first time they
+  // run, which shouldn't be under your first message.
+  warm(sample) {
+    for (const [, , pattern] of ASKS) pattern.test(sample);
+    ABOUT_ME.test(sample);
+    FORGET_ME.test(sample);
+    feedback(sample, []);
+    observeStyle({ n: 0, words: 0, emoji: 0, swear: 0, formal: 0.5, laugh: 0, ask: 0, hostile: 0, warm: 0 }, sample, []);
   }
 
   // Her ring menu: take back one line of her notebook ('facts' | 'likes' | 'dislikes'), or empty a
