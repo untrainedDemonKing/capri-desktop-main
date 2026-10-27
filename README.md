@@ -1,469 +1,961 @@
-**English** · [Français](README.fr.md) · [Русский](README.ru.md)
+# Капри — живая
 
-# Capri
+Капри, конструкт *Project Capricorn* из Cyberpunk: Edgerunners (2 сезон), живёт у тебя на рабочем столе. Она следит
+за твоим ИИ для кода — **Claude Code**, **Codex** или **Antigravity** — телепортируется, глитчит, комментирует каждое
+действие, прибегает, когда нужно твоё разрешение, и выходит из себя, когда работа сделана.
 
-Capri, the *Project Capricorn* construct from Cyberpunk: Edgerunners season 2, lives on your desktop
-and tells you what your coding AI is up to: **Claude Code**, **Codex** or **Antigravity**. She teleports,
-glitches, comments on every action, comes to find you when it needs your permission, and loses it when the job is done.
+А ещё она **болтает с тобой** через любую нейросеть — **Claude**, Ollama на твоём ПК, Gemini, GPT, Groq и другие, —
+злится, смеётся, обижается и смущается, говорит голосом, меняет цвет, видит твой экран, слышит тебя, двигается под твою
+музыку, запоминает, кто ты, и живёт своей жизнью, пока ты занят.
 
-![Capri telling you Claude is done](docs/done.png)
+> Это фанатский проект. Ответы пишет нейросеть, а не сценаристы сериала: это фанатская версия персонажа.
 
-![Teleport, frame by frame](docs/teleport.png)
+![Капри сообщает, что Claude закончил](docs/done.png)
 
-## What she does
+![Телепортация по кадрам](docs/teleport.png)
 
-- **When she starts**: she grabs your screen. Its edges crackle red, her left hand slams onto its edge, then her
-  right, her arms reach in along them as she hauls herself up, and her face hits the glass (a white flash, an ink
-  one, her colours apart, the screen shaking). She looks around, blinks, opens her mouth wide on "hi" (a tag pops
-  by her face, her name typed under it), lets go of the right edge to wave at you with her clawed hand, grabs it
-  again, glances at where she's going, and lets go: her arms break into shards from her hands in, and her head
-  crouches and dives down to her spot, where her body unfolds from her face.
+## Оглавление
 
-  ![Her intro: her hands on the edges, her face hitting the glass, the wave, holding on again](docs/intro.png)
+1. [Быстрый старт](#быстрый-старт)
+2. [Установка и запуск на компьютере](#установка-и-запуск-на-компьютере)
+3. [Как подключить нейросеть](#как-подключить-нейросеть)
+4. [Как подключить слежение за Claude Code, Codex и Antigravity](#как-подключить-слежение-за-claude-code-codex-и-antigravity)
+5. [Как ею пользоваться](#как-ею-пользоваться)
+6. [Настройка](#настройка)
+7. [Что она умеет](#что-она-умеет)
+8. [Демо без Claude](#демо-без-claude)
+9. [Это безопасно](#это-безопасно)
+10. [Что уходит с твоего компьютера](#что-уходит-с-твоего-компьютера)
+11. [Если что-то не работает](#если-что-то-не-работает)
+12. [Вопросы и ответы](#вопросы-и-ответы)
+13. [Как она нарисована](#как-она-нарисована)
+14. [Для разработчиков](#для-разработчиков)
+15. [Авторы и права](#авторы-и-права)
 
-- **While Claude works**: a ticker over her head shows the current action
-  (`EDITS gigs.ts`, `RUNS npm test`, `GREPS "paginate"`…) and she sheds little data glyphs.
-  When Claude runs a command or goes on the web, red sparks fly off her fingers; sitting on a window,
-  she jacks into it and the lightning runs along its edge.
-- **When Claude goes quiet mid-task** (thinking it over, or a slow local model): after 15 seconds the ticker turns
-  violet and counts the seconds (`THINKING… 45 s`), and she keeps herself busy (a spin, a look around, the satellite
-  once). After 40 seconds she says something about it; after two minutes she tells you nothing's stuck.
-- **When Claude needs you** (permission, question): she teleports next to your mouse, mane bristling, and won't let it go.
-  If you're on another window, she goes to Claude's window instead and points at it with her finger (a dashed line,
-  brackets on its corners, `CLAUDE` on a tag): that's where the question is. She stops once you've answered.
-- **When a command fails**: red impact frame, she gets knocked back, heavy glitch, and the error line that actually matters.
-- **When it's done**: she teleports to the middle of the screen and goes into her victory sequence:
-  a wind-up with her mane pulled in, a stretched smear frame, then arms flung up and mane exploding under
-  manga speed lines and a shockwave, a manic laugh with an anime cut-in of her grin. Once she's back down,
-  the summary (`12 actions · 3 files changed · 2m 14s`) and Claude's last sentence.
-- **When Claude answers and you're on another window**: she shows you its whole answer, in a wider panel that
-  scrolls (paragraphs, lists and code kept). It goes away when you're back on Claude's window, or when you click it.
-  Claude's window is the one you typed your prompt in. Windows only, like the window tracking.
-- **The rest of the time**: she floats, her mane sways and sheds shards, she drifts from one corner to another,
-  turns around and cocks her head when your mouse comes near (or, little menace, zaps it with red lightning and a sly grin),
-  looks up at the satellite, and falls asleep after 10 quiet minutes.
-- **When she sleeps**: she dozes a while, then her mane and her body come apart and all that's left is what she is at
-  heart in the show, her green mask and her eyes, floating where she was, eyes shut. Now and then she cracks one open.
-  Bring your mouse close (or let Claude start again) and her blue eyes snap open and she comes back together around it.
-- **The satellite**: the big sequence, kept for moments that matter. The first time of the day, a little while after
-  Claude finishes a long job (8 minutes or more, or 50 actions), or whenever you like from the tray menu.
-  The white specks of her mane lift off as a constellation, line up into a road from her fingers to the satellite,
-  she coils up, and the red light goes up to it. It answers her, twinkling twice.
+---
 
-![Victory: the key pose, then the laugh and the cut-in](docs/victory.png)
+## Быстрый старт
 
-![The satellite: her stars, the road, the red light, the answer](docs/star.png)
+1. **Установи Капри** ([как](#установка-и-запуск-на-компьютере)): запусти установщик `Capri-Setup-….exe` или сделай
+   `npm install` и `npm start` из исходников.
+2. **Подключи нейросеть**: правый клик по Капри › вкладка **ИИ** › выбери, кто будет ей отвечать (Claude по ключу, Ollama
+   бесплатно на твоём ПК, бесплатный облачный Groq или Gemini…) и нажми **Подключить**. Подробно — [ниже](#как-подключить-нейросеть).
+3. **Поговори**: правый клик › сектор **Говорить**.
+4. *(Если пользуешься Claude Code, Codex или Antigravity)* нажми на её приветственной панели **«Подключить меня к Claude»**:
+   она будет следить за твоим ИИ. Подробно — [ниже](#как-подключить-слежение-за-claude-code-codex-и-antigravity).
 
-### Her character
+Остальное по желанию: голос, зрение, микрофон, перекраска, руки — всё включается в круговом меню (правый клик по ней).
 
-She has moods that build up and wear off (`mood.js`): insult her and she gets angry (a string of insults and she
-blows up: a red flash, her red copies flying off her, a growl, then a bolt at your pointer) and holds a grudge, even
-across restarts, until you apologise (twice, if she was furious); compliment her and she gets flustered (a blush, a
-little heart); make her laugh and she laughs; call her "Alexa" and she corrects you; tell her you're sad and she
-softens. Poke her over and over and she loses it, sweep the pointer back and forth over her and she's ticklish, rest it
-on her head for a head pat, drag her around and she gets dizzy, leave her alone and she gets bored. She reacts with
-her body before her AI even answers, and her AI is told how she feels and why. Her mood shows on her panel and at the
-top of her menu (her menu › Character › Emotions turns it off).
+---
 
-![Her moods](docs/moods.png)
+## Установка и запуск на компьютере
 
-- **Her voice** (her menu › Voice): her chat answers read out, or everything she says. The system's voices (free,
-  offline, pitched by her mood), OpenAI (`gpt-4o-mini-tts`, told how she feels), ElevenLabs (your voice id), or any
-  OpenAI-compatible speech server on your PC (Kokoro-FastAPI). Speech services go through her "many minds" effect:
-  two delayed, wavering copies of her under her voice.
-- **Her colours** (her menu › Colours, or "turn blue" in her chat): seven themes for her mane, her misregistered copy,
-  the panel and her lightning, or *Follow her mood*.
-- **Her own life** (`life.js`): when nothing's going on she hacks some corp's ICE, plays a tiny arcade game (and rages
-  when she loses), reads a data shard, paints neon graffiti on your screen, scans your network, argues with the other
-  minds in her. With music playing (Windows' media controls: Spotify, a browser…) she puts headphones on and bobs her
-  head, has opinions about the track, and in DJ mode skips one herself now and then. She notices when you've been
-  away, says good morning, tells you to go to bed at 3 am, complains when the battery runs low.
+Капри — приложение на Electron. Лучше всего она работает на **Windows 10/11**: только там она сидит на твоих окнах,
+знает, что играет, видит окна, управляет ими и пишет в мессенджеры. На macOS и Linux она запускается из исходников
+(прозрачному окну на Linux нужен композитор, лучше X11), но без этих функций. На macOS и Linux проект пока не
+проверялся: она должна запускаться, летать, выглядывать из-за краёв экрана, падать и гулять.
 
-![Her colours](docs/themes.png)
+На телефоне и Android она не работает: ей нужен рабочий стол.
 
-![What she gets up to](docs/life.png)
+### Вариант 1. Готовый установщик (Windows, без командной строки)
 
-### She gets around
+1. Если в разделе **Releases** репозитория уже лежит файл `Capri-Setup-<версия>.exe`, скачай его и запусти. Если его нет,
+   собери сам (вариант 2, шаг 5).
+2. Установка идёт в один щелчок, **в твою учётную запись** (права администратора не нужны), на рабочем столе появляется
+   ярлык «Capri», и она сразу запускается. Node.js и ничего другого ставить не надо.
+3. Установщик не подписан (сертификат подписи платный), поэтому Windows SmartScreen может написать «Windows защитил ваш
+   компьютер». Нажми **Подробнее**, затем **Выполнить в любом случае**. Предупреждение из-за отсутствия подписи, а не из-за
+   того, что установщик что-то делает.
+4. Она появится на экране и представится. Меню — **правый клик по ней**. То же меню есть на её иконке у часов, которую
+   Windows 11 часто прячет за стрелкой **^**.
 
-- **She sits on your windows**: perched on the top edge of a window, legs dangling and kicking one after the other.
-  She rides along when you move the window, and falls off when you close, minimize or cover it.
-  While Claude works she settles on the window in front if she can.
-- **She peeks in from the edges of the screen**: half hidden on the left or right, or hanging upside down from the top.
-  She's shy: get your mouse close and she ducks away to another edge.
-- **She falls**: stretched, mane blown up, accelerating, then a big squash and a shower of shards when she lands.
-  On the way down, a window ledge can catch her.
-- **Drop her on a window**: drag her and let go with her hips on a window's top edge, she sits there.
-  Let go anywhere else and she falls.
-- **She possesses your windows**, like in the show where she slips into bodies and systems: now and then she dives
-  into the window she's sitting on. Red lightning races round its frame, slices of it glitch, and the window looks
-  at you with her eyes and her zigzag grin, more eyes opening all over it, every pupil on your pointer, and she laughs.
-  Then she comes out of another window. Nothing is drawn over the windows in front of it, and the window's contents
-  are never read: it's just drawn over, for two seconds. If it bothers you, untick *Possess my windows* in the tray menu.
-- **Little flourishes**: a full spin with afterimages, a hop, looking left and right, the cocked head,
-  and the other minds in her (her green and red copies) pulling away from her, hanging there, and snapping back in.
+### Вариант 2. Из исходников (Windows, macOS, Linux)
 
-![Sitting on a window](docs/sit.png)
+1. Поставь [Node.js](https://nodejs.org) версии **20 или новее** (при установке отметь «Add to PATH»). Для скачивания
+   проекта командой нужен ещё [Git](https://git-scm.com), но можно и без него (шаг 2).
+2. Скачай проект. Либо на странице репозитория **Code › Download ZIP** и распакуй, либо в терминале:
+   ```bash
+   git clone https://github.com/anisimovkirill597-create/capri-desktop-main.git
+   cd capri-desktop-main
+   git checkout capri-alive
+   ```
+   Ветка `capri-alive` — со всеми новыми возможностями (круговое меню, подключение Claude по ключу, саморазвитие и так
+   далее). Если ты скачал ZIP, переключи ветку на странице репозитория до скачивания.
+3. Установи зависимости (один раз, нужен интернет, скачивается Electron):
+   ```bash
+   npm install
+   ```
+4. Запусти:
+   ```bash
+   npm start
+   ```
+   Терминал нужно держать открытым, пока она работает (закроешь окно терминала — она исчезнет). Капри появится на
+   рабочем столе, а её иконка — у часов.
+5. **Установщик `.exe`** (по желанию, Windows): `npm run dist`. Готовый `Capri-Setup-<версия>.exe` появится в папке `dist/`.
 
-![Peeking in from the edges](docs/peek.png)
+Проверить, что всё в порядке: `npm test` (все тесты должны пройти).
 
-![Possessing a window: the dive, the hit, the window full of eyes](docs/possess.png)
+### Если установка или запуск не получились
 
-![Asleep down to her mask, waking up, and put away bottom left](docs/sleep.png)
+| Что видишь | Что делать |
+|---|---|
+| `node` или `npm` «не является командой» | Node.js не установлен или не добавлен в PATH: поставь заново и открой **новый** терминал |
+| `npm install` долго висит или падает на Electron | Проверь интернет, VPN и антивирус: Electron скачивает свой бинарник (около 100 МБ). Повтори `npm install` |
+| «Port 47823 already in use» в терминале | Уже запущена другая Капри (или другая программа занимает порт). Закрой её через меню › **Выйти** и запусти снова. Порт можно сменить переменной окружения `CAPRI_PORT` |
+| Фон за ней чёрный | Меню › **Отображение** › **OpenGL**, а если не помогло — **Без видеокарты** (подробнее [ниже](#если-что-то-не-работает)) |
+| Windows не даёт запустить `.exe` | Нажми **Подробнее › Выполнить в любом случае** (SmartScreen) |
 
-Window tracking is Windows-only for now (a tiny PowerShell helper reads window positions, no titles, no contents).
-On macOS and Linux she still floats, peeks, falls and wanders.
+### После установки
 
-### She shows you around
+- **Правый клик по Капри** — её круговое меню со всеми настройками. **Ctrl+Alt+C** — спрятать её или вернуть.
+- **Автозапуск:** меню у часов › **Запускать вместе с Windows** (запись о запуске создаётся, только если ты поставил эту
+  галочку).
+- **Обновление:** из исходников — `git pull`, затем `npm install`. Установщик — просто запусти новый поверх старого. Твои
+  настройки, память и «блокнот о тебе» лежат отдельно и сохранятся.
+- **Где хранятся данные:** папка `Capri` в `%APPDATA%` (при запуске из исходников — `capri-desktop`). В ней:
+  `config.json` (настройки; ключи там зашифрованы), `memory.json` (память чатов), `bond.json` (что она о тебе узнала),
+  папка `sounds` (твои звуки). Чтобы начать с чистого листа, закрой Капри и удали эту папку.
+- **Удаление:** как любое приложение — Параметры Windows › Приложения. Данные удаляются вместе с папкой выше.
 
-**How does it work?** in her menu: she asks what to show you, then takes you there and points at it. Her head snaps
-to it, she coils up leaning away, then strikes: her construct arm shoots out at it to twice its length, red lightning
-off her fingertip, a reticle slams onto it with two of her eyes opening on its corners, and a close-up of her eyes cuts
-in. Then she holds it while she explains, a wire of data running from her finger to it: now and then she jabs at it,
-or glances back at you. When she's done, the wire reels back into her finger and the arm snaps back.
+### Что изменится в системе
 
-![The strike, and the hold while she explains](docs/point.png)
+- Запись о хуках в `~/.claude/settings.json` (перед этим рядом создаётся копия, а твои хуки остаются), если ты нажал
+  «Подключить меня». Убрать можно из её меню.
+- Запись об автозапуске — только если поставил галочку «Запускать вместе с Windows».
 
-- **Where's my icon?** She goes down by the clock and points at her tray icon, or at the **^** when Windows hides it.
-- **Where's Claude?** She points at Claude's window: the one you typed your last prompt in.
-- **Claude's folder**: she opens `~/.claude` in Explorer with `settings.json` selected, points at the window, and
-  explains what her hook in there is and how to take it out.
-- **Plug me into Claude**: her hooks in one click. It's also her welcome the first time she starts. Next to it,
-  **Free with Ollama** runs Claude Code (or Codex) through Ollama for you: her hooks go in, Ollama gets installed if it
-  isn't, and a window opens on `ollama launch claude`, where you pick a model.
-- **Talk to me**: see "Talk to her" below.
+---
 
-She pulls faces while she talks: eight expressions, all frames of her from the show (watching, turned away, the fang
-grin, eyes gone round, looking right at you, laughing with her mouth wide open, all her eyes at once, the zigzag grin).
-Each message picks the one that fits, and her portrait glitches from one face to the next.
+## Как подключить нейросеть
 
-![Pointing at Claude's window during a permission prompt, and at her tray icon](docs/guide.png)
+Чтобы Капри отвечала в чате, ей нужен «мозг» — нейросеть. Подходит почти любая, выбирать и менять её можно в любой момент,
+без перезапуска:
 
-![Her eight faces](docs/faces.png)
+> **Правый клик по Капри › вкладка «ИИ».** Там видно, подключена ли она сейчас, и можно выбрать другой «мозг».
 
-### Her mission report
+![Вкладка ИИ в круговом меню: кто ей отвечает, ключ, модель](docs/ai.png)
 
-**Mission report** in her menu: a card of what Claude got through today, made to be screenshotted. Tasks finished in
-big, then actions, files changed and errors, the longest mission and its project, prompts, approvals and projects. The
-numbers count up. **Copy image** puts a picture of the card on your clipboard, on its own dark plate, ready to paste
-anywhere. In the evening (after 6 pm), after a real day's work (3 tasks or more), she brings it to you once, on her
-own. The demo doesn't count, and it stays on your PC, one day at a time.
+Если не хочется разбираться самому, нажми там **«Мастер подключения…»**: она сама задаст вопросы кнопками и всё настроит
+(поставит Ollama, скачает модель, попросит ключ). То же самое есть в меню у часов › **ИИ-модель** › **Выбрать вместе с ней…**.
+Мастер к тому же сам включается, когда ты впервые пытаешься с ней поговорить, а «мозга» ещё нет.
 
-### Talk to her
+### Что выбрать
 
-**Talk to her** in her menu (or the **Talk to me** button when you click her and nothing's going on): you type in her
-panel and she answers in character. She knows what Claude is doing and what it got done today. She answers in writing,
-in her own language. Enter sends, Esc closes.
+| Способ | Для кого | Деньги | Что уходит в интернет |
+|---|---|---|---|
+| **Claude (API-ключ)** | лучше всего держит её характер и русский | платно, по использованию | сообщения → Anthropic |
+| **Claude Code** | у тебя уже есть подписка Claude | по подписке | сообщения → Claude Code → Anthropic |
+| **Ollama** | хочешь бесплатно и приватно | бесплатно | ничего |
+| **Groq / Gemini** | хочешь бесплатно, без мощного ПК | есть бесплатный тариф | сообщения → сервис |
+| **Pollinations** | попробовать за минуту, без аккаунта | бесплатно | сообщения → сервис |
+| **LM Studio / llama.cpp / свой сервер** | у тебя уже стоит локальная модель | бесплатно | ничего |
+| **OpenAI, OpenRouter, Mistral, DeepSeek** | если уже есть ключ | платно | сообщения → сервис |
 
-The first time, she sets it up with you, with buttons, no terminal:
+### Способ 1. Claude по API-ключу (рекомендую)
 
-- **On my PC** (free, nothing leaves your machine): she installs [Ollama](https://ollama.com) for you (with winget,
-  Windows' own installer), wakes it up, and downloads a model while a bar fills up: gemma3 (3.3 GB, better in languages
-  other than English) or llama3.2 (2 GB, for smaller PCs). On a tiny model (1B and under) she warns you it may talk
-  nonsense and offers a better one.
-- **Online, no account**: Pollinations, nothing to set up.
-- **I have a key**: Groq or Gemini (both have a free tier), OpenRouter, OpenAI, Mistral or DeepSeek. You paste your
-  key in her panel and she checks it. It's kept on your PC, encrypted with your Windows account, and only ever sent to
-  that service.
+Это встроенное подключение к Claude через официальную библиотеку Anthropic (`src/main/anthropic.js`). Ответы идут потоком
+(слова появляются по мере написания), а список моделей берётся прямо из твоего аккаунта.
 
-Her menu › **AI model** lets you switch later: **Set it up with her…**, or straight to a service and a model, LM Studio
-(`:1234`), llama.cpp or vLLM (`:8080`), any OpenAI-compatible server (**API key or address…**), or **Claude Code**
-itself: your messages go to `claude -p` in the folder you pick, continuing one conversation, and her hooks show what it
-does. In that last one, permission mode `default` only lets it read (nobody is there to say yes); `acceptEdits` lets it
-edit files without asking. **Forget our conversations** clears what she remembers of your chats.
+1. Зайди на [console.anthropic.com](https://console.anthropic.com), создай аккаунт и пополни баланс (API оплачивается
+   отдельно от подписки Claude).
+2. Открой **Settings › API Keys** ([прямая ссылка](https://console.anthropic.com/settings/keys)) › **Create Key** и
+   скопируй ключ (он начинается с `sk-ant-`, показывается один раз).
+3. В Капри: правый клик › вкладка **ИИ** › **«Claude · API-ключ»** › вставь ключ в поле › **Подключить**.
+4. Она проверит ключ (запрос к списку моделей) и, если всё хорошо, подключится. Дальше выбери **модель** в этой же вкладке.
 
-**It's AI.** Her replies are written by the model, not by the show's writers: it's a fan version of her, and the chat
-panel says so every time.
+**Модели.** По умолчанию берётся **Claude Opus 5.5**: он лучше всех держит её характер и отвечает живее всех. **Sonnet 5.5**
+дешевле и быстрее, почти не хуже. **Haiku 5.5** — самая быстрая и дешёвая, для частой болтовни. Актуальные цены смотри на
+сайте Anthropic. Её ответы короткие (одна-три фразы), так что расход небольшой, а на Haiku совсем маленький. Думает она
+вполсилы (низкий уровень рассуждения), чтобы не заставлять тебя ждать.
 
-**What she can do on your PC** (Windows), when you ask her in the chat:
+Что ещё полезно знать:
 
-- **Open an app or a game**: anything in your Start menu (Store apps like Spotify included), your Steam and Epic
-  games ("open Spotify", "launch Brawlhalla"). Named in your own words, it opens right away; if only her AI came up
-  with it, you get a button first.
-- **Music**: "pause", "next", "louder", "mute"… press the media keys, so it works with Spotify and most players, right
-  as you send it. "Put Daft Punk on Spotify" opens Spotify on a search for it (the app if you have it, else the site).
-- **A website**: always behind a button showing where it goes.
-- **Close an app** ("close AM Music", "can you shut Discord down?"): a button with the app's name, and nothing happens
-  until you click it. She closes it the way its own close button does, so it can still ask you to save. If it only
-  hid in the tray, she offers **Force quit**, again only on your click (unsaved work is lost then). She never closes
-  Windows' own pieces, Claude, Ollama or herself.
+- Ключ можно не вводить, если он уже есть в системе: переменная окружения `ANTHROPIC_API_KEY` или вход через
+  `ant auth login`. Нажми **«Взять из системы»**.
+- Если модель откажется отвечать на конкретное сообщение (по соображениям безопасности), запрос автоматически уйдёт на
+  другую модель (серверный «fallback» Anthropic, включён по умолчанию для Opus и Sonnet 5.5), и она не замолчит. Если на
+  твоём аккаунте этой функции нет, всё работает и без неё.
+- **Зрение** на Claude тоже работает: включи **Чувства › Видеть мой экран**, и она будет смотреть снимки той же моделью
+  (можно выбрать дешёвую, например Haiku 5.5, в «Модель зрения…»).
+- Ключ хранится **зашифрованным** на этом ПК (учётной записью Windows) и уходит только на серверы Anthropic. Сменить или
+  удалить: вкладка ИИ › **«Сменить ключ»**.
 
-Nothing else: she can't see your screen or your files.
+### Способ 2. Claude Code (по подписке, без API-ключа)
 
-### Make her yours
+Если у тебя уже стоит [Claude Code](https://code.claude.com/docs/en/quickstart) и ты вошёл в свою подписку, Капри может
+отвечать через него: сообщения уходят в `claude -p` («безголовый» режим) в выбранной папке, продолжая один разговор.
 
-Right-click her › **Make her yours…** (or "Make me yours" in her guide), one panel at a time, each one skippable:
+1. Установи Claude Code (`npm install -g @anthropic-ai/claude-code`) и один раз запусти `claude`, чтобы войти.
+2. В Капри: вкладка **ИИ** › **«Claude Code · по подписке»**.
+3. Папку проекта, в которой он работает, и права выбираешь в меню у часов › **ИИ-модель**. По умолчанию он **только
+   читает** (режим `default`, потому что подтвердить правку здесь некому); можно разрешить правки без вопросов
+   (`acceptEdits`).
 
-- **What she calls you.** She uses it now and then, and comes online with it ("Capri online. Hi, Max.").
-- **How she is**, in your words ("more teasing, and talk to me about Night City"): her chat follows it. She stays Capri.
-- **Lines of yours**, that she says now and then with hers when you click her. Write `{name}` in one and she puts
-  your name there.
-- **Things to remember** (your favorite game, your cat, D…): her chat keeps them in mind.
+Здесь Капри — оболочка над настоящим агентом Claude Code: он может реально работать в твоей папке, а в её пузыре
+показывается итог. Блокнот «что она о тебе знает» в этом режиме не ведётся (агента не гоняют ради заметок).
 
-In her chat, "call me Léa" and "remember that my cat is called Neko" work too. All of it stays in her settings on
-your PC.
+### Способ 3. Бесплатно и на своём ПК: Ollama
 
-She only catches the mouse on her actual body (pixel-precise): the rest of the screen works as usual.
+Ничего не уходит в интернет, ключи не нужны. Нужен компьютер с 8 ГБ памяти и больше.
 
-- **Click** her: she tells you where Claude is at (nothing going on: a **Talk to me** button, to chat with her).
-- **Drag** her: move her around.
-- **Click** the panel: it closes.
-- **Ctrl+Alt+C**: she puts herself away (into her biochip, like in the show) and all that's left of her is her mask,
-  eyes shut, in the bottom-left corner. Her eyes only open when Claude needs you. Click the mask (or Ctrl+Alt+C again)
-  to bring her back.
-- **Her menu**: right-click her (it's also on her tray icon, next to the clock): teleport, look at the satellite, demo,
-  how it works, mission report, talk to her, size, sound, screen, AI model, wander, possess your windows,
-  language, start with Windows, hooks.
+1. Вкладка **ИИ** › **«Мастер подключения…»** › **«На моём ПК»**.
+2. Мастер сам установит [Ollama](https://ollama.com) через winget (встроенный установщик Windows), запустит её и предложит
+   скачать модель: `gemma3` (3,3 ГБ, лучше по-русски) или `llama3.2` (2 ГБ, для слабых ПК). Скачивание идёт с полосой
+   прогресса.
+3. Готово: Капри подключается к Ollama на этом же компьютере (`127.0.0.1:11434`, или адрес из `OLLAMA_HOST`).
 
-She speaks **French, English, Spanish, Brazilian Portuguese and Russian**, and picks the language of your system on her
-own. You can choose another one in her menu.
+Для русского языка нужны модели покрупнее: `gemma3:4b` и больше. Совсем маленькие (1B и меньше) могут нести чепуху, и
+Капри предупредит тебя и предложит модель получше. Если такая модель забудет скрытый тег настроения, она угадает настроение
+по тексту.
 
-## Install
+Если Ollama у тебя уже стоит, мастер не будет ставить её заново: он только разбудит её (если она спит) и предложит скачать модель (если ни одной ещё нет). Другие пункты первого вопроса мастера: **«Онлайн, без аккаунта»** (Pollinations) и **«У меня есть ключ»** (облачные сервисы).
 
-### Quick start (Windows, no coding)
+### Способ 4. Бесплатный облачный тариф
 
-1. Download **`Capri-Setup-x.y.z.exe`** from the [latest release](https://github.com/mochiiwuff/capri-desktop/releases/latest)
-   and run it. It installs for your user only (no admin rights), adds a desktop shortcut and starts Capri.
-   You don't need Node.js or anything else.
-2. The installer isn't signed (a code-signing certificate costs money), so Windows SmartScreen may say
-   "Windows protected your PC": click **More info**, then **Run anyway**.
-3. Capri shows up and introduces herself. Click **Plug me in**: that connects her to Claude Code.
-4. Close Claude Code completely and open it again (it reads its hooks when a session starts). As soon as Claude does
-   something, she tells you **"I can see Claude!"**: that's how you know it worked.
+Не нужен мощный компьютер: берёшь бесплатный ключ и вставляешь во вкладке ИИ.
 
-Her menu: **right-click her**. It's also on her tray icon, which Windows 11 often hides behind the **^** next to the clock.
+- **Groq** — [console.groq.com/keys](https://console.groq.com/keys) (быстро, хорошо понимает русский);
+- **Gemini** — [aistudio.google.com/apikey](https://aistudio.google.com/apikey);
+- **OpenRouter** — [openrouter.ai/keys](https://openrouter.ai/keys) (много моделей, часть бесплатные);
+- **Pollinations** — вообще без ключа и аккаунта: просто выбери его в списке (чтобы попробовать).
 
-### What's Claude Code? Do I need it?
+В каждом случае: вкладка ИИ › выбрать сервис › **«Где взять ключ»** (откроет страницу) › вставить ключ › **Подключить**.
+Такие же шаги для **OpenAI**, **Mistral** и **DeepSeek**, если у тебя уже есть ключ. Ключ она проверяет сразу и говорит,
+если он не подошёл.
 
-[Claude Code](https://code.claude.com/docs/en/quickstart) is Anthropic's coding assistant: in a terminal, in VS Code,
-or in the Code tab of the Claude app. It needs a paid Claude plan (Pro or higher) or an API account. Capri only watches
-it: no API key, and nothing to pay for Capri herself.
+### Способ 5. Свой сервер
 
-Without Claude Code she still lives on your desktop: she floats, sits on your windows, looks at the satellite, falls
-asleep. You can just leave her there.
+LM Studio (порт 1234), llama.cpp или vLLM (порт 8080) или любой OpenAI-совместимый адрес: вкладка ИИ › нужный пункт. Для
+своего адреса выбери **«Свой сервер»** и впиши, например, `http://127.0.0.1:1234/v1`. Если адрес локальный (`127.0.0.1`
+или `localhost`), она знает, что ответы остаются на твоём ПК, и говорит об этом в чате.
 
-### From the source (macOS, Linux, developers)
+### Проверка связи и ошибки
 
-You need [Node.js](https://nodejs.org) 20 or newer.
+Во вкладке ИИ сверху видно состояние (**Подключено** — зелёный ромб) и есть кнопка **«Проверить связь»**. Если что-то не
+так, Капри скажет это в чате по-человечески:
 
-```bash
-git clone https://github.com/mochiiwuff/capri-desktop.git
-cd capri-desktop
-npm install
-npm start
-```
+| Что она говорит | Что делать |
+|---|---|
+| нет ключа, «Нет связи: no API key» | вставь ключ во вкладке ИИ |
+| «Они не принимают этот ключ» | ключ неверный, отозван или с лишним пробелом: создай новый |
+| «На счёте у них закончились деньги» | пополни баланс на сайте сервиса |
+| «Их серверы перегружены» | подожди минуту; она сама пробует другую модель |
+| «Они отказались отвечать на это» | сформулируй иначе |
+| «Ollama не отвечает» | запусти «Мастер подключения…» (он поднимет её) |
+| не видит Claude Code | проверь, что команда `claude` работает в терминале; перезапусти Капри |
 
-Keep that terminal open while she runs. Not tested on macOS or Linux yet: she should start, but the window tricks
-(sitting on your windows, possessing them, showing Claude's answer when you're elsewhere) are Windows-only, and on Linux
-the transparent overlay works best on X11 (Wayland can struggle with click-through windows).
+Меню у часов › **ИИ-модель** повторяет те же выборы: список сервисов, моделей, **API-ключ или адрес…** и **«Забыть наши
+разговоры»** (стирает то, что она помнит из чатов).
 
-### Hook her up to Claude Code by hand
+---
 
-Right-click Capri, then **Install Claude Code hooks**. Or from the command line:
+## Как подключить слежение за Claude Code, Codex и Antigravity
+
+Это отдельная от чата вещь: она смотрит, что делает твой ИИ для кода, и реагирует. Для этого нужны её «хуки».
+
+### Что такое Claude Code и нужен ли он
+
+[Claude Code](https://code.claude.com/docs/en/quickstart) — помощник для программирования от Anthropic: в терминале, в VS
+Code или во вкладке Code приложения Claude. Ему нужен платный тариф Claude (Pro и выше) или аккаунт API. Капри его только
+**наблюдает**: ключа и платы за саму Капри нет. Без Claude Code она тоже живёт на твоём столе: летает, сидит на окнах,
+смотрит на спутник, засыпает, болтает с тобой.
+
+### Подключение в один клик
+
+1. При первом запуске она представляется. Нажми **«Подключить меня к Claude»** (или правый клик › **Как это работает?** ›
+   «Подключить меня к Claude», или меню у часов › **Установить хуки Claude Code**).
+2. **Полностью закрой Claude Code и открой снова**: хуки он читает только в начале сессии.
+3. Как только Claude что-нибудь сделает, она скажет **«Я вижу Claude! Мы на связи.»** Так ты узнаешь, что получилось.
+
+### Подключение вручную
 
 ```bash
 npm run hooks:install
 ```
 
-This adds a hook to `~/.claude/settings.json` (a backup is written next to it, your existing hooks are kept).
-Restart your Claude Code sessions afterwards. To remove it: `npm run hooks:uninstall`.
+Скрипт добавит хук в `~/.claude/settings.json` (рядом сохранится копия, твои хуки останутся). После этого перезапусти
+сессии Claude Code. Убрать: `npm run hooks:uninstall` (или из её меню).
 
-The hooks run `async`: they never slow Claude down, and when Capri isn't running they do nothing.
+Хуки работают асинхронно: Claude они не замедляют, а когда Капри не запущена, ничего не делают. Хук отправляет события
+только на `127.0.0.1` (порт 47823; если ты сменил порт переменной `CAPRI_PORT`, она должна быть задана и для Claude Code,
+который запускает хуки). Если на компьютере нет Node.js (установка из `.exe`), хук запускается самой Капри в роли Node, так
+что ничего ставить не нужно. Если Claude Code хранит настройки не в `~/.claude`, а в папке из `CLAUDE_CONFIG_DIR`, хук
+ляжет туда. Если файл настроек повреждён (невалидный JSON), установщик его не трогает и говорит об этом.
 
-### Codex or Antigravity instead of Claude Code
+### Бесплатный Claude Code через Ollama
 
-Right-click her › **Watch** › **Codex** or **Antigravity**. She says hi and offers to plug herself in, like she does
-for Claude Code. Then:
+На её приветствии есть кнопка **«Бесплатно через Ollama»**: она подключит хуки, поставит Ollama (если её нет) и откроет окно
+с `ollama launch claude`, где ты выберешь модель. Для неё это обычный Claude Code, только медленнее: пока модель думает,
+бегущая строка считает секунды.
 
-- **Codex**: restart it and trust her hooks when it asks. They go in `~/.codex/hooks.json`. Her hook for Codex needs
-  [Node.js](https://nodejs.org) 20 or newer on your PATH.
-- **Antigravity**: start a new conversation. Her hooks go in `~/.gemini/config/hooks.json`.
+### Codex или Antigravity вместо Claude Code
 
-She follows one of them at a time, the one picked in her menu, and her lines, her guide and her chat use its name.
-She only watches: when Codex or Antigravity asks for approval, you still answer it there. From the command line:
-`npm run hooks:codex:install` or `npm run hooks:agy:install` (`:uninstall` to remove them), and `npm run test:hooks`
-runs the tests of both adapters. **Watch** › **Nothing, just keep me company**: she stops talking about any of them.
+Правый клик по ней › **Что отслеживать** › **Codex** или **Antigravity**. Она поздоровается и предложит подключиться, как для
+Claude Code. Дальше:
 
-### Try it without Claude
+- **Codex**: перезапусти его и доверяй её хукам, когда он спросит. Они лежат в `~/.codex/hooks.json`. Хуку для Codex нужен
+  [Node.js](https://nodejs.org) 20 или новее в PATH.
+- **Antigravity**: начни новый разговор. Хуки лежат в `~/.gemini/config/hooks.json`.
+
+Из командной строки: `npm run hooks:codex:install`, `npm run hooks:agy:install` (с `:uninstall` — убрать). Тесты обоих
+адаптеров: `npm run test:hooks`.
+
+Она следит за одним из них за раз — тем, который выбран в меню, и её реплики, гид и чат называют его по имени. Она только
+смотрит: когда Codex или Antigravity просит одобрения, отвечаешь ты, у них. Пункт **«Ничего, просто будь рядом»** отключает
+слежение вовсе: она перестаёт говорить о них.
+
+---
+
+## Как ею пользоваться
+
+Она ловит мышь только на самом теле (по пикселям): остальной экран работает как обычно.
+
+- **Клик по ней:** скажет, как дела у Claude (если ничего не происходит, появится кнопка «Поговорить со мной»).
+- **Перетащить:** переместить её по экрану. Отпустишь бёдрами на верхний край окна — сядет на него, в другом месте — упадёт.
+- **Клик по панели:** закрывает её.
+- **Правый клик:** круговое меню со всеми настройками.
+- **Ctrl+Alt+C:** она прячется в свой биочип (как в сериале), остаётся только маска с закрытыми глазами в левом нижнем углу.
+  Глаза откроются, только когда Claude понадобишься ты. Клик по маске (или ещё раз Ctrl+Alt+C) вернёт её.
+- **Ctrl+Alt+Space:** говорить с ней голосом (если включён микрофон; можно сменить в настройках, ключ `pushToTalk`).
+- **Чат:** Enter отправляет, Esc закрывает.
+- **Меню у часов** (иконка на панели задач, рядом с часами; из кругового меню — «Ещё › Системное меню…»): телепорт,
+  спутник, демо, «Как это работает?», отчёт о миссиях, чат, круговое меню, «Настроить её…», размер, цвет, голос, характер,
+  чувства, руки, звук, экран, ИИ-модель, гулять, вселяться в окна, где она отдыхает, что отслеживать, анимации,
+  отображение, язык, автозапуск, хуки, выход.
+
+---
+
+## Настройка
+
+Все настройки — в **круговом меню** (правый клик по Капри). Сектор = вкладка; стрелки на клавиатуре переключают вкладки,
+**Esc** или клик мимо закрывают. Меню рисуется в цветах её темы: перекрасишь её — перекрасится и оно.
+
+![Круговое меню: связь и микрофон с живым уровнем](docs/ring.png)
+
+| Вкладка | Что там |
+|---|---|
+| **Связь** | уровень отношений, насколько вы близки, четыре «ручки» её поведения (короче ↔ длиннее, сленг, подколки, теплота), блокнот о тебе (можно убирать записи и добавлять свои), «Забыть всё обо мне» |
+| **ИИ** | кто ей отвечает, ключ, модель, «Проверить связь», мастер подключения |
+| **Микрофон** | включить, выбрать микрофон, чувствительность (линия на шкале — где начинается «голос»), живая волна и уровень, режим «по кнопке» или «разговор» |
+| **Чувства** | зрение (видеть экран), танец под музыку, руки (окна и сообщения) |
+| **Характер** | эмоции, свои занятия, «знать, что играет», DJ, саморазвитие, бродить по экрану, вселяться в окна |
+| **Цвета** | 7 тем и «по настроению» |
+| **Голос** | как она говорит (молчит, ответы, всё), движок, громкость, **куда идёт звук** (колонки, наушники), проверочный звук, «Слышать свой микрофон» |
+| **Ещё** | размер, язык, где она отдыхает, телепорт, спутник, «Как это работает?», «ИИ-модель…», спрятать её, системное меню |
+| **Говорить** | открывает чат |
+
+### Как меню ведёт себя с остальным
+
+Пока меню открыто, она никуда не уходит и не засыпает, а всё остальное старается не мешать:
+
+- запрос разрешения от Claude, «Говорить» и шаги её мастера **сами закрывают меню**: их нельзя пропустить;
+- «Готово» и ошибки от Claude **ждут**, пока ты закроешь меню, и тут же показываются (под кольцом их было бы не видно);
+- её болтовня при открытом меню не лезет в кадр;
+- на вкладке **Микрофон** (и при «Слышать свой микрофон» во вкладке **Голос**) режим «разговор» **ставится на паузу**: можно
+  кричать в микрофон и крутить чувствительность, ничего не уйдёт в нейросеть;
+- убралась в чип или уснула до маски — меню закрывается вместе с ней; сменил язык, цвет или размер — меню перерисуется
+  и встанет вокруг неё заново.
+
+### Файл настроек
+
+Всё пишется в `config.json` в папке данных. Лучше менять через меню, а не руками: приложение пишет файл само (одним
+файлом, целиком или никак, и не чаще раза в 0,25 с). Самое нужное:
+
+| Ключ | Что значит |
+|---|---|
+| `provider` | кто отвечает: `anthropic`, `claude`, `ollama`, `groq`, `gemini`, `openrouter`, `openai`, `mistral`, `deepseek`, `lmstudio`, `llamacpp`, `pollinations`, `custom` |
+| `chatModel`, `visionModel` | модель для чата и для зрения (пусто — первая из доступных) |
+| `customUrl` | адрес своего сервера (`provider: custom`) |
+| `claudeCwd`, `claudeMode` | папка и права Claude Code в чате (`default` или `acceptEdits`) |
+| `userName`, `persona`, `memories`, `myLines` | как она тебя зовёт, как ты хочешь её видеть, что помнить, твои реплики |
+| `lang` | язык: `auto`, `ru`, `en`, `fr`, `es`, `pt` |
+| `theme`, `scale`, `rest` | цвета, размер (0,45 / 0,6 / 0,8), где отдыхает (`corner` или `taskbar`) |
+| `motion`, `render` | анимации (`auto`, `full`, `reduced`), способ рисования (`auto`, `gl`, `software`) |
+| `voiceMode`, `ttsEngine`, `audioOut` | голос и устройство вывода |
+| `ears`, `converse`, `micDevice`, `micSensitivity`, `sttEngine`, `pushToTalk` | микрофон и распознавание речи |
+| `vision`, `visionEvery`, `rhythm`, `hands`, `handsType`, `learn` | зрение, танец, руки, саморазвитие |
+| `emotions`, `life`, `dj`, `musicAware`, `wander`, `possess` | характер и самостоятельность |
+
+---
+
+## Что она умеет
+
+### Как она появляется
+
+При первом запуске она **хватается за твой экран**. Его края искрят красным, левая рука хлопает по краю, потом правая,
+руки тянутся вдоль них, пока она подтягивается, и лицо бьёт в стекло (белая вспышка, чернильная, цвета разъезжаются,
+экран трясётся). Она оглядывается, моргает, широко раскрывает рот на «привет» (рядом с лицом выскакивает тег с её именем),
+отпускает правый край и машет когтистой рукой, снова хватается, смотрит, куда лететь, и отпускает: руки рассыпаются
+осколками от кистей, голова приседает и ныряет вниз, на её место, где тело раскладывается из лица.
+
+![Её вступление: руки на краях, лицо бьёт в стекло, взмах, снова хватается](docs/intro.png)
+
+### Пока работает Claude
+
+- **Бегущая строка над головой** показывает текущее действие (`ПРАВИТ gigs.ts`, `ЗАПУСКАЕТ npm test`, `ИЩЕТ "paginate"`…),
+  а она роняет мелкие глифы данных. Когда Claude запускает команду или лезет в сеть, с её пальцев летят красные искры.
+  Если она сидит на окне, она «втыкается» в него, и молния бежит по его рамке.
+- **Когда Claude замолчал посреди работы** (думает или медленная локальная модель): через 15 секунд строка становится
+  фиолетовой и считает секунды (`ДУМАЕТ… 45 с`), а она занимает себя (крутится, оглядывается, один раз смотрит на спутник).
+  Через 40 секунд говорит об этом, через две минуты сообщает, что ничего не зависло.
+- **Когда Claude нужна ты** (разрешение, вопрос): она телепортируется к твоей мыши, грива дыбом, и не отпускает её. Если ты в
+  другом окне, она идёт к окну Claude и показывает на него пальцем (пунктир, скобки на углах, тег `CLAUDE`): вопрос там.
+  Успокаивается, когда ты ответил.
+- **Когда команда упала:** красный кадр-удар, её отбрасывает, сильный глитч и строка ошибки, которая действительно важна.
+- **Когда всё готово:** она телепортируется в центр экрана и запускает победную последовательность: замах с втянутой
+  гривой, растянутый кадр, затем руки вверх и взрыв гривы под манга-линиями скорости и ударной волной, безумный смех с
+  аниме-вставкой её ухмылки. Потом сводка (например, «12 действий · 3 файла изменено · 2 мин 14 с») и последняя фраза Claude.
+- **Когда Claude ответил, а ты в другом окне:** она показывает его ответ целиком, в широкой панели с прокруткой (абзацы,
+  списки и код сохраняются). Панель уходит, когда ты вернулся в окно Claude или кликнул по ней. «Окно Claude» — то, в
+  котором ты набрал запрос. Только Windows, как и слежение за окнами.
+
+![Победа: ключевая поза, смех и вставка](docs/victory.png)
+
+### Остальное время
+
+Она парит, грива покачивается и роняет осколки, она дрейфует из угла в угол, поворачивается и склоняет голову, когда рядом
+мышь (или, маленькая угроза, бьёт по ней красной молнией и хитро ухмыляется), смотрит на спутник и засыпает после 10 тихих
+минут.
+
+- **Сон.** Сначала дремлет, потом грива и тело распадаются, и остаётся то, что она есть по сути в сериале: зелёная маска и
+  глаза, плывущие там, где она была, глаза закрыты. Иногда приоткрывает один. Поднеси мышь (или пусть Claude снова начнёт
+  работать) — голубые глаза распахиваются, и она собирается вокруг них заново.
+- **Спутник.** Большая последовательность, которую берегут для важных моментов: в первый раз за день, через некоторое
+  время после долгой работы Claude (8 минут и больше, или 50 действий) или когда захочешь из меню. Белые крапинки её гривы
+  поднимаются созвездием, выстраиваются дорогой от её пальцев к спутнику, она сжимается, и красный свет уходит вверх.
+  Спутник отвечает ей, дважды мигнув. Всё это время её ничто не отвлекает, даже твоя мышь.
+
+![Спутник: её звёзды, дорога, красный свет, ответ](docs/star.png)
+
+### Эмоции и характер
+
+Каждое твоё сообщение в чате что-то с ней делает: **ещё до ответа нейросети** она реагирует телом. Потом нейросеть
+получает её настроение и причину («ты назвал её дурой две минуты назад и не извинился») и отвечает в нём.
+
+![Её настроения](docs/moods.png)
+
+| Что ты делаешь | Что с ней |
+|---|---|
+| Оскорбляешь («дура», «заткнись», «ты бесполезная»…) | Злится. Несколько оскорблений подряд — **ярость**: красная вспышка, красные копии разлетаются, рык, а потом молния по твоему курсору |
+| «Ты просто программа», «у тебя нет чувств» | Это её задевает: обида и злость |
+| Называешь чужим именем (Алиса, Сири, ChatGPT, Люси…) | «Я КАПРИ.» |
+| Грозишь удалить или выключить | Злится и пугается |
+| Пишешь капсом | Вздрагивает |
+| Повторяешь одно и то же, засыпаешь сообщениями | Раздражается |
+| Вспоминаешь Арасаку, Militech, корпов | Фыркает: корпов она ненавидит |
+| Смеёшься («ахаха», «лол»), просишь шутку | Хихикает, хохочет над своей же шуткой |
+| Делаешь комплимент, «люблю тебя», обнимашки | Смущается: румянец, сердечко, отворачивается |
+| Говоришь, что тебе грустно | Становится мягкой, тянется к тебе |
+| Спрашиваешь про спутник, звёзды, космос | Мечтательно смотрит на спутник |
+| Извиняешься | Остывает. Если была в ярости, одного «прости» мало, нужно два |
+
+И без чата: много кликов подряд — «эй, хватит», потом взрыв; курсор туда-сюда по ней — щекотно; курсор у неё на голове —
+поглаживание; потаскаешь её — кружится голова; долго не обращаешь внимания — скучает и находит себе занятие. Злость остывает
+за несколько минут, но **обиду она помнит даже после перезапуска**, пока не извинишься. Настроение видно на её панели
+(◆ ЗЛИТСЯ, ◆ СМУЩЕНА…) и вверху меню. Выключить: **Характер › Эмоции**.
+
+### Голос
+
+**Голос › Как она говорит:** молчит, озвучивает ответы чата или озвучивает всё, что говорит. Движки:
+
+- **Системный** — бесплатно и без интернета, голоса Windows (по-русски Irina или Svetlana, если стоит русский языковой
+  пакет). Высота и темп меняются от настроения: злая — ниже и быстрее, смущённая — выше.
+- **OpenAI** — нужен ключ OpenAI. Модель `gpt-4o-mini-tts` получает инструкцию, *как* говорить («зло, сквозь рык»).
+- **ElevenLabs** — твой ключ и ID голоса из твоей библиотеки; с моделью `eleven_v3` настроение передаётся тегами.
+- **Свой сервер** — любой, совместимый с OpenAI `/v1/audio/speech`, например [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI)
+  на твоём ПК (`http://127.0.0.1:8880/v1`): бесплатно и офлайн.
+
+К голосу облачных сервисов подмешивается эффект «множества разумов»: две запаздывающие «плавающие» копии под её голосом и
+цифровой оттенок. Включается и выключается в меню у часов (**Голос › Эффект «множества разумов»**). Ключ, адрес или голос
+сервиса вводятся кнопкой **«Ключ, адрес или голос…»** в той же вкладке, проверка — **«Проверить голос»**.
+
+**Куда идёт звук.** Там же выбираешь колонки или наушники: её писки, звуки и голос облачных сервисов идут на выбранное
+устройство (системный голос Windows всегда звучит на устройстве по умолчанию). Есть проверочный звук и
+**«Слышать свой микрофон»** — проверить микрофон на выбранном устройстве. Микрофон при этом открыт и значок мигает только
+пока вкладка на экране; лучше в наушниках, с колонками может свистеть.
+
+> Не клонируй голос реальной актрисы без её разрешения. Подбери похожий голос из библиотеки или любой, который нравится.
+
+### Цвета
+
+![Её цвета](docs/themes.png)
+
+Красный (как в аниме), нетраннер (циан), токсичный (кислотно-зелёный), фиолетовый, золото, сакура (розовый), призрак
+(белый) — и **по настроению** (злая — красная, грустная — синяя, смущённая — розовая, весёлая — золотая, скучающая —
+белая). Меняется всё: грива, цветная «тень» (смещённая копия), панели, молнии, осколки и само круговое меню. Меняется
+во вкладке **Цвета** или словами в чате: «перекрасься в синий», «стань розовой», «верни как было», «перекрасься под
+настроение».
+
+### Своя жизнь
+
+![Чем она занята](docs/life.png)
+
+Когда ничего не происходит, она находит, чем заняться, и пишет это в бегущей строке над головой: **взламывает лёд**
+Арасаки, Militech или Biotechnica (удалось — радуется, сработал чёрный лёд — её отбрасывает), играет в **аркаду** (и бесится,
+проиграв), читает **дата-шарды**, рисует неоновое **граффити** прямо на твоём экране, **сканирует сеть**, спорит с другими
+разумами внутри себя, потягивается.
+
+**Музыка** (Windows): она знает, что играет (название и исполнитель; Spotify, браузер, Яндекс Музыка, AIMP… всё, что
+сообщает Windows), надевает наушники и качает головой в такт, иногда высказывает мнение. В **режиме DJ** сама переключает
+трек, когда ей надоело (не чаще раза в 20–35 минут и никогда не тот, что ты только что включил); в тишине предложит что-нибудь
+включить.
+
+**Ты:** встретит, если тебя не было больше 5 минут, поздоровается утром, в три часа ночи скажет, что пора спать, при
+батарее ниже 15% пожалуется на холод. Всё это отключается во вкладке **Характер**.
+
+### Чувства: зрение, слух, танец
+
+Всё это **выключено по умолчанию**: каждое — доступ к экрану, звуку или микрофону, поэтому включается вручную (вкладки
+**Чувства** и **Микрофон**). Пока чувство включено, внизу слева горит значок (◉ ВИЖУ, ● MIC), а на иконке у часов
+написано, какие датчики сейчас работают, чтобы ни один не работал втихую. Ничего не записывается, а каждый кусочек данных
+уходит только в тот сервис, который выбрал ты (локальный оставляет его на твоём ПК).
+
+![Видит экран и пишет сообщение с подтверждением](docs/senses.png)
+
+- **Зрение.** Время от времени (и по просьбе «посмотри на экран», «что у меня на экране?») она делает маленький снимок экрана,
+  показывает его модели зрения и реагирует в своём стиле. Перед снимком прячет саму себя; снимок **нигде не сохраняется** и
+  уходит только в выбранную модель. Работает с Claude (Opus, Sonnet, Haiku), локальными `qwen2.5vl` и `llava` в Ollama и
+  облачными `gpt-4o-mini`, Gemini, Llama-4-Scout. Её чат знает, что она видела. Как часто смотрит сама — настройка
+  `visionEvery` (по умолчанию раз в 45 секунд, `0` — только по просьбе). Модель зрения выбирается в **Чувства › Модель зрения…**.
+- **Танец под музыку.** Она слушает **реальный звук системы**, ловит бит по басу и качается, машет гривой и крутится в такт
+  (громче — шире). Только громкость и ритм: ни названий, ни записи.
+- **Слух и голос.** Жми **Ctrl+Alt+Space** (или кнопку микрофона) и говори: она запишет, распознает речь и ответит, а если
+  включён голос — **вслух**, так что можно общаться совсем без рук. Запись останавливается сама, когда ты замолчал.
+  **Режим разговора** — микрофон остаётся открытым, вы говорите по очереди. Если ты скажешь что-то, пока она ещё отвечает,
+  фраза не пропадёт: она уйдёт ей сразу после ответа. Распознавание: **Groq** (бесплатный тариф, хорошо понимает русский),
+  **OpenAI** или свой сервер (whisper.cpp, faster-whisper). Выбрать: **Микрофон › Распознавание речи…**. Вкладка
+  **Микрофон** показывает, что она слышит: живую волну и уровень, линию «отсюда начинается голос» и устройство, которое
+  можно сменить на лету.
+
+![Она танцует под бит](docs/dance.png)
+
+### Руки: окна и сообщения (Windows)
+
+Выключено по умолчанию: вкладка **Чувства › Работать с окнами**. Тогда в чате (и голосом) можно:
+
+- **Окна:** «сверни окно хрома», «разверни телеграм», «переключись на VS Code», «покажи рабочий стол». Делает сразу.
+- **Сообщения** (если включено «Писать сообщения»): «капри, открой телеграм и напиши маме, скоро буду дома», «напиши в
+  дискорде каналу general: тест». Она откроет приложение, найдёт чат и **наберёт сообщение, но не отправит**: сначала покажет
+  **кому** и **что**, и кнопку «Отправить». Отправит только после твоего клика. Если во время набора на передний план выскочит
+  другое окно, она **остановится**, а не напишет не туда. Текст идёт через буфер обмена, а твой скопированный текст
+  возвращается на место.
+
+Поддерживаются **Telegram, Discord, WhatsApp и Slack** (десктопные версии, стандартные горячие клавиши поиска). Окон самой
+Капри, Claude и Ollama она никогда не трогает.
+
+### Она узнаёт тебя (саморазвитие)
+
+Включено по умолчанию (**Характер › Узнаёт меня**), и всё хранится только на твоём ПК (`bond.json`).
+
+![Она становится ближе и помнит, кто ты](docs/bond.png)
+
+- **Как ты пишешь:** длина сообщений, смайлы, мат, «ты» или «вы», как часто ты смеёшься и спрашиваешь, в какие часы ты тут.
+  Только счётчики и средние, сами сообщения здесь не хранятся. Пишешь коротко — отвечает коротко; материшься по привычке
+  (не на неё) — перестаёт фыркать.
+- **Как ты принимаешь её ответы:** посмеялся, «спасибо», «круто» после короткого дерзкого ответа — она чуть больше в эту
+  сторону; «бред», «скучно», «неправильно» — в обратную. Прямые просьбы работают сразу и навсегда: «давай покороче»,
+  «а подробнее?», «без сленга», «не шути», «будь милее», «подколи меня».
+- **Что ты о себе рассказываешь:** каждые несколько сообщений (и при закрытии чата) её же нейросеть делает записи в блокнот:
+  чем занимаешься, что любишь и не любишь, как с тобой лучше говорить. Пароли, телефоны, адреса, номера карт и документов,
+  здоровье и деньги туда не попадают (и фильтр вырежет их в любом случае). Когда чатом работает Claude Code, блокнот не ведётся.
+
+Чем дольше вместе, тем ближе: **незнакомцы → знакомимся → друзья → близкие → один из нас**. Она сообщает, когда это
+меняется (♥), и это заметно: незнакомцу она задаёт вопросы о нём самом, друга подкалывает и напоминает его же слова,
+близкому говорит правду, даже если она колет. Если ты постоянно груб с ней, близко не подпустит.
+
+Вкладка **Связь** показывает уровень, прогресс до следующего, с какого дня вы знакомы, четыре «ручки» поведения и блокнот
+(можно убирать записи крестиком и дописывать свои). Спроси в чате «**что ты обо мне знаешь?**», посмотри всё в меню
+(**Характер › Что она обо мне знает…**, там же кнопка стереть) или скажи «**забудь всё обо мне**».
+
+### Круговое меню
+
+Правый клик по ней — и вокруг неё раскрывается кольцо в её цветах (см. [Настройка](#настройка)). Если выбрать тему, меню
+меняется вместе с гривой. Каждый сектор — вкладка, карточка рядом с кольцом.
+
+### Её чат
+
+**Поговорить с ней** — в круговом меню, меню у часов или кнопка «Поговорить со мной» при клике на неё. Ты пишешь в её
+панели, она отвечает в характере и знает, что делает Claude и что он успел за сегодня. Отвечает письменно, на своём языке.
+Подробнее о том, что именно она знает при ответе и откуда берётся её поведение, написано в [Что уходит с твоего компьютера](#что-уходит-с-твоего-компьютера).
+
+**Это ИИ.** Её ответы пишет модель, а не сценаристы сериала: это фанатская версия, и панель чата напоминает об этом каждый раз.
+
+**Что она умеет на твоём ПК** (Windows), когда ты просишь в чате:
+
+- **Открыть приложение или игру:** всё из меню «Пуск» (включая приложения из Магазина, например Spotify), твои игры Steam и
+  Epic («открой Spotify», «запусти Brawlhalla»). Если ты назвал приложение своими словами, оно открывается сразу; если оно
+  появилось только в ответе нейросети, сначала будет кнопка.
+- **Музыка:** «пауза», «следующий», «громче», «без звука»… Она нажимает медиаклавиши, поэтому работает со Spotify и почти
+  любым плеером сразу после отправки. «Поставь Daft Punk в Spotify» открывает Spotify на поиске (приложение, если оно есть,
+  иначе сайт). Слова вроде «продолжай» или «следующий вопрос» в обычном разговоре клавиши не нажимают.
+- **Сайт:** всегда за кнопкой, где написано, куда он ведёт.
+- **Закрыть приложение** («закрой AM Music», «выключи дискорд»): кнопка с названием приложения, и ничего не случится, пока
+  ты не нажмёшь её. Она закрывает его так же, как его собственная кнопка закрытия, поэтому оно ещё может спросить, сохранить
+  ли. Если оно только спряталось в трей, она предложит **«Закрыть принудительно»** — опять только по твоему клику (несохранённое
+  пропадёт). Системные части Windows, Claude, Ollama и саму себя она не закрывает.
+- **Сменить цвет, имя, запомнить что-то:** «перекрасься в синий», «зови меня Лея», «запомни, что мою кошку зовут Неко».
+
+Больше ничего: файлов и экрана (без включённого зрения) она не видит.
+
+### Сделай её своей
+
+Правый клик › **Настроить её…** (или «Настроить меня» в её гиде), по одной панели, каждую можно пропустить:
+
+- **Как она тебя зовёт.** Использует имя время от времени и здоровается им, когда выходит на связь.
+- **Какая она**, твоими словами («больше подкалывай, и говори со мной про Найт-Сити»): чат это учитывает, она остаётся
+  Капри.
+- **Твои реплики**, которые она говорит время от времени вместе со своими, когда ты кликаешь по ней. Напиши `{name}`, и она
+  подставит твоё имя.
+- **Что помнить** (твоя любимая игра, кошка…): её чат держит это в уме.
+
+Всё это хранится в её настройках на твоём ПК.
+
+### Как она перемещается
+
+- **Сидит на твоих окнах:** на верхнем краю окна, болтая и пиная ногами по очереди. Едет вместе с окном, когда ты его
+  двигаешь, и падает, когда ты его закрываешь, сворачиваешь или перекрываешь. Пока Claude работает, она пересаживается на
+  окно, которое впереди, если получится.
+- **Выглядывает из-за краёв экрана:** наполовину спрятавшись слева или справа или свисая вниз головой сверху. Она стеснительная:
+  поднеси мышь, и она уйдёт к другому краю.
+- **Падает:** вытянувшись, с развевающейся гривой, ускоряясь, потом сильный сплющенный кадр и фонтан осколков при
+  приземлении. По дороге её может поймать край окна.
+- **Брось её на окно:** перетащи и отпусти бёдрами на верхний край окна — сядет. В другом месте — упадёт.
+- **Вселяется в твои окна**, как в сериале, где она проникает в тела и системы: время от времени ныряет в окно, на котором
+  сидит. Красная молния бежит по его рамке, куски его глитчат, и окно смотрит на тебя её глазами и её зигзагообразной ухмылкой,
+  по нему открываются новые глаза, каждый зрачок на твой курсор, и она смеётся. Потом вылезает из другого окна. Ничего не
+  рисуется поверх окон, которые впереди, и содержимое окна не читается: оно просто перерисовывается на две секунды.
+  Если мешает, сними галочку **«Вселяться в мои окна»** в меню.
+- **Мелочи:** полный разворот с остаточными образами, прыжок, взгляд влево и вправо, склонённая голова, и «другие разумы» в
+  ней (зелёные и красные копии) отрываются, висят и втягиваются обратно.
+
+![Сидит на окне](docs/sit.png)
+
+![Выглядывает из-за краёв](docs/peek.png)
+
+![Вселение в окно: нырок, удар, окно полное глаз](docs/possess.png)
+
+![Спит до маски, просыпается, и спрятана в левом нижнем углу](docs/sleep.png)
+
+Слежение за окнами пока только для Windows (маленький помощник на PowerShell читает положения окон, без названий и без
+содержимого). На macOS и Linux она всё равно парит, выглядывает, падает и гуляет.
+
+### Она показывает, как всё устроено (гид)
+
+**«Как это работает?»** в её меню: она спрашивает, что тебе показать, и ведёт туда, показывая пальцем. Голова резко
+поворачивается к цели, она сжимается, отклонившись назад, потом бьёт: рука-конструкт выстреливает вдвое длиннее, с пальца
+красная молния, прицел хлопается на цель с двумя её глазами по углам, и вставкой врезается крупный план глаз. Потом она
+держит цель, пока объясняет: тонкая нить данных тянется от пальца, время от времени она тычет в неё или оглядывается на
+тебя. Закончив, нить втягивается в палец, а рука отскакивает.
+
+![Удар и удержание, пока она объясняет](docs/point.png)
+
+- **«Где моя иконка?»** Она спускается к часам и показывает на свою иконку в трее, или на **^**, когда Windows её прячет.
+- **«Где Claude?»** Показывает на окно Claude: то, в котором ты набрал последний запрос.
+- **«Папка Claude»:** открывает `~/.claude` в Проводнике с выделенным `settings.json`, показывает на окно и объясняет, что за
+  хук там лежит и как его убрать.
+- **«Подключить меня к Claude»:** хуки в один клик. То же самое — её приветствие при первом запуске. Рядом **«Бесплатно через
+  Ollama»**: запускает Claude Code (или Codex) через Ollama за тебя: хуки встают, Ollama ставится, если её нет, и открывается
+  окно с `ollama launch claude`, где ты выберешь модель.
+- **«Поговорить со мной»:** см. выше.
+
+Когда она говорит, она строит рожицы: восемь выражений, все — кадры из сериала (наблюдает, отвернулась, клыкастая ухмылка,
+глаза навыкате, смотрит прямо на тебя, хохочет с широко открытым ртом, все её глаза сразу, зигзагообразная ухмылка). Каждое
+сообщение выбирает подходящее, а портрет глитчит при смене лица.
+
+![Показывает на окно Claude во время запроса разрешения и на свою иконку в трее](docs/guide.png)
+
+![Её восемь лиц](docs/faces.png)
+
+### Отчёт о миссиях
+
+**Отчёт о миссиях** в её меню: карточка с тем, что Claude сделал сегодня, сделанная, чтобы её хотелось заскриншотить.
+Крупно — завершённые задачи, затем действия, изменённые файлы и ошибки, самая долгая миссия и её проект, запросы,
+подтверждения и проекты. Цифры набегают. Кнопка **«Копировать»** кладёт в буфер обмена изображение карточки на
+тёмной подложке, готовое вставлять куда угодно. Вечером (после 18:00), после настоящего рабочего дня (3 задачи и больше),
+она сама приносит отчёт один раз. Демо не считается, а статистика остаётся на твоём ПК, по одному дню.
+
+### Сон и ресурсы
+
+Когда она спит (до маски) или спрятана в чип (**Ctrl+Alt+C**), она почти ничего не стоит: рисуется по таймеру и только когда
+что-то меняется (несколько кадров в секунду вместо 60–144), помощники на PowerShell, следящие за окнами и музыкой,
+останавливаются, она реже проверяет, у компьютера ли ты, звук засыпает через 20 секунд тишины, а слушатель бита ставится на
+паузу. В нашем замере работа её окна во сне упала в 4–5 раз, а пробуждения на кадры экрана — в 30–100 раз. Всё, что её зовёт
+(клик, Claude, меню, шорткат), включает всё обратно сразу. Бодрствуя, она рисуется «на двойки» (12 рисунков в секунду, как
+в аниме) и не будит процессор между ними.
+
+**Обновления тоже экономные:** изменение настройки, которое ничего не меняет, не делает ничего (ни файла, ни сообщения, ни
+перестройки меню); частые изменения (ползунок в кольце) пишутся в `config.json` один раз; меню у часов перестраивается не
+чаще раза в 0,12 секунды; кусочки ответа идут пачками, а не по одному; список моделей облачного сервиса запоминается на
+минуту; регулярные выражения, читающие твои сообщения, «прогреваются», пока она свободна, чтобы первое сообщение не
+тормозило на 150 мс. В установщик попадают только шрифты, которые ей нужны (`assets/fonts`), без карт и описаний типов из SDK.
+
+### Языки
+
+Она говорит на **французском, английском, испанском, португальском (бразильском) и русском** и сама выбирает язык твоей
+системы. Другой можно выбрать в меню (вкладка **Ещё** › язык, или меню у часов › **Язык**).
+
+### Звуки
+
+Все звуки синтезируются на лету (Web Audio): в репозитории нет ничего, на что распространяются чужие права. Можно положить
+свои файлы в папку своих звуков (меню у часов › **Звук** › **Открыть папку своих звуков**), назвав их так (`.mp3`, `.wav`,
+`.ogg` или `.m4a`):
+
+| Файл | Когда |
+|---|---|
+| `teleport-out` | она исчезает |
+| `teleport-in` | она появляется |
+| `done` | Claude закончил |
+| `alert` | Claude ждёт твоего разрешения |
+| `error` | команда упала |
+| `hello` | началась сессия |
+| `star` | она смотрит на спутник |
+| `land` | она приземляется после падения |
+| `rise` | рывок в победную позу, красный свет уходит вверх |
+| `bolt` | её красная молния |
+| `charge` | зарядка перед красным светом |
+| `possess` | смеётся окно, которое она захватила |
+| `blip` | каждый слог, пока она говорит |
+| `tick` | тихое напоминание |
+| `growl`, `rage`, `huff` | рычит, ярость, фыркает |
+| `giggle`, `laugh` | хихикает, хохочет |
+| `sigh`, `sting`, `shy` | вздох, обида, смущение |
+| `startle`, `dizzy`, `yawn` | вздрагивает, кружится голова, зевает |
+| `skip` | переключает трек (режим DJ) |
+| `win`, `lose` | выиграла или проиграла в аркаду |
+
+---
+
+## Демо без Claude
 
 ```bash
 npm run demo
 ```
 
-Replays a fake session from start to finish (reads, a web fetch, a subagent, writes, a failing test, a permission
-prompt, the end), then shows everything she does on her own, a line before each trick: the other minds in her,
-zapping your pointer, the whole satellite sequence, possessing a window (a little terminal opens for her, then closes
-under her and she falls), sleeping down to her mask, and putting herself away in the bottom-left corner.
-It's also in the tray menu, in her language; from the command line it's in English, or add one: `npm run demo -- fr`
-(or `es`, `pt`, `ru`).
+Проигрывает фальшивую сессию от начала до конца (чтения, запрос в сеть, субагент, записи, упавший тест, запрос разрешения,
+конец), а потом показывает всё, что она делает сама, с подписью перед каждым фокусом: другие разумы, удар по курсору, весь
+спутник, вселение в окно (для неё открывается маленький терминал, потом закрывается под ней, и она падает), сон до маски и
+уход в левый нижний угол. Запустить можно и из меню у часов (**Запустить демо**, на её языке). Из командной строки демо
+по-английски; по-русски: `npm run demo -- ru` (или `fr`, `es`, `pt`).
 
-## Sounds
+---
 
-Every sound is synthesized live (Web Audio), nothing copyrighted ships with the repo.
-You can drop your own files in the custom sounds folder (tray › Sound › *Open custom sounds folder*),
-named like this (`.mp3`, `.wav`, `.ogg` or `.m4a`):
+## Это безопасно
 
-| File | When |
-|---|---|
-| `teleport-out` | she vanishes |
-| `teleport-in` | she reappears |
-| `done` | Claude is done |
-| `alert` | Claude is waiting for your permission |
-| `error` | a command failed |
-| `hello` | a session starts |
-| `star` | she looks up at the satellite |
-| `land` | she lands after a fall |
-| `rise` | the launch into her victory pose, the red light going up |
-| `bolt` | her red lightning |
-| `charge` | charging up before the red light goes up |
-| `possess` | the window she took over laughs |
-| `blip` | every syllable while she talks |
-| `tick` | a quiet reminder |
+- Весь код лежит здесь. Установщик собирается из него командой `npm run dist`: можешь собрать свой.
+- С Claude Code она общается только через хук на `127.0.0.1`.
+- Что она меняет в системе: хук в `~/.claude/settings.json` (перед этим создаётся копия, и убрать его можно из её меню) и
+  запись автозапуска — только если ты поставил галочку. Удаляется как любое приложение: Параметры Windows › Приложения.
+- Предупреждение SmartScreen — из-за неподписанного установщика, а не из-за того, что он делает.
+- Всё, что она делает руками или глазами, выключено, пока ты не включишь, и включённое всегда видно значком.
+- Подтверждение нужно для всего, что нельзя отменить: отправка сообщения, закрытие приложения, переход на сайт, который
+  назвала нейросеть, запуск приложения по её тегу.
 
-## Is it safe?
+---
 
-- All of the code is right here. The installer is built from it with `npm run dist`; you can build your own.
-- Nothing leaves your PC (see below): she only talks to Claude Code through a hook on `127.0.0.1`.
-- What she changes on your system: the hook in `~/.claude/settings.json` (a backup is written first, and you can remove
-  it from her menu), and a startup entry only if you tick "Start with Windows". She uninstalls like any app, from
-  Windows Settings › Apps.
-- The SmartScreen warning comes from the installer not being signed, not from anything it does.
+## Что уходит с твоего компьютера
 
-## FAQ
+**Хуки Claude Code.** Хук хранит только то, что нужно для показа (название инструмента, путь к файлу, команда, начало
+твоего запроса, последнее сообщение Claude до 6000 символов — чтобы она могла показать его тебе; всё обрезано) и отправляет
+это только на `127.0.0.1`. Содержимое твоих файлов не отправляется: при записи уходит только размер.
 
-- **Mac, Linux?** No installer yet, but you can run her from the source (see above).
-- **Phone, Android?** No, she needs a desktop.
-- **Other assistants?** Claude Code, Codex and Antigravity: her menu › **Watch**. Cursor, Windsurf and Gemini CLI: not yet.
-- **Ollama?** Two ways. Claude Code running on a local model through Ollama (`ollama launch claude`): she sees it like
-  any Claude Code, it's just slower, and her ticker counts the seconds while it thinks. And she can chat with you
-  through Ollama herself: see "Talk to her".
-- **She barely moves, her intro just fades in and out.** Windows has its animations turned off (Settings ›
-  Accessibility › Visual effects › Animation effects), and she follows it. Her menu › **Animations** › **Full** makes
-  her move anyway; the first time, she asks.
-- **A black screen behind her.** Some PCs show her see-through window black (often NVIDIA cards with FXAA, MFAA or
-  HDR on; other overlay apps like Desktop Mate do it too there). Right-click her, or her icon by the clock › **Display**
-  › **OpenGL**: she restarts drawn another way. Still black? **Without the graphics card**, which costs a bit more CPU.
-  Turning off FXAA and MFAA in the NVIDIA Control Panel can fix it as well.
-- **Can I turn her off?** Ctrl+Alt+C puts her away, **Quit** in her menu closes her. Claude Code works exactly the same
-  without her.
-- **She only floats around and says idle things.** That's normal until Claude Code does something. If it never reacts,
-  check her menu says "Claude Code hooks: installed", then close Claude Code completely and open it again.
+**Её чат.** Уходит к тому, кого ты выбрал ей в «мозги». Каждое твоё сообщение она сопровождает подсказкой, которую
+собирает заново, и нейросеть получает: кто она и как говорить; твоё имя, твоё «как быть» и что просил запомнить; уровень
+связи, стиль, который она подметила, и записи блокнота; её настроение и его причину; что она сейчас делает, что играет у
+тебя (исполнитель и название) и который час; описание того, что она видела на экране (только если включено зрение); что
+делает Claude и сегодняшние итоги; список её возможностей и открытых приложений; последние 20 сообщений чата. Никаких
+движений и анимаций туда не отправляется, а метка настроения `[[mood: …]]` в ответе управляет лицом и телом, метки
+действий — открытием приложений, музыкой и сайтами (часть за кнопкой подтверждения). Ollama на твоём ПК
+(`127.0.0.1:11434`) всё это оставляет у тебя; Claude или другой облачный сервис получает эти сообщения. Каждые несколько
+сообщений она ещё отправляет им последние реплики с просьбой обновить блокнот. Отключается во вкладке **Характер**
+(эмоции, «знать, что играет», «узнаёт меня»); зрение и микрофон по умолчанию выключены.
 
-## What leaves your machine
+**API-ключи** хранятся зашифрованными (твоей учётной записью Windows) и отправляются только в тот сервис, которому принадлежат.
 
-Nothing. The hook only keeps what the display needs (tool name, file path, command, the start of your prompt,
-Claude's last message up to 6,000 characters so she can show it to you, all truncated) and sends it to `127.0.0.1` only.
-Your file contents are never sent: for a write, only its size goes through.
+**Голос.** Если ты выбрал для неё облачный сервис (OpenAI, ElevenLabs), текст озвучки уходит туда и никуда больше
+(системный голос и сервер на твоём ПК оставляют его у тебя). Что играет (исполнитель и название), читается на твоём ПК и
+попадает только в подсказку её чата, чтобы она могла об этом говорить.
 
-Her chat goes to Ollama on your PC (`127.0.0.1:11434`, or `OLLAMA_HOST`) with what she knows of the moment (the
-project's name, Claude's last action, today's counts). Her mission log stays in her own storage on your PC.
+**Чувства**, когда ты их включаешь: снимок экрана уходит только в выбранную модель зрения (локальная оставляет его у тебя)
+и нигде не сохраняется; твой голос уходит только в выбранный сервис распознавания (сервер на твоём ПК оставляет его у тебя),
+запись не хранится; звук системы, под который она танцует, обрабатывается локально (громкость и ритм) и не записывается и
+не отправляется. Вкладки **Микрофон** и «Слышать свой микрофон» держат микрофон открытым, только пока открыты, и значок это
+показывает. Её руки работают целиком на твоём ПК и никуда ничего не отправляют.
 
-Her voice, if you pick a speech service for it (OpenAI, ElevenLabs): what she says goes to that service, nowhere else
-(the system voice and a server on your PC keep it here). What's playing (title and artist) is read on your PC and only
-ever goes into her chat's prompt, so she can talk about it. Her moods, grudges and what she's been up to stay in her
-own storage on your PC.
+**Что она о тебе узнала** (твой стиль, что тебе нравится в её ответах, блокнот) остаётся в `bond.json` на твоём ПК. Блокнот
+пишет та же нейросеть, с которой ты с ней общаешься (локальная оставляет всё у тебя). Её настроение, обиды, занятия и
+журнал миссий тоже остаются в её папке данных.
 
-## Art direction
+---
 
-The goal: she should feel like she stepped out of the anime, not like a widget.
+## Если что-то не работает
 
-- **Cel animation**: her body is redrawn 12 times a second ("on twos") like anime, 24 during teleports.
-  Every drawing has a slight *boil* (the wobble of a line redrawn by hand).
-- **Frame by frame, pose to pose**: nothing is tweened. Each move is an exposure sheet (`acting.js`):
-  key drawings held for a few frames, an anticipation the other way, a smear frame with multiples of
-  the head, an overshoot, holds. Her idle float is four drawings, not a sine wave.
-- **She acts with her head and her mane**, like in the show: the cocked head, the shards bristling or
-  blowing wide, the manic laugh with the head shaking on every drawing, the slump when she sleeps.
-  The cut-out is rigged so her head tilts around the neck, her mane flares unevenly around a rigid face,
-  and her thighs fold (foreshortened, seen from the front) so she can sit with her lower legs swinging.
-- **Squash and stretch, afterimages**: the flat cut-out squashes to a sliver to turn around, stretches when
-  she falls, flattens when she lands, and splits into green and red copies (the other minds in her) when she spins or laughs.
-- **The satellite**, after the season's ending, where she points at the light in the sky and wonders if they
-  could make it up there: a point of light crosses the top of the screen, slowly. Most of the time she just looks,
-  reaches, it twinkles, she sighs. The first time of the day, and a little while after a long Claude job, it's the
-  whole sequence, in five beats (and nothing distracts her meanwhile, not even your pointer):
-  1. **Hush**: she freezes, and the white specks of her mane lift off into a constellation over her.
-  2. **The reach**: she reaches out (the drawings bunch up as the hand gets there) and her stars line up into a road
-     from her fingertips to the satellite.
-  3. **Anticipation**: she coils up, the arm pulls back a little, sparks crawl in her hand, cut-in on her eyes.
-  4. **The red light goes up**: a heavy tapering bolt races up in three drawings, the first one in negative (an impact
-     frame), the stars light up as it passes, speed lines on the satellite, and she's lifted with it.
-  5. **The answer**: the bolt snaps and the pieces fall. A beat of silence, then the satellite twinkles twice.
-     Her stars come home, her mane flares bright for a moment, and her hand drops with a sigh.
-- **Her arms grow when she aims**: anime exaggeration, or a raised arm would get lost in her mane. It stretches
-  along its length only (it stays as thin) and no longer gets bent by the head and the mane.
-- **Both arms match**: the cut-out had one arm reaching and one hanging. The hanging one is removed
-  (`tools/build-sprite.py`) and the shader draws the reaching arm mirrored in its place, so both hands are the
-  same claws and both arms can act. Where an arm crosses her body or her mane it gets a violet line, so it reads.
-- **Her texture**: the red mane is pushed back to the show's hot red and covered in twinkling white specks.
-  Shards come loose from it and drift away.
-- **The violet offset**: like in the anime, a misregistered violet copy under her, under the panel, under the shards.
-- **"Relic" glitch**: shifted horizontal slices and RGB split, in the spirit of Johnny Silverhand's appearances.
-- **Teleport**: charge, shards, collapse into a line, and where she was, a black slit with a red line in it,
-  like in the show. A red column of light to the sky, a bolt to the destination, her pieces (mane shards and the
-  green stars of her eyes) spiralling back in, back with two *impact frames*.
-- **Her intro**: a close-up of her, cut out so your desktop shows around her mane (`tools/build-intro.py`), in six
-  drawings swapped like cels (at rest, her mouth ajar, half open and wide open for "hi", her hand tilted one way and
-  the other for the wave, on threes), and everything else is animation on top: impact frames (her as a flat white then ink silhouette), an RGB split that
-  settles, screen shake, the line boiling on twos, her eyes redrawn over the picture's so they can look around and
-  blink, the camera creeping in, the tag slamming on. Never a straight edge of the picture on screen: it shows
-  through jagged cuts that move (her arms from the sides in, then breaking off from the hands in, then just her
-  head for the dive, with afterimages and her zigzag).
-- **Cut-ins**: close-ups of her taken from the show, pushed in, with speed lines: her grin or her laugh after a
-  finished job, all her eyes when Claude is waiting on you, her eyes right before the red light, her sideways look
-  after zapping your pointer. Her face in the panel changes with what she's saying, too.
-- **Her mask**: a vector drawing after the show (and the "Capri Wink Face"), on its own small canvas, only redrawn
-  while on screen: the green slab of a face, the hooked spike, the white fang, the blue almond eyes,
-  and the eyes shut as chevrons while she sleeps.
-- **Type**: Chakra Petch (bevelled cuts, like her shards) + JetBrains Mono for data.
+- **Фон у неё чёрный (не прозрачный).** У некоторых ПК её прозрачное окно показывается чёрным (часто видеокарты NVIDIA с
+  включёнными FXAA, MFAA или HDR; другие программы-оверлеи там делают то же). Правый клик по ней или по её иконке у часов ›
+  **Отображение** › **OpenGL (если её фон чёрный)**: она перезапустится и будет рисоваться по-другому. Всё ещё чёрный —
+  **Без видеокарты (если всё ещё чёрный)**: процессору придётся чуть больше работать. Помогает и отключение FXAA и MFAA в
+  панели управления NVIDIA.
+- **Она почти не двигается, вступление просто появляется и исчезает.** В Windows отключены анимации (Параметры › Специальные
+  возможности › Визуальные эффекты › Эффекты анимации), и она следует этому. Меню › **Анимации** › **Все** заставит её двигаться
+  всё равно; в первый раз она сама спросит.
+- **Она молчит или «нет связи».** Вкладка **ИИ › Проверить связь** покажет причину; таблица ошибок —
+  [выше](#проверка-связи-и-ошибки).
+- **Она только парит и говорит пустяки, а на Claude не реагирует.** Это нормально, пока Claude Code ничего не делает. Если
+  не реагирует совсем: проверь, что в её меню написано «Хуки Claude Code: установлены», затем полностью закрой Claude Code и
+  открой снова.
+- **Нет звука голоса.** Вкладка **Голос**: не стоит ли «Молчит» или «Без звука» и верное ли устройство; кнопка «Проверить звук».
+- **Микрофон не открывается.** Windows › Параметры › Конфиденциальность › Микрофон: разреши классическим приложениям;
+  вкладка **Микрофон** › «Ещё раз».
+- **Она не сидит на окнах, не знает музыку, не управляет окнами.** Эти функции только для Windows.
+- **Где она?** Если ты её спрятал, **Ctrl+Alt+C** или меню у часов › **Вернуть её**.
+- **Начать с нуля.** Закрой Капри и удали папку данных (`%APPDATA%\Capri`, а из исходников `%APPDATA%\capri-desktop`).
 
-If Windows is set to "Show animations: off", she sticks to fades.
+---
 
-## How it's built
+## Вопросы и ответы
+
+- **Mac, Linux?** Готового установщика нет, но можно запустить из исходников (см. [выше](#вариант-2-из-исходников-windows-macos-linux)).
+  Окна, музыка и руки работают только в Windows.
+- **Телефон, Android?** Нет, ей нужен рабочий стол.
+- **Какие ИИ-помощники для кода она понимает?** Claude Code, Codex и Antigravity: меню › **Что отслеживать**. Cursor, Windsurf
+  и Gemini CLI пока нет.
+- **Нужен ли мне платный Claude?** Нет. Для чата подойдёт бесплатный Ollama или Groq; платный Claude нужен только если хочешь
+  Claude как «мозг» или следить за Claude Code.
+- **Ollama?** Двумя способами. Claude Code на локальной модели через Ollama (`ollama launch claude`): она видит его как обычный
+  Claude Code, только он медленнее, и бегущая строка считает секунды. И она сама может болтать с тобой через Ollama: см.
+  [Как подключить нейросеть](#как-подключить-нейросеть).
+- **Можно её выключить?** Ctrl+Alt+C прячет, **Выйти** в её меню закрывает. Claude Code без неё работает точно так же.
+- **Она тратит много ресурсов?** Нет: во сне и в чипе почти ничего (см. [Сон и ресурсы](#сон-и-ресурсы)).
+- **Она читает мою переписку и экран?** Только то, что ты включил: зрение и микрофон выключены по умолчанию, а включённое
+  показывается значком. Что именно уходит и куда — в разделе выше.
+
+---
+
+## Как она нарисована
+
+Цель: чтобы она выглядела так, будто шагнула из аниме, а не как виджет.
+
+- **Цельная анимация:** тело перерисовывается 12 раз в секунду («на двойки»), как в аниме, 24 — при телепортах. Каждый
+  рисунок слегка «кипит» (дрожание линии, перерисованной вручную).
+- **Покадрово, от позы к позе:** ничего не интерполируется. Каждое движение — карта экспозиции (`acting.js`): ключевые
+  рисунки, удержанные несколько кадров, замах в обратную сторону, размазанный кадр с несколькими головами, перелёт, паузы.
+  Её покой — четыре рисунка, а не синусоида.
+- **Она играет головой и гривой,** как в сериале: склонённая голова, осколки то ощетиниваются, то разлетаются, безумный смех
+  с трясущейся на каждом рисунке головой, поникшая во сне. Вырезка собрана так, что голова наклоняется вокруг шеи, грива
+  раздувается неравномерно вокруг жёсткого лица, а бёдра складываются (в ракурсе спереди), и она сидит с качающимися голенями.
+- **Сжатие и растяжение, остаточные образы:** плоская вырезка сплющивается до полоски, чтобы развернуться, вытягивается при
+  падении, расплющивается при приземлении и распадается на зелёную и красную копии («другие разумы» в ней), когда она
+  крутится или смеётся.
+- **Спутник,** как в финале сезона, где она показывает на огонёк в небе и думает, смогут ли они долететь туда: точка света
+  медленно пересекает верх экрана. Чаще она просто смотрит, тянется, он мигает, она вздыхает. Раз в день и после долгой
+  работы Claude — вся последовательность из пяти ударов:
+  1. **Тишина:** она замирает, белые крапинки гривы поднимаются созвездием над ней.
+  2. **Протянутая рука:** рисунки сбиваются в кучу, пока рука дотягивается, а её звёзды выстраиваются дорогой от кончиков
+     пальцев к спутнику.
+  3. **Замах:** она сжимается, рука чуть отводится назад, искры ползут по ладони, вставка с глазами.
+  4. **Красный свет уходит вверх:** тяжёлая сужающаяся молния несётся вверх за три рисунка, первый — в негативе (кадр-удар),
+     звёзды вспыхивают по пути, у спутника линии скорости, а её поднимает вместе с ней.
+  5. **Ответ:** молния обрывается, обломки падают. Тишина, потом спутник дважды мигает. Её звёзды возвращаются домой, грива на
+     миг вспыхивает ярко, а рука опускается со вздохом.
+- **Руки удлиняются, когда она целится:** аниме-преувеличение, иначе поднятая рука потерялась бы в гриве. Растягивается только
+  вдоль, остаётся такой же тонкой и не гнётся вместе с головой и гривой.
+- **Обе руки одинаковые:** в исходной вырезке одна рука тянулась, а другая висела. Висящая убрана (`tools/build-sprite.py`), а
+  шейдер рисует вместо неё зеркальную протянутую, так что обе кисти — те же когти и обе руки могут играть. Там, где рука
+  пересекает тело или гриву, на ней появляется фиолетовая линия, чтобы читалась.
+- **Её текстура:** красная грива доведена до горячего красного цвета сериала и усыпана мерцающими белыми крапинками. От неё
+  отрываются и уплывают осколки.
+- **Фиолетовый сдвиг:** как в аниме, смещённая фиолетовая копия под ней, под панелью, под осколками.
+- **«Реликтовый» глитч:** сдвинутые горизонтальные полосы и разделение RGB в духе появлений Джонни Сильверхенда.
+- **Телепорт:** зарядка, осколки, схлопывание в линию, а на её месте — чёрная щель с красной линией, как в сериале. Красный
+  столб света в небо, молния к цели, её куски (осколки гривы и зелёные звёзды глаз) спиралью возвращаются, и два *кадра-удара*.
+- **Вступление:** крупный план, вырезанный так, что рабочий стол виден вокруг гривы (`tools/build-intro.py`), шесть
+  рисунков, сменяющихся как целлы (в покое, рот приоткрыт, наполовину и широко для «привет», рука наклонена в одну и другую
+  сторону для взмаха, на тройки), а всё остальное — анимация поверх: кадры-удары (она как плоская белая, потом чёрная
+  силуэтная), RGB-расщепление, которое успокаивается, тряска экрана, линия, кипящая на двойки, её глаза, перерисованные
+  поверх картинки, чтобы могли оглядываться и моргать, наезжающая камера, хлопающий тег. Прямого края картинки никогда нет
+  на экране: она видна сквозь рваные движущиеся вырезы.
+- **Вставки:** крупные планы из сериала с линиями скорости: ухмылка или смех после законченной работы, все глаза, когда
+  Claude ждёт тебя, глаза перед красным светом, взгляд искоса после удара по курсору. Лицо в панели тоже меняется от того,
+  что она говорит.
+- **Маска:** векторный рисунок по сериалу («Capri Wink Face»), на своём маленьком холсте, перерисовывается, только пока на
+  экране: зелёная плита лица, загнутый шип, белый клык, голубые миндалевидные глаза и закрытые шевронами глаза, когда она спит.
+- **Шрифты:** Chakra Petch (скошенные срезы, как у её осколков) и JetBrains Mono для данных.
+
+Если в Windows отключены анимации, она обходится плавными появлениями и исчезновениями.
+
+---
+
+## Для разработчиков
 
 ```
-hooks/capri-hook.js      run by Claude Code, reads the event on stdin and posts it to the app
-scripts/install-hooks.js adds / removes the hook in ~/.claude/settings.json
-tools/build-sprite.py    rebuilds the sprite from the original cut-out (Python + Pillow, only if you change it)
-tools/build-cutins.py    cuts the cut-ins and her faces out of frames of the show
-tools/build-intro.py     cuts her intro's close-ups out of their background, all the same way
-src/main/                Electron: full-screen transparent click-through window, tray, local HTTP bridge
-  windows.js / .ps1      where the other windows are (Windows only), so she can sit on them
-  ollama.js              her chat: the local model, through Ollama
-  apps.js                closing an app you asked her to close (after your click)
+hooks/capri-hook.js      запускается Claude Code, читает событие со stdin и отправляет в приложение
+hooks/capri-codex-hook.js, hooks/capri-agy-hook.js   то же для Codex и Antigravity
+scripts/install-hooks.js добавляет и убирает хук в ~/.claude/settings.json (так же *-codex-*, *-agy-*)
+scripts/demo.js          проигрывает демо-сессию через тот же HTTP-мост
+scripts/check-llm.js     самопроверка: бесплатный шлюз и Claude Code через llm.js
+tools/build-sprite.py    пересобирает спрайт из исходной вырезки (Python + Pillow, только если меняешь)
+tools/build-cutins.py    вырезает вставки и её лица из кадров сериала
+tools/build-intro.py     вырезает крупные планы вступления из фона
+src/main/                Electron: полноэкранное прозрачное окно, сквозное для кликов, трей, локальный HTTP-мост
+  main.js                окно, трей и его меню, все IPC-каналы
+  anthropic.js           Claude через официальный SDK @anthropic-ai/sdk: поток ответа, модели, зрение, повтор при отказе
+  llm.js                 все «мозги»: Ollama, Claude, Claude Code, OpenAI-совместимые серверы
+  setup.js               мастер подключения: Ollama через winget, шифрование ключей
+  config.js              настройки: пустые изменения пропускаются, одна атомарная запись на пачку
+  windows.js / .ps1      где другие окна (только Windows), чтобы она сидела на них
+  media.js / .ps1        что играет, из медиа-управления Windows
+  ollama.js              её чат: локальная модель через Ollama
+  apps.js                закрытие приложения, которое ты просил закрыть (после твоего клика)
+  launch.js              запуск приложений, игр, музыки, сайтов
+  control.js             её руки: окна и сообщения через PowerShell, только в нужное окно
+  screen.js              снимок экрана (desktopCapturer); llm.js see() запускает модель зрения
+  tts.js / stt.js        голосовые сервисы и распознавание речи
 src/renderer/js/
-  sprite.js              WebGL shader: head tilt, mane flare, sitting, smears, afterimages, colors, glitch
-  acting.js              the exposure sheets: every move, drawing by drawing
-  capri.js               the character: stances, teleport, sitting, peeking, falling, drag, sleep
-  fx.js                  shards, light columns, bolts, glyphs, speed lines, shockwaves, the satellite and the red light, possessed windows, the cut-ins, her intro
-  panel.js               the "transmission" panel, her faces, and the ticker
-  guide.js               her guide: the tutorials, going to things and pointing at them
-  brain.js               turns Claude events into lines and actions
-  mission.js             today's mission log, for her report card
-  chat.js                talking to her: the conversation, who she is, her answers coming in
-  lines.js               what she says (FR / EN / ES / PT / RU)
-  chip.js                her mask: while she sleeps, and bottom left when you put her away
-  voice.js               the sounds
-  mood.js                her feelings: what a message does to her, how long it lasts, her grudges
-  heart.js               her feelings on her body, her face, her colours, her voice; poking, tickling, head pats
-  life.js                what she does on her own, the music, noticing you
-  themes.js              her colours
-  speech.js              her voice: the system's, or a speech service through her many-minds effect
-  fx-life.js             her moods' marks and her activities' props
-src/main/tts.js          speech services (OpenAI, ElevenLabs, OpenAI-compatible)
-src/main/media.js / .ps1 what's playing, from Windows' media controls
+  sprite.js              шейдер WebGL: наклон головы, раздув гривы, сидение, размазывание, остаточные образы, цвета, глитч
+  acting.js              карты экспозиции: каждое движение, рисунок за рисунком
+  capri.js               сам персонаж: стойки, телепорт, сидение, выглядывание, падение, перетаскивание, сон
+  fx.js, fx-life.js      осколки, столбы света, молнии, глифы, линии скорости, ударные волны, спутник, вселение, вставки, вступление; следы настроений и реквизит занятий
+  panel.js               панель «передачи», её лица, бегущая строка
+  guide.js               её гид: уроки, перемещение к предметам и показ на них
+  brain.js               превращает события Claude в реплики и действия
+  mission.js             журнал миссий за день для отчёта
+  chat.js                разговор с ней: диалог, кто она, приходящие ответы, команды «открой/закрой/напиши»
+  lines.js, lines-life.js   что она говорит (FR / EN / ES / PT / RU)
+  chip.js                её маска: во сне и внизу слева, когда её спрятали
+  voice.js               звуки и выбор устройства вывода
+  mood.js, heart.js      чувства: что значит сообщение, сколько держится, обиды; связь чувств с телом, лицом, цветом, голосом
+  life.js                что она делает сама, музыка, DJ, замечает тебя
+  themes.js              её цвета
+  speech.js              голос: системный или облачный через эффект «множества разумов»
+  eyes.js, rhythm.js, hands.js, ears.js   зрение, танец, руки, слух
+  bond.js                саморазвитие: стиль общения, реакции, блокнот, уровень близости
+  ring.js, ring-tabs.js, ring-ui.js   круговое меню: кольцо, вкладки, переключатели и ползунки (styles/ring.css)
+  brain-providers.js     кто может отвечать: группы и какие берут ключ (вкладка ИИ)
+assets/fonts             нужные шрифты (лицензии рядом)
 ```
 
-To hack on it: `npm run dev` turns on debug routes on the bridge (`/debug/capture` saves a frame of the window to `captures/`,
-`/debug/testwin` opens test windows she can sit on, one per name, `/debug/mouse` moves and clicks a stand-in pointer
-over Capri's window, without touching the real one, `/debug/type` types in her chat).
-`npm run dist` builds the Windows installer in `dist/`.
+**Тесты:** `npm test` запускает всё; по отдельности `test:character`, `test:senses`, `test:bond`, `test:ring`, `test:claude`,
+`test:claudecode`, `test:chat`, `test:config`, `test:hooks`. Подключение к Claude проверяется на заглушке API Anthropic
+с настоящим SDK, так что ни ключ, ни сеть не нужны; чат через Claude Code — на заглушке команды `claude`.
 
-## Credits and rights
+**Разработка:** `npm run dev` включает отладочные маршруты на мосту: `/debug/capture` сохраняет кадр окна в `captures/`,
+`/debug/testwin` открывает тестовые окна, на которые она может сесть (по одному на имя), `/debug/mouse` двигает и кликает
+подставным указателем над её окном, не трогая настоящий, `/debug/type` печатает в её чат, `/debug/command` посылает ей
+команды: например `POST http://127.0.0.1:47823/debug/command` с телом `{"name":"feel","text":"ты дура"}`, `{"name":"ring","tab":"brain"}`,
+`{"name":"lookNow"}`, `{"name":"pushToTalk"}`.
 
-Capri / Project Capricorn, Cyberpunk and Cyberpunk: Edgerunners belong to CD PROJEKT RED, Studio Trigger and Netflix.
-This is a non-commercial fan project with no affiliation. The character images in `assets/capri/` come from frames of
-the show, a fan-made cut-out and fan art (her intro's close-ups); they are **not** covered by the code's MIT license.
-If a rights holder wants them removed, open an issue.
+`npm run dist` собирает установщик для Windows в `dist/`.
 
-Fonts: Chakra Petch and JetBrains Mono, under the SIL Open Font License, via Fontsource.
+---
 
+## Авторы и права
+
+Проект основан на [capri-desktop](https://github.com/mochiiwuff/capri-desktop) (автор — mochiiwuff) и развит дальше:
+круговое меню, подключение нейросетей, чувства, руки, саморазвитие.
+
+Права на Капри / Project Capricorn, Cyberpunk и Cyberpunk: Edgerunners принадлежат CD PROJEKT RED, Studio Trigger и Netflix.
+Это некоммерческий фанатский проект, не связанный с ними. Изображения персонажа в `assets/capri/` взяты из кадров сериала,
+вырезки, сделанной фанатами, и фанатского арта (крупные планы вступления); на них **не** распространяется MIT-лицензия кода.
+Если правообладатель захочет их убрать, открой issue.
+
+Шрифты: Chakra Petch и JetBrains Mono по лицензии SIL Open Font License, через Fontsource.
+
+Код — MIT.

@@ -19,6 +19,7 @@ function startMediaWatch({ onUpdate }) {
   let restarts = 0;
 
   const start = () => {
+    if (stopped) return; // stopped while a restart was pending
     child = spawn('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', SCRIPT, String(process.pid),
     ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -29,6 +30,7 @@ function startMediaWatch({ onUpdate }) {
       } catch {
         return;
       }
+      if (stopped) return;
       const app = String(now.app || '');
       onUpdate(app || now.title ? {
         app: app.replace(/\.exe$/i, '').split(/[!\\/]/).pop(),

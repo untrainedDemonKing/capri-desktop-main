@@ -9,6 +9,7 @@ import { pick, fmt } from './util.js';
 import { ASSISTANT_NAMES } from './lines.js';
 import { askedTheme } from './themes.js';
 import { lifeLines } from './lines-life.js';
+import { FORGET_ME } from './bond.js';
 
 const REMEMBER = 20; // messages she has in mind when answering
 const KEEP = 60;     // messages she remembers across restarts (memory.json)
@@ -23,6 +24,7 @@ const IN_LANGUAGE = {
 };
 const STAY_MS = 10 * 60 * 1000; // no wandering off mid-conversation
 const LOADING_AFTER_MS = 5000;
+const APPS_FRESH = 20000;      // the list of open apps is looked up at most this often
 const CLOSE_TAG = /\[\[\s*close\s*:?\s*([^\]]*)\]\]/i; // [[close: AM Music]] at the end of her answer
 // "close", "shut down", "ferme", "quitte", "cierra", "fecha", "закрой"... in any of her languages
 const CLOSE_ASK = /\b(close|shut|quit|kill|exit)|ferm|quitt|coupe|arr[êe]t|cierr|cerra|fech|закр|выключ/i;
@@ -35,7 +37,7 @@ const MEDIA_ASK = [
   ['pause', /\b(pause|pausa|pausar)\b|stop (the )?music|arrête la musique|пауз/i],
   ['next', /\b(next|skip|suivante?|siguiente|próxima|proxima)\b|passe (à )?la suivante|salta|pula|следующ/i],
   ['previous', /\b(previous|précédente?|anterior)\b|предыдущ/i],
-  ['play', /\b(resume|reprends|reanuda|retoma)\b|relance la musique|remets la musique|продолж/i],
+  ['play', /\b(resume|reprends|reanuda|retoma)\b|relance la musique|remets la musique|продолж[а-яё]*\s+(?:музык|песн|трек)/i], // ("продолжай" alone is "go on")
   ['volup', /\b(louder|plus fort)\b|monte le son|turn (it )?up|sube el volumen|aumenta o volume|громче/i],
   ['voldown', /\b(quieter|moins fort)\b|baisse le son|turn (it )?down|baja el volumen|abaixa o volume|тише/i],
   ['mute', /\bmute\b|coupe le son|silencia|sem som|выключи звук/i],
@@ -44,6 +46,7 @@ const MUSIC_WORD = /musi|chanson|song|track|titre|morceau|spotify|canci|faixa|п
 // "put X on Spotify", "mets X sur Spotify", "pon X en Spotify", "coloca X no Spotify", "включи X в Spotify"
 const SPOTIFY_ASK = /(?:play|put on|put|mets|joue|lance|écoute|pon|toca|reproduce|coloca|toque|включи|поставь)\s+(?:moi\s+|me\s+)?(.+?)\s+(?:on|sur|en|no|na|в)\s+spotify/i;
 const MEDIA_ACTIONS = new Set(MEDIA_ASK.map(([action]) => action));
+const TRANSPORT = new Set(['pause', 'play', 'next', 'previous']); // the keys of a player (the rest is the volume)
 // what her tag needs to find in your message before it does anything: a small model tags answers about
 // anything ("[[music: synthwave]]" under a film tip), and music and the media keys act right away
 const LISTEN = /[ée]cout|listen|escuch|\bouv(ir|e)\b|слуша|playlist|album|\b(play|joue|mets|pon|toca|coloca)\b|включи|поставь/i;
@@ -74,6 +77,10 @@ const TINY = /[:-](0\.5b|1b|1\.5b|135m|270m|360m)\b/i;
 const MOOD_TAG = /\[\[?\s*(?:mood|настроение)\s*:\s*([a-z]+)\s*\]\]?/i;
 // her face while she reads your message, from her reaction to it (heart.js)
 const REACTION_FACE = { rage: 'many', huff: 'look', hurt: 'aside', pout: 'aside', forgive: 'calm', shy: 'aside', giggle: 'laugh', care: 'look', startle: 'wide', dreamy: 'aside' };
+// you asked about what's on your screen (eyes.js): she takes a fresh look before answering
+const SCREEN_Q = /(?:что|чё|чо|какой|кто|where|what|which|who).{0,30}(?:на\s+(?:моём\s+|моем\s+)?экран|у\s+меня\s+на\s+экран|на\s+скрин|screen|écran|pantalla|tela)|посмотр\p{L}*\s+(?:на\s+)?(?:мой\s+)?экран|глян\p{L}*\s+(?:на\s+)?(?:мой\s+)?экран|look\s+at\s+(?:my\s+)?screen|видишь\s+(?:ли\s+)?(?:что|это)|что\s+(?:я\s+)?(?:сейчас\s+)?(?:смотрю|делаю|читаю|играю)/iu;
+// you did ask her to write/send something (so an AI [[msg:...]] tag isn't acted on out of nowhere)
+const WRITE_ASK = /напиш\p{L}*|напеч\p{L}*|отправ\p{L}*|сообщ\p{L}*|скаж\p{L}*|передай|write|send|message|text|écris|envoie|escribe|manda/iu;
 
 export class Chat {
   constructor({ capri, panel, voice, host, brain }) {
@@ -92,6 +99,12 @@ export class Chat {
     this.heart = null;   // heart.js: how she feels (app.js)
     this.life = null;    // life.js: what she's up to on her own
     this.speech = null;  // speech.js: her voice
+    this.bond = null;    // bond.js: what she's learned about you, and how close you are
+    this.shown = '';     // what her bubble shows after her answer (lines added under it)
+    this.hands = null;   // hands.js: her hands on the PC (windows, messages)
+    this.eyes = null;    // eyes.js: what's on your screen
+    this.screenNow = ''; // what she saw this turn, if you asked about the screen
+    this.later = '';     // what you said (your voice) while she was still answering
     this.onSetup = null; // (status) => void: she can't answer yet (app.js hands it to setup.js)
     this.onBetterModel = null; // () => void: a bigger model than the tiny one she's on (setup.js)
     host.onChatDelta(({ id, text }) => this.onDelta(id, text));
@@ -101,7 +114,14 @@ export class Chat {
     return this.brain.t.chat;
   }
 
-  async start() {
+  // Opens her chat. Asked twice before it's open (a tap on her and your voice at once, a second thing you
+  // said while the first is still being heard): the same opening, not a second one on top of it.
+  start() {
+    this.starting ||= this.begin().finally(() => { this.starting = null; });
+    return this.starting;
+  }
+
+  async begin() {
     const { capri, host, t } = this;
     if (this.open) {
       this.panel.chatInput.focus();
@@ -142,10 +162,10 @@ export class Chat {
     this.history = await host.chatMemory().catch(() => this.history); // "forget" in her menu may have emptied it
     this.cold = status.warmup && !this.warm;
     this.agent = Boolean(status.agent); // Claude Code answers, as her, and really works in your project
+    if (this.bond) this.bond.agent = this.agent; // her notebook isn't written by Claude Code (bond.js)
     this.listApps();
     const shortModel = status.model.replace(/:latest$/, '').replace(/^models\//, ''); // Ollama's tag, Gemini's prefix
     const tiny = status.provider === 'ollama' && TINY.test(status.model) && this.onBetterModel;
-    host.focusOverlay(true); // the keyboard, for typing to her
     const shown = this.panel.say({
       kind: 'chat',
       face: 'look',
@@ -168,10 +188,10 @@ export class Chat {
       onLeave: () => this.close(),
       hold: null,
     });
-    if (!shown) {
-      host.focusOverlay(false); // something more important is on (a permission prompt)
-      return;
-    }
+    if (!shown) return; // something more important is on (a permission prompt)
+    // the keyboard, for typing to her (only now: her ring menu, if it was open, has stepped aside for her
+    // in the line above, and gives the keyboard back as it goes)
+    host.focusOverlay(true);
     this.open = true;
     setTimeout(() => this.panel.chatInput.focus(), 150); // once the overlay has the keyboard
     capri.perform('hop');
@@ -184,9 +204,25 @@ export class Chat {
     this.speech?.stop();
     if (this.turn) this.host.chatStop(this.turn);
     this.turn = 0;
+    this.later = '';
     this.host.focusOverlay(false);
+    this.bond?.reflect(this.history, { closing: true }); // what she learned about you, into her notebook
     this.capri.nextMove = performance.now() + 30000;
     this.capri.nextGaze = performance.now() + 60000;
+  }
+
+  // Something you said with your voice (ears.js): sent now, or, if she's still answering, as soon as she's
+  // done (it was heard and paid for: not thrown away).
+  say(text) {
+    if (this.turn) this.later = [this.later, text].filter(Boolean).join(' ');
+    else this.send(text);
+  }
+
+  // what was said while she answered, now
+  sayLater() {
+    const text = this.later;
+    this.later = '';
+    if (text && this.open) setTimeout(() => this.send(text), 700);
   }
 
   async send(text) {
@@ -198,6 +234,9 @@ export class Chat {
     this.speech?.stop(); // she stops talking to listen
     // how it makes her feel, shown right away: she bristles, giggles, blushes... (heart.js)
     const felt = this.heart?.feel(text) || { tags: [], reaction: null };
+    // she gets to know you a little more with every message (bond.js): how close she is now
+    const grew = this.bond?.observe(text, this.heart?.enabled ? felt.tags : null) || 0;
+    this.shown = '';
     this.panel.setChatBusy(true);
     this.panel.setActions([]); // a close button she offered before goes with a new message
     this.panel.chatTurn({ quote: text, face: REACTION_FACE[felt.reaction] || 'aside' });
@@ -205,9 +244,15 @@ export class Chat {
     // what you asked for plainly happens right away (the music, the volume, an app you named): her
     // line about it comes under her answer (Claude Code, answering her chat, does things its own way)
     const asked = this.agent ? null : this.asked(text);
-    const early = asked && asked.kind !== 'close' ? this.doNow(asked) : null;
+    const early = asked && !['close', 'hands'].includes(asked.kind) ? this.doNow(asked)
+      : asked?.kind === 'hands' && asked.intent.kind !== 'message' ? this.hands.op(asked.intent) : null;
+    // you asked about the screen: she takes a quiet look first, so her answer is about what's really there
+    this.screenNow = '';
+    if (!this.agent && this.eyes?.enabled && SCREEN_Q.test(text)) {
+      this.screenNow = (await this.eyes.look({ silent: true }).catch(() => '')) || '';
+    }
     await Promise.race([this.appsReady, new Promise((r) => setTimeout(r, 1500))]);
-    const messages = [{ role: 'system', content: this.persona() }, ...this.history.slice(-REMEMBER)];
+    const messages = [{ role: 'system', content: this.persona(text) }, ...this.history.slice(-REMEMBER)];
     // nothing yet after a few seconds: Ollama is still loading the model (the first answer after a start),
     // or Claude Code is at work
     const wait = this.agent ? this.t.working : this.cold ? this.t.loading : null;
@@ -226,8 +271,10 @@ export class Chat {
       this.history.pop();
       this.panel.setFace('wide');
       // too busy or gone even after trying other models (main.js): said plainly, not the server's JSON
-      this.panel.stream(res.code === 'busy' ? this.t.swamped : res.code === 'gone' ? this.t.gone : `${this.t.failed} ${res.error}`, { done: true });
+      const known = { busy: 'swamped', gone: 'gone', credit: 'credit', badkey: 'badkey', refused: 'refused' }[res.code];
+      this.panel.stream(known ? this.t[known] : `${this.t.failed} ${res.error}`, { done: true });
       this.panel.setChatBusy(false);
+      this.later = ''; // (it would only fail the same way)
       return;
     }
     const answer = clean(res.text) || '…';
@@ -240,8 +287,21 @@ export class Chat {
     if (!expr && felt.tags.includes('jokeAsk')) this.capri.react('laugh'); // her own joke cracks her up
     this.speech?.say(answer, { mood: expr || this.heart?.mood.mood || 'calm', kind: 'chat' });
     this.panel.setChatBusy(false);
-    if (!this.agent) this.after(res.text, answer, asked, early, text);
+    this.sayLater();
+    this.bond?.replied(answer, expr || ''); // your next message tells her how this one landed
+    const acted = this.agent ? null : this.after(res.text, answer, asked, early, text);
+    if (grew) Promise.resolve(acted).catch(() => {}).then(() => this.closer(grew, answer));
     this.listApps(); // fresh for the next message
+    this.bond?.reflect(this.history); // every few messages, a line in her notebook about you
+  }
+
+  // She just grew closer to you (bond.js): she says so, under her answer, a little flustered.
+  closer(level, answer) {
+    const line = pick(lifeLines(this.brain.lang).bond.up[level] || []);
+    if (!line || !this.open) return;
+    this.addLine(this.shown || answer, `♥ ${line}`, 'smug');
+    this.capri.react('shy');
+    this.heart?.event('petted');
   }
 
   // an answer of hers, kept with your message before it
@@ -251,7 +311,12 @@ export class Chat {
     this.host.chatRemember(this.history);
   }
 
-  listApps() {
+  // What's open on the PC (a PowerShell look in main, so not on every message: a fresh list at most
+  // every APPS_FRESH, unless something was just closed)
+  listApps(force = false) {
+    const now = performance.now();
+    if (!force && now - (this.appsAt ?? -Infinity) < APPS_FRESH) return;
+    this.appsAt = now;
     this.appsReady = this.host.openApps().then((list) => { this.apps = list || []; }).catch(() => {});
   }
 
@@ -263,16 +328,29 @@ export class Chat {
     if (name) return { kind: 'name', name };
     const memo = MEMO_ASK.exec(text)?.[1]?.trim();
     if (memo) return { kind: 'memo', text: memo };
+    if (FORGET_ME.test(text)) return { kind: 'forgetMe' };
     const theme = askedTheme(text);
     if (theme) return { kind: 'theme', theme };
+    // her hands on the PC (windows, a message): what you asked, read plainly (hands.js)
+    const intent = this.hands?.parse(text);
+    if (intent) return { kind: 'hands', intent };
     const media = MEDIA_ASK.find(([, re]) => re.test(text))?.[0];
-    if (media && (count <= 5 || MUSIC_WORD.test(text))) return { kind: 'media', action: media };
+    if (media && this.mediaAsked(media, text, count)) return { kind: 'media', action: media };
     const song = SPOTIFY_ASK.exec(text)?.[1];
     if (song) return { kind: 'music', song };
     const app = this.askedToClose(text);
     if (app) return { kind: 'close', name: app };
     if (OPEN_ASK.test(text) && count <= 8) return { kind: 'open', text };
     return null;
+  }
+
+  // Whether "next", "pause", "louder"... is about the music, and not just a word in what you're saying
+  // ("следующий вопрос", "next, please"): about music itself, or short; the track keys also only when
+  // something is playing (or it's one or two words), the volume ones in a few words.
+  mediaAsked(action, text, count) {
+    if (MUSIC_WORD.test(text)) return true;
+    if (!TRANSPORT.has(action)) return count <= 5;
+    return count <= 2 || (count <= 5 && Boolean(this.life?.media?.playing));
   }
 
   // Doing it now. Resolves with her line about it ({ line, face }), or null if there was nothing to do.
@@ -290,6 +368,11 @@ export class Chat {
       this.capri.twitch();
       const tt = lifeLines(this.brain.lang).theme;
       return { line: asked.theme === 'mood' ? tt.mood : pick(tt.done), face: 'smug' };
+    }
+    if (asked.kind === 'forgetMe') {
+      // what she learned about you, wiped (what you asked her to remember stays: that's in her menu)
+      this.bond?.forget();
+      return { line: pick(lifeLines(this.brain.lang).bond.forgot), face: 'aside' };
     }
     if (asked.kind === 'memo') {
       custom.memories = [...(custom.memories || []).filter((m) => m !== asked.text), asked.text].slice(-MEMORIES_MAX);
@@ -323,6 +406,15 @@ export class Chat {
     const done = early && (await early);
     if (done) return this.addLine(answer, done.line, done.face);
     if (asked?.kind === 'close') return this.offerClose(asked.name, answer);
+    // a message in a messenger: she typed it out, now she waits for your yes (hands.js)
+    if (asked?.kind === 'hands' && asked.intent.kind === 'message') {
+      return this.hands.message(asked.intent, { addLine: (a, l, f) => this.addLine(a, l, f), setActions: (acts, on) => this.panel.setActions(acts, on), answer });
+    }
+    // her AI asked to send one with a tag, and you did say to write something
+    const msgTag = this.hands?.parseTag(raw);
+    if (msgTag && WRITE_ASK.test(text)) {
+      return this.hands.message(msgTag, { addLine: (a, l, f) => this.addLine(a, l, f), setActions: (acts, on) => this.panel.setActions(acts, on), answer });
+    }
     if (asked && asked.kind !== 'open') return undefined; // music that didn't work out: nothing more to offer
     const closeTag = tagged(raw);
     if (closeTag) return wanted('close', text) ? this.offerClose(closeTag, answer) : undefined;
@@ -343,7 +435,8 @@ export class Chat {
   // her answer, with a line of what she did under it
   addLine(answer, line, face = null) {
     if (!this.open || this.turn) return;
-    this.panel.stream(`${answer}\n${line}`, { done: true });
+    this.shown = `${answer}\n${line}`; // what's in her bubble now, for another line under it
+    this.panel.stream(this.shown, { done: true });
     if (face) this.panel.setFace(face);
   }
 
@@ -455,7 +548,7 @@ export class Chat {
         (id) => (id === 'force' ? this.closeApp(app, true) : this.panel.setActions([])),
       );
     }
-    this.listApps();
+    this.listApps(true);
   }
 
   // What she can do on the PC when you ask (Windows), and nothing else.
@@ -467,7 +560,13 @@ export class Chat {
       const open = this.apps.map(({ name, label }) => (label && label !== name ? `${name} (${label})` : name)).join(', ');
       lines.push(`You can also close an app that's open, only when they ask you to: end your answer with [[close: NAME]], NAME being the exact name from this list (the part before the parentheses). They get a button to confirm it. Apps open right now: ${open}.`);
     }
-    lines.push('Apart from that, you can\'t see the user\'s screen or files, and you can\'t touch anything else on their PC (settings, files): if asked, say plainly that you can\'t, in character, and don\'t pretend to.');
+    // her hands, if she's allowed them (hands.js): arranging windows, writing messages
+    lines.push(...(this.hands?.powers() || []));
+    const canSee = this.eyes?.enabled;
+    const canHands = this.hands?.enabled;
+    const cant = ['their files'];
+    if (!canSee) cant.push('their screen');
+    lines.push(`Apart from that, you can't see ${cant.join(' or ')}, and you can't touch anything else on their PC (settings, files${canHands ? '' : ', windows'})${canSee ? '' : ''}: if asked for something you can't do, say plainly that you can't, in character, and don't pretend to.`);
     return lines;
   }
 
@@ -481,6 +580,12 @@ export class Chat {
     }
     const life = this.life?.context();
     if (life) lines.push(life);
+    // what she can see on the screen right now (eyes.js): a fresh look this turn, or the last one
+    if (this.screenNow) lines.push(`You just looked at the user's screen. It shows: ${this.screenNow}. React to it.`);
+    else {
+      const seen = this.eyes?.context();
+      if (seen) lines.push(seen);
+    }
     const d = new Date();
     lines.push(`It is ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')} on the user's PC.`);
     return lines;
@@ -507,7 +612,7 @@ export class Chat {
   }
 
   // Who she is, how she talks, and what's going on right now.
-  persona() {
+  persona(text = '') {
     const assistant = ASSISTANT_NAMES[this.brain.assistant] || 'Claude Code';
     const watching = this.brain.watching; // else Claude Code isn't part of her life here
     const lang = IN_LANGUAGE[this.brain.lang] || IN_LANGUAGE.en;
@@ -525,6 +630,7 @@ export class Chat {
       // a big model asked "who are you?" otherwise answers with its own name ("I'm Gemini")
       ...(this.agent ? [] : ['Asked who or what you are, you are Capri, nothing else. Never say which AI model or company is behind you (Gemini, GPT, ChatGPT, Llama, Gemma, Mistral, Google, OpenAI, Meta…), even if the user insists or names one: you are not them.']),
       ...this.personal(),
+      ...(this.bond?.context(text) || []),
       ...this.feelings(),
       ...(this.agent
         ? ['Under the hood you are Claude Code, working in the user\'s project: really do what they ask with your tools, as carefully as ever. Only your final answer is in character: it shows in a small speech bubble, so sum up what you did in those few sentences.']
@@ -535,13 +641,18 @@ export class Chat {
   }
 }
 
-// The model's answer as she'd say it: no reasoning block, no markdown marks.
-function clean(text) {
+// The model's answer as she'd say it: no reasoning block, no markdown marks (**bold**, *emphasis*, `code`,
+// # headings, bullets), and everything else as it was: C#, snake_case, 2*3.
+export function clean(text) {
   return String(text)
     .replace(/<think>[\s\S]*?(<\/think>|$)/g, '')
     .replace(/\[\[[^\]]*(\]\]|$)/g, '') // her tags (read from the raw answer, never shown)
     .replace(/^\s*\[\s*(?:mood|настроение)\s*:[^\]]*\]?\s*/i, '') // her mood tag, written sloppily
-    .replace(/[*_`#]+/g, '')
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/\*{2,}/g, '') // (a ** still waiting for its other half, while the answer comes in)
+    .replace(/(^|[\s(])([*_])(?=\S)([^*_\n]*?\S)\2(?=[\s.,!?;:)…]|$)/g, '$1$3') // *emphasis*, _emphasis_ (not 2 * 3 * 4)
+    .replace(/`+/g, '')
+    .replace(/^[ \t]*(?:#{1,6}[ \t]+|[*•][ \t]+)/gm, '')
     .replace(/[ \t]+\n/g, '\n')
     .trim();
 }

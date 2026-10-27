@@ -25,6 +25,7 @@ export class Brain {
     this.assistant = assistant; // 'claude', 'codex' or 'agy': whose events she follows
     this.custom = {};       // what you made her (custom.js): { userName, persona, myLines, memories }
     this.heart = null;      // how she feels (heart.js): her idle lines follow it, Claude's work moves it
+    this.bond = null;       // how close you two are (bond.js): a word about it now and then
     this.sessions = new Map();
     this.replyFor = null;    // the session whose answer she's holding up for you
     this.linked = true;      // has a Claude Code event ever reached her (app.js sets it from the config)
@@ -368,7 +369,7 @@ export class Brain {
     const busy = this.busySessions;
     if (!busy.length) {
       const talk = this.onTalk && { actions: [{ id: 'talk', label: this.t.chat.talk }], onAction: () => this.onTalk(), hold: 6000 };
-      const felt = this.heart?.idleLine(); // how she feels shows in what she says
+      const felt = this.heart?.idleLine() || this.bond?.idleLine(); // how she feels, how close you are
       this.say('idle', felt?.line || this.idleLine(), null, { face: felt?.face || pick(['calm', 'smug', 'aside']), hold: 4000, ...talk });
       return;
     }

@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const {
   app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage,
+  desktopCapturer, session,
   clipboard, ClipboardItem, dialog, powerMonitor,
 } = require('electron');
 
@@ -18,6 +19,9 @@ const setup = require('./setup');
 const apps = require('./apps');
 const launch = require('./launch');
 const tts = require('./tts');
+const stt = require('./stt');
+const vision = require('./screen');
+const control = require('./control');
 const { startMediaWatch } = require('./media');
 const { ASSISTANTS, assistant } = require('./assistants');
 const activeAssistant = () => assistant(config.load().assistant); // Claude Code or Codex
@@ -34,6 +38,7 @@ const OLLAMA_SITE = 'https://ollama.com';
 const THEMES = ['classic', 'netrunner', 'toxic', 'violet', 'gold', 'sakura', 'ghost', 'mood'];
 // which saved key each voice engine uses (OpenAI's is the same one as her chat's)
 const TTS_KEYS = { openai: 'openai', elevenlabs: 'elevenlabs', custom: 'tts' };
+const STT_KEYS = { groq: 'groq', openai: 'openai', custom: 'stt' };
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'capri', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
@@ -53,6 +58,9 @@ const chats = new Map(); // id -> AbortController of an answer being streamed
 let moodState = null;   // how she feels (the overlay says), for her menu's top line
 let mediaWatch = null;  // what's playing (media.js), while she's allowed to know
 let presenceTimer = null;
+let senseState = {};    // which senses are live right now (the overlay says): { eyes, ears, listening }
+let pttKey = null;      // the push-to-talk shortcut currently registered
+let restLevel = 'awake'; // how deeply she rests (rest()): 'awake', 'sleep' or 'deep'
 
 const userSoundsDir = () => path.join(app.getPath('userData'), 'sounds');
 
@@ -72,6 +80,25 @@ function saveMemory(patch) {
     console.error('[capri] could not save her memory:', err.message);
   }
 }
+// What she's learned about you (bond.js): kept on this PC only, next to her memory.
+const bondFile = () => path.join(app.getPath('userData'), 'bond.json');
+function readBond() {
+  try {
+    return JSON.parse(fs.readFileSync(bondFile(), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+function saveBond(data) {
+  try {
+    const tmp = `${bondFile()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(data)); // whole or not at all: a crash mid-write never leaves half a file
+    fs.renameSync(tmp, bondFile());
+  } catch (err) {
+    console.error('[capri] could not save what she learned:', err.message);
+  }
+}
+
 function forgetChats() {
   llm.resetClaude();
   saveMemory({ history: [], claude: null });
@@ -255,20 +282,45 @@ function rendererConfig() {
   return { ...cfg, keys: Object.keys(apiKeys || {}), assistant: activeAssistant().id, lang: resolveLang(cfg.lang), langSetting: cfg.lang, floorGap: overlayArea().gap };
 }
 
+// A setting changed (her menus, her ring, her setup). Only what really changed is acted on: the same
+// value again costs nothing (no file, no message to the overlay, no menu to build).
 function updateConfig(patch) {
-  config.save(patch);
-  if ('rest' in patch) fitOverlay(); // the taskbar in her window or not
-  if ('musicAware' in patch) watchMedia();
+  const changed = config.save(patch);
+  if (!changed.length) return rendererConfig();
+  const did = (...keys) => keys.some((k) => changed.includes(k));
+  if (did('rest')) fitOverlay(); // the taskbar in her window or not
+  if (did('musicAware')) watchMedia();
+  if (did('ears', 'pushToTalk')) registerPushToTalk();
   const cfg = rendererConfig();
   overlay?.webContents.send('capri:config', cfg);
   rebuildTray();
   return cfg;
 }
 
+// The tray menu is rebuilt from scratch (a hundred items), so asks for it are gathered: a slider
+// dragged in her ring is dozens of changes a second, the menu follows once, a moment after.
+let trayTimer = 0;
 function rebuildTray() {
+  if (!tray || trayTimer) return;
+  trayTimer = setTimeout(() => {
+    trayTimer = 0;
+    buildTray();
+  }, 120);
+}
+
+// Whether her hooks are in (a read of the assistant's settings file): looked at again after a few
+// seconds, or right away after she installed or removed them herself.
+let hookCache = { at: 0, id: '', value: null };
+function hooksNow(fresh = false) {
+  const id = activeAssistant().id;
+  if (fresh || hookCache.id !== id || Date.now() - hookCache.at > 5000) hookCache = { at: Date.now(), id, value: activeHooks().status() };
+  return hookCache.value;
+}
+
+function buildTray() {
   if (!tray) return;
   const cfg = config.load();
-  const hookState = activeHooks().status();
+  const hookState = hooksNow();
   const watched = activeAssistant();
   const t = Object.fromEntries(Object.entries(TRAY[resolveLang(cfg.lang)]).map(([key, value]) =>
     [key, typeof value === 'string' && watched.id !== 'claude' ? value.replaceAll('Claude Code', watched.name) : value]));
@@ -286,6 +338,7 @@ function rebuildTray() {
     { label: t.help, click: () => sendCommand('welcome') },
     ...(cfg.claude ? [{ label: t.report, click: () => sendCommand('report') }] : []),
     { label: t.talk, click: () => sendCommand('chat') },
+    { label: t.ring, click: () => sendCommand('ring') },
     { label: t.custom, click: () => sendCommand('customize') },
     { label: cfg.visible ? t.hide : t.show, accelerator: 'Ctrl+Alt+C', click: () => toggleVisible() },
     { type: 'separator' },
@@ -333,6 +386,37 @@ function rebuildTray() {
         { label: t.life, type: 'checkbox', checked: cfg.life !== false, click: (item) => updateConfig({ life: item.checked }) },
         { label: t.musicAware, type: 'checkbox', checked: cfg.musicAware !== false, enabled: process.platform === 'win32', click: (item) => updateConfig({ musicAware: item.checked }) },
         { label: t.dj, type: 'checkbox', checked: cfg.dj !== false, enabled: process.platform === 'win32' && cfg.musicAware !== false, click: (item) => updateConfig({ dj: item.checked }) },
+        { type: 'separator' },
+        // she gets to know you and adapts (bond.js); what she learned, and a button to wipe it
+        { label: t.learn, type: 'checkbox', checked: cfg.learn !== false, click: (item) => updateConfig({ learn: item.checked }) },
+        { label: t.bond, click: () => sendCommand('bond') },
+      ],
+    },
+    // her senses: she can see your screen, move to your music, and listen to your voice. All off
+    // until you turn them on here, and each one is a live use of your screen, sound or microphone.
+    {
+      label: t.senses,
+      submenu: [
+        { label: t.vision, type: 'checkbox', checked: cfg.vision === true, click: (item) => updateConfig({ vision: item.checked }) },
+        { label: t.lookNow, enabled: cfg.vision === true, click: () => sendCommand('lookNow') },
+        { type: 'separator' },
+        { label: t.rhythm, type: 'checkbox', checked: cfg.rhythm === true, click: (item) => updateConfig({ rhythm: item.checked }) },
+        { type: 'separator' },
+        { label: t.ears, type: 'checkbox', checked: cfg.ears === true, click: (item) => updateConfig({ ears: item.checked }) },
+        { label: t.converse, type: 'checkbox', checked: cfg.converse === true, enabled: cfg.ears === true, click: (item) => updateConfig({ converse: item.checked }) },
+        { label: `${t.pushToTalk}: ${prettyKey(cfg.pushToTalk)}`, enabled: false },
+        { type: 'separator' },
+        { label: t.visionSetup, click: () => sendCommand('setupVision') },
+        { label: t.earsSetup, click: () => sendCommand('setupEars') },
+      ],
+    },
+    // her hands: she can arrange your windows and type messages for you, only when you ask and,
+    // for anything she types, only after you say yes. Windows only.
+    {
+      label: t.hands,
+      submenu: [
+        { label: t.handsOn, type: 'checkbox', checked: cfg.hands === true, enabled: process.platform === 'win32', click: (item) => updateConfig({ hands: item.checked }) },
+        { label: t.handsType, type: 'checkbox', checked: cfg.handsType !== false, enabled: process.platform === 'win32' && cfg.hands === true, click: (item) => updateConfig({ handsType: item.checked }) },
       ],
     },
     {
@@ -370,7 +454,7 @@ function rebuildTray() {
         { type: 'separator' },
         ...(chatModels?.length
           ? chatModels.map((name) => ({
-            label: name, type: 'radio', checked: name === pickModel(cfg), click: () => updateConfig({ chatModel: name }),
+            label: llm.modelLabel(cfg.provider, name), type: 'radio', checked: name === pickModel(cfg), click: () => updateConfig({ chatModel: name }),
           }))
           : [{ label: (chatError || t.noOllama).slice(0, 80), enabled: false }]),
         { type: 'separator' },
@@ -427,6 +511,7 @@ function rebuildTray() {
         click: () => {
           if (cfg.render === render) return;
           config.save({ render });
+          config.flush(); // (app.exit() doesn't wait for the file)
           app.relaunch();
           app.exit(0);
         },
@@ -475,6 +560,7 @@ function runHooks(action, { quiet = false } = {}) {
     outcome = { action, ok: false, error: err.message };
   }
   if (!quiet) sendCommand('hooks', outcome);
+  hooksNow(true); // (she changed them: look again)
   rebuildTray();
   return outcome;
 }
@@ -485,8 +571,16 @@ function pickModel(cfg = config.load()) {
   return chatModels.includes(cfg.chatModel) ? cfg.chatModel : chatModels[0];
 }
 
-async function refreshModels() {
+// The models of whoever answers her, asked of them. `cached`: a list from the last minute is good
+// enough (opening her chat asks every time; for a service on the internet, or Claude Code's version
+// check, that's a round trip each). Anything that changes who answers, or their key, asks again.
+let modelsSeen = { who: '', at: 0 };
+async function refreshModels({ cached = false } = {}) {
   const cfg = config.load();
+  const who = `${cfg.provider}|${cfg.customUrl}|${cfg.apiKeys?.[cfg.provider] || ''}`;
+  if (cached && chatModels?.length && !llm.isLocal(cfg.provider, cfg) && modelsSeen.who === who && Date.now() - modelsSeen.at < 60000) {
+    return chatModels;
+  }
   chatError = null;
   chatErrorCode = null;
   chatModels = await llm.models(cfg.provider, llmConfig(cfg)).catch((err) => {
@@ -494,6 +588,7 @@ async function refreshModels() {
     chatErrorCode = err.code || null;
     return null;
   });
+  modelsSeen = { who: chatModels ? who : '', at: Date.now() };
   rebuildTray();
   return chatModels;
 }
@@ -546,7 +641,7 @@ async function pickClaudeFolder() {
 
 // What's playing (media.js), while her menu lets her know it.
 function watchMedia() {
-  const on = config.load().musicAware !== false;
+  const on = config.load().musicAware !== false && restLevel !== 'deep';
   if (on && !mediaWatch) {
     mediaWatch = startMediaWatch({ onUpdate: (now) => overlay?.webContents.send('media:now', now) });
   } else if (!on && mediaWatch) {
@@ -556,21 +651,116 @@ function watchMedia() {
   }
 }
 
+// An accelerator as a person reads it (Control+Alt+Space -> Ctrl+Alt+Space).
+function prettyKey(key) {
+  return String(key || 'Control+Alt+Space').replace(/\bControl\b/g, 'Ctrl').replace(/\bCommandOrControl\b/g, 'Ctrl');
+}
+
+// Her window out of the shot while she looks at your screen, so she isn't seeing her own reflection.
+// Returns a function that brings her back. On a system that won't fade a transparent window cleanly
+// it's a no-op, so she might see a faint copy of herself; harmless.
+async function hideOverlayForShot() {
+  if (!overlay || overlay.isDestroyed()) return () => {};
+  try {
+    overlay.setOpacity(0);
+  } catch {
+    return () => {};
+  }
+  await new Promise((r) => setTimeout(r, 120));
+  return () => {
+    try {
+      overlay?.setOpacity(1);
+    } catch {
+      // comes back on the next draw regardless
+    }
+  };
+}
+
+// So she can hear the system's sound (rhythm.js) without a screen-share picker: when the overlay
+// asks for display media, hand it a screen source with the audio set to loopback.
+function allowLoopbackAudio() {
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+      callback({ video: sources[0], audio: 'loopback' });
+    }).catch(() => callback({}));
+  }, { useSystemPicker: false });
+}
+
+// Hold-to-talk (her menu, Senses): the shortcut tells the overlay to listen (ears.js).
+function registerPushToTalk() {
+  if (pttKey) {
+    globalShortcut.unregister(pttKey);
+    pttKey = null;
+  }
+  const cfg = config.load();
+  if (!cfg.ears) return;
+  const key = cfg.pushToTalk || 'Control+Alt+Space';
+  try {
+    if (globalShortcut.register(key, () => sendCommand('pushToTalk'))) pttKey = key;
+  } catch (err) {
+    console.error('[capri] could not set push-to-talk:', err.message);
+  }
+}
+
 // How long since the keyboard or the mouse were last touched: she notices you're away, and back.
 function watchPresence() {
   clearInterval(presenceTimer);
   presenceTimer = setInterval(() => {
     if (!overlay || overlay.isDestroyed()) return;
     overlay.webContents.send('presence', { idle: powerMonitor.getSystemIdleTime() });
-  }, 5000);
+  }, restLevel === 'deep' ? 15000 : 5000);
+}
+
+// Where the other windows are (windows.js), so she can sit on them. Restartable: it stops while
+// she rests deeply (rest()).
+function watchWindows() {
+  if (windowWatch) return;
+  windowWatch = startWindowWatch({
+    overlay,
+    onUpdate: (data) => {
+      // a click on the taskbar brings it up over her: sitting on it, her legs would vanish behind it
+      if (data.taskbar && !lastWindows?.taskbar && config.load().rest === 'taskbar') raiseOverlay();
+      lastWindows = data;
+      overlay?.webContents.send('windows:update', data);
+    },
+  });
+}
+
+// How deeply she rests (the overlay says, rest:level): 'awake', 'sleep' (dozing, still drawn), or
+// 'deep' (down to her mask, or put away in her chip). Resting deeply, the helpers that watch your
+// windows and your music stop altogether (two PowerShell processes polling, gone), and she checks
+// whether you're there less often. Anything that wakes her (a click, Claude, her menu, the
+// shortcut) brings them back a moment later.
+function rest(level) {
+  if (!['awake', 'sleep', 'deep'].includes(level) || level === restLevel) return;
+  const was = restLevel;
+  restLevel = level;
+  if (DEV) console.log(`[capri] rest: ${was} -> ${level}`);
+  if (level === 'deep') {
+    windowWatch?.stop();
+    windowWatch = null;
+    lastWindows = null;
+    mediaWatch?.stop();
+    mediaWatch = null;
+  } else if (was === 'deep') {
+    watchWindows();
+    watchMedia();
+  }
+  watchPresence();
+}
+
+// The tooltip of her icon by the clock: her name, and which senses are live right now.
+function trayTip() {
+  const live = [senseState.eyes && '◉ screen', senseState.ears && (senseState.listening ? '● mic (open)' : '● mic')].filter(Boolean);
+  return live.length ? `Capri · ${live.join(' · ')}` : 'Capri';
 }
 
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(ROOT, 'assets', 'icons', 'tray.png'));
   tray = new Tray(icon);
-  tray.setToolTip('Capri');
+  tray.setToolTip(trayTip());
   tray.on('click', () => sendCommand('status'));
-  rebuildTray();
+  buildTray();
 }
 
 function registerIpc() {
@@ -585,20 +775,24 @@ function registerIpc() {
   });
   ipcMain.handle('config:get', () => rendererConfig());
   ipcMain.handle('hooks:status', () => activeHooks().status());
-  ipcMain.handle('config:set', (_e, patch) => updateConfig(patch));
+  ipcMain.handle('config:set', (_e, patch) => {
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return rendererConfig();
+    const { apiKeys: _keys, ...safe } = patch; // (her keys only go in through setup:use and the voice and ears setups, sealed)
+    return updateConfig(safe);
+  });
   ipcMain.handle('demo:window', (_e, open) => demoWindow(open));
   // right-clicking her: the same menu as the tray icon (which Windows often hides behind the ^ by the clock)
   ipcMain.on('menu:open', () => trayMenu?.popup({ window: overlay }));
   // her welcome panel's buttons
   ipcMain.handle('hooks:install', () => runHooks('install', { quiet: true }));
-  ipcMain.handle('claude:found', () => fs.existsSync(path.dirname(activeHooks().status().file))); // Claude Code keeps its settings there
+  ipcMain.handle('claude:found', () => fs.existsSync(path.dirname(hooksNow().file))); // Claude Code keeps its settings there
   ipcMain.on('claude:help', () => shell.openExternal(activeAssistant().help));
   ipcMain.handle('windows:get', () => lastWindows);
   // talking to her (chat.js): is Ollama there, with a model to talk with
   ipcMain.handle('chat:status', async () => {
     const cfg = config.load(true); // keys may have been edited by hand
     const { provider } = cfg;
-    const models = await refreshModels();
+    const models = await refreshModels({ cached: true });
     if (!models) return { ok: false, error: chatError || 'offline', code: chatErrorCode, provider };
     if (!models.length) return { ok: false, error: 'nomodel', provider };
     llm.warm(provider, pickModel()); // loading while you type your first message
@@ -608,24 +802,65 @@ function registerIpc() {
   ipcMain.handle('chat:send', async (_e, { id, messages }) => {
     const abort = new AbortController();
     chats.set(id, abort);
+    // the pieces of her answer go over in groups of a frame or two, not one message per token
+    let streamed = false;
+    let queued = '';
+    let timer = 0;
+    const drain = () => {
+      clearTimeout(timer);
+      timer = 0;
+      if (queued) overlay?.webContents.send('chat:delta', { id, text: queued });
+      queued = '';
+    };
+    const send = (text) => {
+      streamed = true;
+      queued += text;
+      timer ||= setTimeout(drain, 33);
+    };
     try {
-      let streamed = false;
-      const send = (text) => {
-        streamed = true;
-        overlay?.webContents.send('chat:delta', { id, text });
-      };
       const cfg = config.load();
       const text = await chatWithFallback(cfg, messages, send, abort.signal, () => streamed);
+      drain();
       if (cfg.provider === 'claude') saveMemory({ claude: llm.claudeMemory() });
       return { ok: true, text };
     } catch (err) {
+      drain();
+      // the key was refused (or taken away): the list of models is asked for again next time
+      if (['badkey', 'nokey'].includes(err.code)) modelsSeen = { who: '', at: 0 };
       return { ok: false, error: abort.signal.aborted ? 'stopped' : err.message, code: err.code || null };
     } finally {
+      clearTimeout(timer);
       chats.delete(id);
     }
   });
   ipcMain.on('chat:stop', (_e, id) => chats.get(id)?.abort());
+  // her ring menu › AI: the models of whoever answers her now (as last seen), with their names
+  ipcMain.handle('chat:models', () => {
+    const cfg = config.load();
+    return {
+      provider: cfg.provider,
+      current: pickModel(cfg),
+      error: chatError,
+      code: chatErrorCode,
+      models: (chatModels || []).map((id) => ({ id, label: llm.modelLabel(cfg.provider, id) })),
+    };
+  });
   ipcMain.handle('chat:memory', () => readMemory().history || []);
+  // her bond with you (bond.js): load, save, and a line in her notebook from your last chats, written
+  // by your chat model in one quiet go (never Claude Code: it would be working in your project)
+  ipcMain.handle('bond:load', () => readBond());
+  ipcMain.on('bond:save', (_e, data) => data && typeof data === 'object' && saveBond(data));
+  ipcMain.handle('bond:reflect', async (_e, { messages } = {}) => {
+    const cfg = config.load();
+    if (cfg.provider === 'claude') return { ok: false, code: 'agent' };
+    if (!Array.isArray(messages) || !messages.length) return { ok: false, code: 'empty' };
+    try {
+      const text = await llm.chat(cfg.provider, llmConfig(cfg), { model: pickModel(cfg), messages }, () => {}, AbortSignal.timeout(90000));
+      return { ok: true, text };
+    } catch (err) {
+      return { ok: false, error: err.message, code: err.code || null };
+    }
+  });
   ipcMain.on('chat:remember', (_e, history) => Array.isArray(history) && saveMemory({ history }));
   ipcMain.on('chat:ollama', () => shell.openExternal(OLLAMA_SITE));
   // setting her up with buttons (setup.js): Ollama and a model, or a key, or an address
@@ -742,6 +977,60 @@ function registerIpc() {
     return updateConfig(patch);
   });
   ipcMain.on('tts:keyPage', (_e, engine) => tts.KEY_PAGES[engine] && shell.openExternal(tts.KEY_PAGES[engine]));
+  // ---- her senses and her hands ----
+  // her eyes: a picture of your screen (screen.js), read by the vision model (llm.js)
+  ipcMain.handle('eyes:see', async (_e, { prompt }) => {
+    const cfg = config.load();
+    if (!cfg.vision) return { ok: false, error: 'off', code: 'off' };
+    try {
+      const image = await vision.grab({ displayId: cfg.displayId, hideOverlay: hideOverlayForShot });
+      if (!image) return { ok: false, error: 'no picture', code: 'nocapture' };
+      const text = await llm.see(cfg.provider, llmConfig(cfg), { image, prompt });
+      return { ok: true, text };
+    } catch (err) {
+      return { ok: false, error: err.message, code: err.code || null };
+    }
+  });
+  // her ears: your voice (ears.js) turned into text by the speech service (stt.js)
+  ipcMain.handle('stt:transcribe', async (_e, { audio, mime, lang }) => {
+    const cfg = config.load();
+    try {
+      const text = await stt.transcribe(cfg, setup.openKeys(cfg.apiKeys), { audio: Buffer.from(audio), mime, lang });
+      return { ok: true, text };
+    } catch (err) {
+      return { ok: false, error: err.message, code: err.code || null };
+    }
+  });
+  ipcMain.on('stt:keyPage', (_e, engine) => stt.KEY_PAGES[engine] && shell.openExternal(stt.KEY_PAGES[engine]));
+  // which speech-to-text service, and its key or address (the key kept encrypted, like her chat's)
+  ipcMain.handle('stt:setup', (_e, { engine, key, url }) => {
+    const before = config.load();
+    const patch = {};
+    if (engine && stt.ENGINES[engine]) patch.sttEngine = engine;
+    const slot = STT_KEYS[patch.sttEngine || before.sttEngine];
+    if (key && slot) patch.apiKeys = { ...before.apiKeys, [slot]: setup.sealKey(String(key).trim()) };
+    if (typeof url === 'string' && url.trim()) patch.sttUrl = url.trim();
+    return updateConfig(patch);
+  });
+  // her hands (control.js): all gated on the setting here too, so the overlay can't reach past it
+  const handsOn = () => config.load().hands === true;
+  ipcMain.handle('hands:window', (_e, { op, name }) => (handsOn() ? control.windowOp(op, name).then((n) => n, (err) => ({ error: { message: err.message, code: err.code } })) : { error: { code: 'off' } }));
+  ipcMain.handle('hands:desktop', () => (handsOn() ? control.showDesktop().then(() => true, () => false) : false));
+  ipcMain.handle('hands:type', (_e, { text, into }) => (handsOn() && config.load().handsType ? control.type(text, into).then(() => true, (err) => ({ error: { message: err.message, code: err.code } })) : { error: { code: 'off' } }));
+  ipcMain.handle('hands:prepare', async (_e, request) => {
+    if (!handsOn() || !config.load().handsType) throw Object.assign(new Error('off'), { code: 'off' });
+    return control.prepareMessage(request);
+  });
+  ipcMain.handle('hands:send', (_e, prepared) => (handsOn() && config.load().handsType
+    ? control.sendPrepared(prepared).then(() => true, (err) => ({ error: { message: err.message, code: err.code } }))
+    : { error: { code: 'off', message: 'off' } })); // turned off between typing it and your yes: not sent
+  // how deeply she rests: the helpers watching your windows and music stop while she's out
+  ipcMain.on('rest:level', (_e, level) => rest(String(level)));
+  // her senses' indicator by the clock (an eye, a mic, a note): only the tray line cares
+  ipcMain.on('sense:state', (_e, state) => {
+    senseState = state || {};
+    tray?.setToolTip(trayTip()); // a sense is never silently on: the icon by the clock says so too
+  });
   // how she feels, for her menu's top line (only when the mood itself changes)
   ipcMain.on('mood:state', (_e, state) => {
     const changed = state?.mood !== moodState?.mood;
@@ -867,15 +1156,7 @@ function main() {
     registerIpc();
     createOverlay();
     createTray();
-    windowWatch = startWindowWatch({
-      overlay,
-      onUpdate: (data) => {
-        // a click on the taskbar brings it up over her: sitting on it, her legs would vanish behind it
-        if (data.taskbar && !lastWindows?.taskbar && config.load().rest === 'taskbar') raiseOverlay();
-        lastWindows = data;
-        overlay?.webContents.send('windows:update', data);
-      },
-    });
+    watchWindows();
     createBridge({
       port: PORT,
       // her own Claude Code chat's hooks would cover its answer with theirs
@@ -886,6 +1167,8 @@ function main() {
     llm.restoreClaude(readMemory().claude);
     watchMedia();
     watchPresence();
+    allowLoopbackAudio();
+    registerPushToTalk();
     refreshModels(); // for her menu's model list
     setTimeout(() => launch.launchables().catch(() => {}), 20000); // what she can open, before you ask
     screen.on('display-metrics-changed', fitOverlay);
@@ -897,10 +1180,17 @@ function main() {
   });
 
   app.on('will-quit', () => {
+    config.flush(); // the last changes, written now
+    clearTimeout(trayTimer);
     globalShortcut.unregisterAll();
     windowWatch?.stop();
     mediaWatch?.stop();
     clearInterval(presenceTimer);
+    try {
+      session.defaultSession.setDisplayMediaRequestHandler(null);
+    } catch {
+      // nothing to clear
+    }
   });
   app.on('window-all-closed', (e) => e.preventDefault());
 }

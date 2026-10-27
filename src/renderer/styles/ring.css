@@ -1,0 +1,664 @@
+/* ------------------------------------------------------------------
+   Her circular menu (ring.js)
+   The same flat, hard-edged look as her panels, and the same colour tokens (--red, --violet, --ink,
+   --ink-2): her colours menu recolours it with her.
+------------------------------------------------------------------- */
+
+.ring {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  color: var(--paper);
+  --ring-line: color-mix(in oklch, var(--paper) 14%, transparent);
+}
+
+/* ---------- the ring ---------- */
+
+.ring__disc {
+  position: absolute;
+  overflow: visible;
+  filter: drop-shadow(5px 5px 0 var(--violet));
+}
+
+.ring__sector {
+  cursor: pointer;
+  outline: none;
+}
+
+.ring__shape {
+  fill: var(--ink);
+}
+
+.ring__sector:hover .ring__shape,
+.ring__sector:focus-visible .ring__shape {
+  fill: var(--ink-2);
+  stroke: var(--red);
+  stroke-width: 2;
+}
+
+.ring__sector.is-on .ring__shape {
+  fill: var(--red);
+  stroke: none;
+}
+
+.ring__ico {
+  fill: none;
+  stroke: var(--paper);
+  stroke-width: 2;
+  stroke-linejoin: miter;
+  stroke-linecap: butt;
+}
+
+.ring__ico .is-fill {
+  fill: var(--paper);
+  stroke: none;
+}
+
+.ring__label {
+  fill: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-anchor: middle;
+  text-transform: uppercase;
+}
+
+.ring__sector.is-on .ring__ico { stroke: var(--ink); }
+.ring__sector.is-on .ring__ico .is-fill { fill: var(--ink); }
+.ring__sector.is-on .ring__label { fill: var(--ink); }
+
+/* the level of the bond, four ticks under the Bond sector's label */
+.ring__pip { fill: color-mix(in oklch, var(--paper) 28%, transparent); }
+.ring__pip.is-lit { fill: var(--red); }
+.ring__sector.is-on .ring__pip { fill: color-mix(in oklch, var(--ink) 35%, transparent); }
+.ring__sector.is-on .ring__pip.is-lit { fill: var(--ink); }
+
+/* a bit of her presence on the ring: the live level of the mic runs round the Mic sector's edge */
+.ring__live { fill: none; stroke: var(--green); stroke-width: 3; opacity: 0; }
+.ring__live.is-on { opacity: 1; }
+
+.ring.is-entering .ring__sector {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: ring-snap 240ms steps(4, jump-end) both;
+  animation-delay: calc(var(--i, 0) * 22ms);
+}
+
+@keyframes ring-snap {
+  0% { transform: scale(0.72) rotate(-14deg); opacity: 0; }
+  60% { transform: scale(1.04) rotate(2deg); opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+
+/* ---------- the card beside it ---------- */
+
+.ring__card {
+  position: absolute;
+  width: 372px;
+  filter: drop-shadow(6px 6px 0 var(--violet));
+}
+
+.ring.is-entering .ring__card {
+  animation: transmit-in 210ms steps(3, jump-end) both;
+}
+
+.ring__plate {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--card-max, 560px);
+  padding: 14px 16px 16px 16px;
+  background: var(--ink);
+  clip-path: polygon(
+    0 var(--cut), var(--cut) 0,
+    58% 0, 60% 7px, 62.5% 0,
+    calc(100% - 28px) 0, 100% 28px,
+    100% 100%, 22px 100%, 0 calc(100% - 22px)
+  );
+}
+
+.ring__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  margin-bottom: 8px;
+}
+
+.ring__badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  background: var(--red);
+  clip-path: polygon(14% 0, 100% 0, 100% 80%, 84% 100%, 0 100%, 0 16%);
+}
+
+.ring__badge svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.2;
+  stroke-linejoin: miter;
+}
+
+.ring__badge .is-fill { fill: var(--ink); stroke: none; }
+
+.ring__title {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ring__sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--paper-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  font-weight: 400;
+  letter-spacing: 0.1em;
+}
+
+.ring__x {
+  flex: none;
+  appearance: none;
+  border: 0;
+  padding: 6px 9px 5px;
+  background: var(--ink-2);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  cursor: pointer;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
+.ring__x:hover { background: var(--red); color: var(--ink); }
+
+.ring__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+  margin-right: -6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--red) var(--ink-2);
+}
+
+/* ---------- what goes in it ---------- */
+
+.ring__h {
+  margin: 14px 0 4px;
+  color: var(--red);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ring__h:first-child { margin-top: 2px; }
+
+.ring__note {
+  margin: 4px 0 6px;
+  color: var(--paper-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  line-height: 1.5;
+}
+
+.ring__note.is-dim { color: var(--paper-3); }
+
+.ring__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 5px 0;
+  border-top: 1px solid var(--ring-line);
+  font-family: var(--font-mono);
+  font-size: calc(var(--text-data) + 1px);
+  line-height: 1.35;
+}
+
+.ring__row:first-child,
+.ring__h + .ring__row { border-top: 0; }
+
+.ring__row.is-off { opacity: 0.45; }
+
+.ring__label-text { min-width: 0; }
+.ring__label-text small { display: block; margin-top: 2px; color: var(--paper-3); font-size: var(--text-meta); }
+
+/* a switch: a chamfered track, a square knob */
+.ring__switch {
+  position: relative;
+  flex: none;
+  appearance: none;
+  width: 42px;
+  height: 20px;
+  border: 0;
+  padding: 0;
+  background: var(--ink-2);
+  box-shadow: inset 0 0 0 2px var(--paper-3);
+  cursor: pointer;
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+}
+
+.ring__switch::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 12px;
+  height: 12px;
+  background: var(--paper-3);
+  transition: transform 120ms steps(3, jump-end), background 120ms steps(3, jump-end);
+}
+
+.ring__switch.is-on { background: var(--red); box-shadow: none; }
+.ring__switch.is-on::after { background: var(--ink); transform: translateX(22px); }
+.ring__switch:disabled { opacity: 0.4; cursor: default; }
+
+/* a plain button, like her panel's */
+.ring__btn {
+  appearance: none;
+  border: 0;
+  padding: 7px 12px 6px;
+  background: var(--ink-2);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+
+.ring__btn:hover { background: var(--paper); color: var(--ink); }
+.ring__btn.is-primary { background: var(--red); color: var(--ink); }
+.ring__btn.is-primary:hover { background: var(--paper); }
+.ring__btn.is-danger:hover { background: var(--red); color: var(--ink); }
+.ring__btn:disabled { opacity: 0.4; cursor: default; }
+
+.ring__btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 2px; }
+
+/* a choice of one: a column of rows with a diamond */
+.ring__pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: calc(var(--text-data) + 1px);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ring__pick::before {
+  content: '';
+  flex: none;
+  width: 9px;
+  height: 9px;
+  background: var(--paper-3);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.ring__pick:hover { background: var(--ink-2); }
+.ring__pick.is-on { color: var(--red); }
+.ring__pick.is-on::before { background: var(--red); }
+
+/* a slider with a word at each end */
+.ring__slide { margin: 6px 0 10px; }
+
+.ring__slide-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  color: var(--paper-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ring__slide-top b { color: var(--paper); font-weight: 600; }
+
+.ring__range {
+  --fill: 50%;
+  display: block;
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ring__range::-webkit-slider-runnable-track {
+  height: 4px;
+  background: linear-gradient(to right, var(--red) var(--fill), var(--ink-2) var(--fill));
+  box-shadow: 0 0 0 1px var(--ring-line);
+}
+
+.ring__range::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 16px;
+  margin-top: -6px;
+  background: var(--paper);
+  clip-path: polygon(0 3px, 3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%);
+}
+
+.ring__range:hover::-webkit-slider-thumb { background: var(--red); }
+
+/* the level meter: a row of cells, the threshold line across it, her waveform above */
+.ring__scope {
+  display: block;
+  width: 100%;
+  height: 54px;
+  margin-top: 4px;
+  background: var(--ink-2);
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+
+.ring__meter {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(28, 1fr);
+  gap: 2px;
+  height: 14px;
+  margin: 6px 0 2px;
+}
+
+.ring__meter i {
+  background: var(--ink-2);
+}
+
+.ring__meter i.is-lit { background: var(--paper-3); }
+.ring__meter i.is-hot { background: var(--red); }
+
+.ring__thresh {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--green);
+}
+
+.ring__state {
+  display: flex;
+  justify-content: space-between;
+  color: var(--paper-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ring__state.is-hearing b { color: var(--green); }
+
+/* the ✕ on a notebook sentence */
+.ring__chip-x {
+  appearance: none;
+  border: 0;
+  padding: 0 2px;
+  background: transparent;
+  color: var(--paper-3);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ring__chip-x:hover { color: var(--red); }
+
+/* chips: her notebook's lines */
+.ring__chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+
+.ring__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 4px 3px 8px;
+  background: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  line-height: 1.3;
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+}
+
+.ring__chip button {
+  appearance: none;
+  flex: none;
+  border: 0;
+  padding: 0 4px;
+  background: transparent;
+  color: var(--paper-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  cursor: pointer;
+}
+
+.ring__chip button:hover { color: var(--red); }
+
+.ring__quote {
+  margin: 2px 0 8px;
+  padding-left: 9px;
+  border-left: 2px solid var(--red);
+  color: var(--paper-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-data);
+  line-height: 1.45;
+}
+
+.ring__quote small { display: block; color: var(--paper-3); font-size: var(--text-meta); letter-spacing: 0.1em; text-transform: uppercase; }
+
+.ring__form { display: flex; gap: 8px; margin: 6px 0; }
+
+.ring__input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px 6px;
+  border: 0;
+  border-bottom: 2px solid var(--red);
+  background: var(--ink-2);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: calc(var(--text-data) + 1px);
+  caret-color: var(--red);
+  user-select: text;
+  outline: none;
+  clip-path: polygon(7px 0, 100% 0, 100% 100%, 0 100%, 0 7px);
+}
+
+/* the bond: her level, large */
+.ring__level {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 2px 0 8px;
+}
+
+.ring__level-name {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.ring__ticks { display: flex; gap: 4px; }
+
+.ring__ticks i {
+  width: 14px;
+  height: 22px;
+  background: var(--ink-2);
+  clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+}
+
+.ring__ticks i.is-lit { background: var(--red); }
+
+.ring__bar {
+  --fill: 0%;
+  height: 8px;
+  margin: 0 0 6px;
+  background: linear-gradient(to right, var(--red) var(--fill), var(--ink-2) var(--fill));
+  clip-path: polygon(4px 0, 100% 0, 100% 100%, 0 100%, 0 4px);
+}
+
+/* colours: a square per theme, her red and her violet in it */
+.ring__swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.ring__swatch {
+  --a: var(--red);
+  --b: var(--violet);
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--paper-2);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.ring__swatch-chip {
+  display: block;
+  height: 40px;
+  background: linear-gradient(135deg, var(--a) 0 62%, var(--b) 62% 100%);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+
+.ring__swatch[data-theme='mood'] .ring__swatch-chip {
+  background: linear-gradient(135deg, #ff2152 0 25%, #22e4ff 25% 50%, #ffc531 50% 75%, #ff8fc4 75% 100%);
+}
+
+.ring__swatch:hover { color: var(--paper); }
+.ring__swatch.is-on { color: var(--red); }
+.ring__swatch.is-on .ring__swatch-chip { outline: 2px solid var(--red); outline-offset: 2px; }
+
+/* a short row of choices (size, language) */
+.ring__seg { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+
+.ring__seg button {
+  appearance: none;
+  border: 0;
+  padding: 4px 9px 3px;
+  background: var(--ink-2);
+  color: var(--paper-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+}
+
+.ring__seg button:hover { color: var(--paper); }
+.ring__seg button.is-on { background: var(--red); color: var(--ink); }
+
+/* AI: the state of the link, and a column of who can answer her */
+.ring__link { display: flex; align-items: center; gap: 12px; margin: 2px 0 6px; }
+
+.ring__dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  background: var(--paper-3);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.ring__dot.is-on { background: var(--green); }
+
+.ring__link-text { min-width: 0; font-family: var(--font-mono); font-size: calc(var(--text-data) + 1px); line-height: 1.35; }
+.ring__link-text b { display: block; font-family: var(--font-display); font-size: 16px; letter-spacing: 0.05em; text-transform: uppercase; }
+.ring__link-text span { display: block; color: var(--paper-2); overflow-wrap: anywhere; }
+
+.ring__providers { display: flex; flex-direction: column; }
+
+.ring__provider {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 8px 6px 22px;
+  border: 0;
+  background: transparent;
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: calc(var(--text-data) + 1px);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+}
+
+.ring__provider::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 12px;
+  width: 8px;
+  height: 8px;
+  background: var(--paper-3);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.ring__provider:hover { background: var(--ink-2); }
+.ring__provider.is-on { color: var(--red); }
+.ring__provider.is-on::before { background: var(--red); }
+.ring__provider.is-pick { background: var(--ink-2); box-shadow: inset 2px 0 0 var(--red); }
+.ring__provider-name { font-weight: 600; }
+.ring__provider-hint { color: var(--paper-3); font-size: var(--text-meta); letter-spacing: 0.04em; }
+
+/* the mic badge by the clock: the live level */
+.senses__bars {
+  --lvl: 0;
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 11px;
+  margin-left: 2px;
+}
+
+.senses__bars i {
+  width: 3px;
+  height: calc(2px + 9px * var(--lvl) * var(--k, 1));
+  background: var(--green);
+}
+
+.senses__bars i:nth-child(1) { --k: 0.55; }
+.senses__bars i:nth-child(2) { --k: 1; }
+.senses__bars i:nth-child(3) { --k: 0.8; }
+.senses__bars i:nth-child(4) { --k: 0.45; }
+
+html[data-motion='reduced'] .ring.is-entering .ring__sector,
+html[data-motion='reduced'] .ring.is-entering .ring__card,
+html[data-motion='reduced'] .ring__switch::after { animation: none; transition: none; }

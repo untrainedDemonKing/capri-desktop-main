@@ -1,7 +1,8 @@
 'use strict';
 
-// Who she talks with: Ollama, any OpenAI-compatible server (local, cloud, or a keyless gateway),
-// or Claude Code itself (headless `claude -p`, so your messages become its prompts).
+// Who she talks with: Ollama, Claude itself (the Anthropic API, through its official SDK:
+// anthropic.js), any OpenAI-compatible server (local, cloud, or a keyless gateway), or Claude Code
+// (headless `claude -p`, so your messages become its prompts).
 // Keys come from config.json's `apiKeys` ({ openai: "sk-..." }) or the provider's env variable.
 
 const os = require('node:os');
@@ -10,9 +11,11 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const ollama = require('./ollama');
+const anthropic = require('./anthropic');
 
 const PROVIDERS = {
   ollama: { label: 'Ollama (local)', kind: 'ollama', local: true },
+  anthropic: { label: 'Claude (Anthropic API key)', kind: 'anthropic', env: 'ANTHROPIC_API_KEY' },
   lmstudio: { label: 'LM Studio (local)', url: 'http://127.0.0.1:1234/v1', local: true },
   llamacpp: { label: 'llama.cpp / vLLM (local :8080)', url: 'http://127.0.0.1:8080/v1', local: true },
   pollinations: {
@@ -72,6 +75,8 @@ async function models(id, cfg) {
   const p = endpoint(id, cfg);
   if (p.kind === 'ollama') return ollama.models().catch(() => null);
   if (p.kind === 'claude') return claudeVersion().then(() => ['Claude Code']);
+  // (no key given: the SDK still looks for its own, in the environment or an `ant auth login` profile)
+  if (p.kind === 'anthropic') return anthropic.models(p.key);
   // what's missing has a code, so her setup knows what to ask for (setup.js)
   if (!p.url) throw Object.assign(new Error('no address set for this server'), { code: 'nourl' });
   if (p.env && !p.key) throw Object.assign(new Error(`no API key (or ${p.env})`), { code: 'nokey' });
@@ -99,24 +104,35 @@ async function openaiChat(p, { model, messages }, onDelta, signal) {
   const decoder = new TextDecoder();
   let buffer = '';
   let text = '';
+  // one line of the stream; true when it says the answer is over
+  const feed = (line) => {
+    if (!line.startsWith('data:')) return false;
+    const data = line.slice(5).trim();
+    if (data === '[DONE]') return true;
+    let msg;
+    try {
+      msg = JSON.parse(data);
+    } catch {
+      return false; // a keep-alive, or a server's own chatter: not a piece of the answer
+    }
+    if (msg.error) throw new Error(msg.error.message || msg.error);
+    const piece = msg.choices?.[0]?.delta?.content || ''; // reasoning comes apart, and is left out
+    if (piece) {
+      text += piece;
+      onDelta(piece);
+    }
+    return false;
+  };
   for await (const chunk of res.body) {
     buffer += decoder.decode(chunk, { stream: true });
     let nl;
     while ((nl = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (data === '[DONE]') return text;
-      const msg = JSON.parse(data);
-      if (msg.error) throw new Error(msg.error.message || msg.error);
-      const piece = msg.choices?.[0]?.delta?.content || ''; // reasoning comes apart, and is left out
-      if (piece) {
-        text += piece;
-        onDelta(piece);
-      }
+      if (feed(line)) return text;
     }
   }
+  feed(buffer.trim()); // (the last line of an answer may come without its newline)
   return text;
 }
 
@@ -137,9 +153,12 @@ function claudeVersion() {
 }
 
 function claudeChat(cfg, text, persona, onDelta, signal) {
-  // her persona, from a file: too long and too full of quotes and newlines for cmd's command line
-  const personaFile = path.join(os.tmpdir(), 'capri-persona.txt');
-  fs.writeFileSync(personaFile, persona);
+  // her persona, from a file: too long and too full of quotes and newlines for cmd's command line. It has
+  // what she knows about you in it: a folder of its own that only you can open, gone once she's answered.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-'));
+  const personaFile = path.join(dir, 'persona.txt');
+  fs.writeFileSync(personaFile, persona, { mode: 0o600 });
+  const tidy = () => fs.rmSync(dir, { recursive: true, force: true });
   const args = ['-p', '--output-format', 'stream-json', '--verbose',
     '--permission-mode', CLAUDE_MODES.includes(cfg.claudeMode) ? cfg.claudeMode : 'default',
     '--append-system-prompt-file', quote(personaFile)];
@@ -151,6 +170,7 @@ function claudeChat(cfg, text, persona, onDelta, signal) {
       shell: process.platform === 'win32',
       windowsHide: true,
     });
+    child.stdin.on('error', () => {}); // (it may be gone before it reads the message: that's the 'close' below, not a crash)
     const kill = () => (process.platform === 'win32'
       ? execFile('taskkill', ['/pid', String(child.pid), '/t', '/f'], () => {})
       : child.kill());
@@ -183,8 +203,12 @@ function claudeChat(cfg, text, persona, onDelta, signal) {
     });
     child.stderr.on('data', (chunk) => { errors += chunk; });
     child.stdin.end(text);
-    child.on('error', reject);
+    child.on('error', (err) => {
+      tidy();
+      reject(err);
+    });
     child.on('close', () => {
+      tidy();
       if (signal.aborted) return reject(new Error('stopped'));
       if (result?.is_error) return reject(new Error(result.result || 'Claude Code failed'));
       if (!result) return reject(new Error(errors.trim().slice(0, 300) || 'Claude Code gave no answer'));
@@ -212,7 +236,51 @@ async function chat(id, cfg, { model, messages }, onDelta, signal) {
   if (p.kind === 'ollama') return ollama.chat({ model, messages }, onDelta, signal);
   // Claude Code keeps its own memory of the conversation: only her persona and your last message go
   if (p.kind === 'claude') return claudeChat(cfg, messages.at(-1).content, messages[0].content, onDelta, signal);
+  if (p.kind === 'anthropic') return anthropic.chat(p.key, { model: model || anthropic.DEFAULT_MODEL, messages }, onDelta, signal);
   return openaiChat(p, { model, messages }, onDelta, signal);
+}
+
+// A default vision model to try when you haven't picked one, per provider.
+const VISION_MODELS = {
+  ollama: 'qwen2.5vl',
+  openai: 'gpt-4o-mini',
+  openrouter: 'google/gemini-2.0-flash-exp:free',
+  gemini: 'gemini-2.0-flash',
+  groq: 'meta-llama/llama-4-scout-17b-16e-instruct',
+  mistral: 'pixtral-12b-latest',
+  pollinations: 'openai',
+  anthropic: anthropic.DEFAULT_MODEL,
+};
+
+// Her eyes: one look at a picture (base64 JPEG), answered in one go (not streamed). `prompt` is
+// what to make of it; `model` the vision model, or the provider's default. Returns the text.
+// Claude Code and plain local servers with no vision model throw; the caller falls back.
+async function see(id, cfg, { image, prompt, model = null }) {
+  const p = endpoint(id, cfg);
+  const use = model || cfg.visionModel || VISION_MODELS[id];
+  if (p.kind === 'claude') throw Object.assign(new Error('Claude Code has no eyes here'), { code: 'noeyes' });
+  // (a vision model named for another service isn't one of Claude's)
+  if (p.kind === 'anthropic') return anthropic.see(p.key, { model: /^claude-/.test(use || '') ? use : anthropic.DEFAULT_MODEL, image, prompt });
+  if (p.kind === 'ollama') {
+    if (!use) throw Object.assign(new Error('no vision model set'), { code: 'novision' });
+    return ollama.once({ model: use, messages: [{ role: 'user', content: prompt, images: [image] }] }, AbortSignal.timeout(40000));
+  }
+  if (!p.url) throw Object.assign(new Error('no address for this server'), { code: 'nourl' });
+  if (p.env && !p.key) throw Object.assign(new Error(`no API key (or ${p.env})`), { code: 'nokey' });
+  if (!use) throw Object.assign(new Error('no vision model set'), { code: 'novision' });
+  const content = [
+    { type: 'text', text: prompt },
+    { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${image}` } },
+  ];
+  const res = await fetch(`${p.url}/chat/completions`, {
+    method: 'POST',
+    headers: headers(p.key),
+    body: JSON.stringify({ model: use, messages: [{ role: 'user', content }], max_tokens: 300, stream: false }),
+    signal: AbortSignal.timeout(40000),
+  });
+  if (!res.ok) throw await failure(res);
+  const body = await res.json();
+  return body.choices?.[0]?.message?.content || '';
 }
 
 // Whether her answers stay on this PC: a server on this machine.
@@ -222,4 +290,7 @@ function isLocal(id, cfg) {
   return Boolean(PROVIDERS[id].local);
 }
 
-module.exports = { isLocal, PROVIDERS, CLAUDE_MODES, models, warm, chat, resetClaude, isChatSession, claudeMemory, restoreClaude };
+// A model as her menus show it (Claude's have names: "Claude Opus 5.5"; the rest are their own ids).
+const modelLabel = (id, model) => (PROVIDERS[id]?.kind === 'anthropic' ? anthropic.label(model) : model);
+
+module.exports = { isLocal, PROVIDERS, CLAUDE_MODES, VISION_MODELS, models, modelLabel, warm, chat, see, resetClaude, isChatSession, claudeMemory, restoreClaude };

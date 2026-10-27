@@ -37,6 +37,7 @@ const DEFAULTS = {
   life: true,        // she finds things to do on her own (hacking, games, graffiti...)
   dj: true,          // DJ mode: while music plays she skips a track herself now and then
   musicAware: true,  // she knows what's playing (title and artist, from Windows' media controls)
+  learn: true,       // she gets to know you and adapts to you (bond.js, kept in bond.json on this PC)
   voiceMode: 'chat', // her voice: 'off', 'chat' (her chat answers) or 'all' (everything she says)
   ttsEngine: 'system', // 'system' (Windows' voices, offline), 'openai', 'elevenlabs' or 'custom' (tts.js)
   ttsVoice: '',      // the speech service's voice (empty: tts.js DEFAULTS)
@@ -44,16 +45,36 @@ const DEFAULTS = {
   ttsUrl: '',        // 'custom': an OpenAI-compatible speech server (http://127.0.0.1:8880/v1)
   ttsFx: true,       // her "many minds" effect on a speech service's voice
   ttsRate: 1,        // how fast she talks
+  // her senses and her hands (all off by default: each one is a permission you turn on)
+  vision: false,     // she can take a picture of your screen and react to it (screen.js, eyes.js)
+  visionModel: '',   // the vision model (empty: her chat model if it can see, else a default)
+  visionEvery: 45,   // at most once this many seconds she glances on her own (0: only when asked)
+  rhythm: false,     // she moves to your music, from the real sound (loopback audio, rhythm.js)
+  hands: false,      // she can work your windows and type for you when you ask (control.js, hands.js)
+  handsType: true,   // she may type (messages, text); off: only open/close/arrange windows
+  ears: false,       // she listens to your microphone and writes down what you say (stt.js, ears.js)
+  sttEngine: 'groq', // who turns your voice into text: 'groq', 'openai' or 'custom' (OpenAI-compatible)
+  sttUrl: '',        // 'custom': http://127.0.0.1:8000/v1 (whisper.cpp, faster-whisper…)
+  sttModel: '',      // its model (empty: the engine's default)
+  pushToTalk: 'Control+Alt+Space', // hold it to talk to her
+  converse: false,   // conversation mode: she keeps listening and you talk back and forth
+  micDevice: '',     // which microphone ('' the system's default; an id from her ring menu › Microphone)
+  micSensitivity: 0.4, // 0..1: how quietly you can speak and still be heard (ears.js micThreshold)
+  micMeter: true,    // the live level in the mic badge by the clock
+  audioOut: '',      // where her sounds and voice go ('' the system's default; her ring menu › Voice › Output)
 };
 
 let cache = null;
+let pending = false; // changes not written yet (they're written a moment after the last one, or by flush())
+let writeTimer = 0;
 
 function file() {
   return path.join(app.getPath('userData'), 'config.json');
 }
 
 function load(fresh = false) {
-  if (cache && !fresh) return cache;
+  if (fresh) flush(); // (a change not written yet would be lost to the read)
+  if (cache && (!fresh || pending)) return cache; // (pending still: the write failed, the file is older than what we hold)
   try {
     cache = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file(), 'utf8')) };
   } catch {
@@ -62,15 +83,39 @@ function load(fresh = false) {
   return cache;
 }
 
+const same = (a, b) => a === b || (typeof a === 'object' && a !== null && JSON.stringify(a) === JSON.stringify(b));
+
+// Puts the changes in. Returns the keys that really changed (none: nothing was new and nothing is
+// written). The file follows within a quarter of a second, once, whatever the number of changes: a
+// slider dragged in her ring menu is dozens of them a second.
 function save(patch) {
-  cache = { ...load(), ...patch };
-  try {
-    fs.mkdirSync(path.dirname(file()), { recursive: true });
-    fs.writeFileSync(file(), JSON.stringify(cache, null, 2));
-  } catch (err) {
-    console.error('[capri] could not save config:', err.message);
-  }
-  return cache;
+  const before = load();
+  const changed = Object.keys(patch).filter((k) => !same(before[k], patch[k]));
+  if (!changed.length) return changed;
+  cache = { ...before, ...patch };
+  pending = true;
+  clearTimeout(writeTimer);
+  writeTimer = setTimeout(flush, 250);
+  return changed;
 }
 
-module.exports = { load, save, file, DEFAULTS };
+// Writes what's waiting, now (before reading it back, and before she quits or restarts). Whole or
+// not at all: a crash in the middle never leaves half a file.
+function flush() {
+  clearTimeout(writeTimer);
+  writeTimer = 0;
+  if (!pending) return;
+  pending = false;
+  try {
+    fs.mkdirSync(path.dirname(file()), { recursive: true });
+    const tmp = `${file()}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(cache, null, 2));
+    fs.renameSync(tmp, file());
+  } catch (err) {
+    console.error('[capri] could not save config:', err.message);
+    // (a file held by another program, a full disk): not lost, tried again with the next change or at exit
+    pending = true;
+  }
+}
+
+module.exports = { load, save, flush, file, DEFAULTS };

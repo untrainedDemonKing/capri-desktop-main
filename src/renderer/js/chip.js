@@ -1,4 +1,7 @@
-// Her two small forms, each on its own little canvas, drawn on twos and only while on screen.
+// Her two small forms, each on its own little canvas, drawn on twos and only while on screen, and
+// only redrawn when the drawing would actually change: they're what's left of her while she sleeps
+// or is put away, so they cost next to nothing (a timer, not the screen's refresh; a couple of
+// drawings a second for the float, more only while she winks, stirs or wakes).
 //
 // Mask: asleep a while, her mane and her body come apart and what's left is what she is at
 // heart in the show, her green mask with its eyes, floating where she was, eyes shut. Now and
@@ -23,10 +26,10 @@ class Small {
     this.visible = false;
     this.pointer = null; // set while the pointer is over it
     this.shownAt = 0;
-    this.last = 0;
+    this.timer = 0;
+    this.drawn = null; // what's on the canvas now (key()), so the same drawing isn't redrawn
     this.x = 0;
     this.y = 0;
-    this.loop = this.loop.bind(this);
   }
 
   moveTo(x, y) {
@@ -51,24 +54,44 @@ class Small {
     this.visible = true;
     this.canvas.hidden = false;
     this.shownAt = performance.now();
-    requestAnimationFrame(this.loop);
+    this.drawn = null;
+    this.tick();
   }
 
   hide() {
     this.visible = false;
     this.canvas.hidden = true;
     this.pointer = null;
+    clearTimeout(this.timer);
+    this.timer = 0;
   }
 
-  loop(now) {
+  // One look a drawing (on twos while something's going on, on fours while it just floats); the
+  // canvas is only touched when the drawing changed.
+  tick() {
+    clearTimeout(this.timer);
     if (!this.visible) return;
-    requestAnimationFrame(this.loop);
-    if (now - this.last < STEP - 1) return;
-    this.last = now;
-    const dpr = window.devicePixelRatio || 1;
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.ctx.clearRect(0, 0, this.w, this.h);
-    this.draw(now, Math.floor(now / STEP));
+    const now = performance.now();
+    const frame = Math.floor(now / STEP);
+    const key = this.key(now, frame);
+    if (key !== this.drawn) {
+      this.drawn = key;
+      const dpr = window.devicePixelRatio || 1;
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.ctx.clearRect(0, 0, this.w, this.h);
+      this.draw(now, frame);
+    }
+    this.timer = setTimeout(() => this.tick(), this.busy ? STEP : STEP * 2);
+  }
+
+  // What the drawing at `now` depends on (subclasses); a changing key means a redraw.
+  key(now, frame) {
+    return frame;
+  }
+
+  // something's moving that needs every drawing (a pointer, a wink, waking): on twos then
+  get busy() {
+    return Boolean(this.pointer) || this.landing;
   }
 
   // it lands as a white silhouette, one drawing, like her impact frames
@@ -105,6 +128,24 @@ export class Mask extends Small {
   // eyes snap open: she's coming back
   wake() {
     this.wokeAt = performance.now();
+    this.tick();
+  }
+
+  get busy() {
+    return super.busy || Boolean(this.wokeAt) || Boolean(this.peek);
+  }
+
+  // her float (a step every half second), her wink, the pointer stirring her, waking (shaking)
+  key(now, frame) {
+    if (now > this.nextPeek && !this.peek) {
+      this.peek = { eye: Math.random() < 0.5 ? 0 : 1, until: now + rand(700, 1100) };
+      this.nextPeek = now + rand(7000, 14000);
+    }
+    if (this.peek && now > this.peek.until) this.peek = null;
+    if (this.landing || this.wokeAt) return frame; // every drawing
+    const bob = reducedMotion.matches ? 0 : Math.floor(frame / 6) % 4;
+    const p = this.pointer ? `${Math.round(this.pointer.x / 4)},${Math.round(this.pointer.y / 4)}` : '';
+    return `${bob}|${this.peek ? this.peek.eye : '-'}|${p}`;
   }
 
   draw(now, frame) {
@@ -116,14 +157,7 @@ export class Mask extends Small {
       return;
     }
     let eyes = [0, 0], look = null;
-    if (now > this.nextPeek && !this.peek) {
-      this.peek = { eye: Math.random() < 0.5 ? 0 : 1, until: now + rand(700, 1100) };
-      this.nextPeek = now + rand(7000, 14000);
-    }
-    if (this.peek) {
-      if (now > this.peek.until) this.peek = null;
-      else eyes[this.peek.eye] = 0.45; // one eye cracked open, the wink
-    }
+    if (this.peek) eyes[this.peek.eye] = 0.45; // one eye cracked open, the wink
     if (this.pointer) {
       eyes = [0.35, 0.35]; // stirring
       look = { x: this.pointer.x - this.x, y: this.pointer.y - this.y };
@@ -167,6 +201,18 @@ export class Chip extends Mask {
 
   setMode(mode) {
     this.mode = mode;
+    if (this.visible) this.tick(); // her eyes open (or shut) right away
+  }
+
+  get busy() {
+    return Boolean(this.pointer) || this.landing || this.mode === 'alert';
+  }
+
+  key(now, frame) {
+    if (this.landing || this.pointer) return frame; // the pointer over her: she twitches every drawing
+    const bob = reducedMotion.matches ? 0 : Math.floor(frame / 6) % 4;
+    const open = this.mode === 'alert' && (reducedMotion.matches || frame % 8 < 6);
+    return `${bob}|${open}`;
   }
 
   draw(now, frame) {

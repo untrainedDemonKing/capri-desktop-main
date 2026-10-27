@@ -7,6 +7,7 @@ import { rand, pick } from './util.js';
 // a minor-pentatonic set for the talking blips; three detuned voices = a chorus of minds
 const BLIP_NOTES = [62, 65, 67, 69, 72, 74, 77, 79];
 const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+const NAP_MS = 20000; // this long with no sound: her audio goes to sleep (costs nothing until the next one)
 
 export const CUES = [
   'teleport-out', 'teleport-in', 'done', 'alert', 'error', 'hello', 'blip', 'tick', 'star', 'land', 'rise', 'bolt', 'charge', 'possess',
@@ -29,6 +30,8 @@ export class Voice {
     this.lastBlip = 0;
     this.mood = 'calm'; // her mood (mood.js): her blips follow it
     this.speaking = false; // her voice is reading something out (speech.js): no blips over it
+    this.sink = '';        // where her sounds go: an output device id, '' the system's default
+    this.sinkError = '';   // why the device picked can't be used (it's unplugged, say)
   }
 
   ensure() {
@@ -47,11 +50,66 @@ export class Voice {
     shaper.curve = curve;
     this.master.connect(shaper).connect(ctx.destination);
     this.noise = this.makeNoise();
+    if (this.sink) this.setSink(this.sink);
     return ctx;
   }
 
-  configure({ muted, volume }) {
+  // The speakers, headphones... there are: [{ id, label }], the system's default first. (Names only
+  // show once the mic has been opened once: the browser keeps them back until then.)
+  async outputs() {
+    const all = await navigator.mediaDevices?.enumerateDevices?.().catch(() => []) || [];
+    const outs = all.filter((d) => d.kind === 'audiooutput' && d.deviceId && !['default', 'communications'].includes(d.deviceId));
+    return [{ id: '', label: '' }, ...outs.map((d, i) => ({ id: d.deviceId, label: d.label || `#${i + 1}` }))];
+  }
+
+  // Can sound be sent to a chosen device here?
+  get canPickOutput() {
+    return typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
+  }
+
+  // Where her blips, cues and (a speech service's) voice come out. A device that's gone: the
+  // default, and `sinkError` says so. (Windows' own voice, speech.js 'system', can't be redirected.)
+  async setSink(id = '') {
+    this.sink = String(id || '');
+    this.sinkError = '';
+    if (!this.ctx?.setSinkId) return true;
+    try {
+      await this.ctx.setSinkId(this.sink);
+      return true;
+    } catch (err) {
+      this.sinkError = err.message || 'failed';
+      if (this.sink) await this.ctx.setSinkId('').catch(() => {});
+      return false;
+    }
+  }
+
+  // A short sound, whatever the mute says, to hear where it comes out.
+  test() {
+    this.play('hello', { force: true });
+  }
+
+  // Her audio, running (a sound is about to play). A running AudioContext keeps the audio thread
+  // ticking even in silence, so after a while with nothing to play it's put to sleep (napLater).
+  wakeUp() {
+    const ctx = this.ensure();
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    this.napLater();
+    return ctx;
+  }
+
+  napLater() {
+    clearTimeout(this.napTimer);
+    this.napTimer = setTimeout(() => {
+      // still talking (speech.js plays through this context): try again later
+      if (this.speaking) return this.napLater();
+      if (this.ctx?.state === 'running') this.ctx.suspend().catch(() => {});
+      return undefined;
+    }, NAP_MS);
+  }
+
+  configure({ muted, volume, audioOut }) {
     if (typeof muted === 'boolean') this.muted = muted;
+    if (typeof audioOut === 'string' && audioOut !== this.sink) this.setSink(audioOut);
     if (typeof volume === 'number') {
       this.volume = volume;
       if (this.master) this.master.gain.value = volume;
@@ -73,9 +131,8 @@ export class Voice {
   }
 
   play(cue, opts = {}) {
-    if (this.muted) return;
-    const ctx = this.ensure();
-    if (ctx.state === 'suspended') ctx.resume();
+    if (this.muted && !opts.force) return;
+    const ctx = this.wakeUp();
     const custom = this.custom.get(cue);
     if (custom) {
       const src = ctx.createBufferSource();

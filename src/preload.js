@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('host', {
   chatStatus: () => ipcRenderer.invoke('chat:status'),
   chatSend: (request) => ipcRenderer.invoke('chat:send', request),
   chatStop: (id) => ipcRenderer.send('chat:stop', id),
+  chatModels: () => ipcRenderer.invoke('chat:models'),
   chatMemory: () => ipcRenderer.invoke('chat:memory'),
   chatRemember: (history) => ipcRenderer.send('chat:remember', history),
   onChatDelta: on('chat:delta'),
@@ -63,4 +64,23 @@ contextBridge.exposeInMainWorld('host', {
   onMedia: on('media:now'),
   onPresence: on('presence'),
   moodState: (state) => ipcRenderer.send('mood:state', state),
+  // her senses and her hands (vision, voice-in, window and messenger control)
+  see: (request) => ipcRenderer.invoke('eyes:see', request),
+  transcribe: (request) => ipcRenderer.invoke('stt:transcribe', request),
+  sttSetup: (choice) => ipcRenderer.invoke('stt:setup', choice),
+  sttKeyPage: (engine) => ipcRenderer.send('stt:keyPage', engine),
+  platform: process.platform, // her ring menu greys out what only works on Windows
+  hands: true, // the control bridge exists in main; hands.js checks the setting
+  windowOp: (op, name) => ipcRenderer.invoke('hands:window', { op, name }),
+  showDesktop: () => ipcRenderer.invoke('hands:desktop'),
+  typeInto: (text, into) => ipcRenderer.invoke('hands:type', { text, into }),
+  prepareMessage: (request) => ipcRenderer.invoke('hands:prepare', request),
+  sendMessage: (prepared) => ipcRenderer.invoke('hands:send', prepared),
+  senseState: (state) => ipcRenderer.send('sense:state', state),
+  // how deeply she rests (awake | sleep | deep): main stops its watchers while she's tucked away
+  restLevel: (level) => ipcRenderer.send('rest:level', level),
+  // what she's learned about you (bond.js): kept in bond.json, written by your own chat model
+  bondLoad: () => ipcRenderer.invoke('bond:load'),
+  bondSave: (data) => ipcRenderer.send('bond:save', data),
+  bondReflect: (request) => ipcRenderer.invoke('bond:reflect', request),
 });
