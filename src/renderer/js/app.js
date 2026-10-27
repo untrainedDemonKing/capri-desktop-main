@@ -318,6 +318,7 @@ async function boot() {
   ring.configure(config);
   ring.onToggle = () => refreshHit(); // click-through again once it's shut
   panel.onUrgent = () => ring.hide();  // a permission prompt, a chat or her guide: the menu steps aside
+  ring.onGuide = () => { guide.answer(null); panel.hide(); }; // (and the other way: the menu opened over her guide's question)
   life.ring = ring;
   eyes.ring = ring;
   // the always-visible badge: a sense is never silently on

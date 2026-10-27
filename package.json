@@ -18,7 +18,9 @@
     "hooks:agy:uninstall": "node scripts/install-hooks-agy.js --uninstall",
     "check:llm": "node scripts/check-llm.js",
     "test:hooks": "node --test tests/hooks.test.js",
-    "dist": "electron-builder --win",
+    "dist": "electron-builder --win --x64",
+    "dist:32": "electron-builder --win --ia32 -c.electronVersion=43.8.3",
+    "dist:all": "npm run dist && npm run dist:32",
     "test:character": "node --test tests/character.test.js",
     "test:senses": "node --test tests/senses.test.js",
     "test:bond": "node --test tests/bond.test.js",
@@ -76,7 +78,7 @@
       "runAfterFinish": true,
       "createDesktopShortcut": true,
       "shortcutName": "Capri",
-      "artifactName": "Capri-Setup-${version}.${ext}"
+      "artifactName": "Capri-Setup-${version}-${arch}.${ext}"
     },
     "compression": "maximum"
   }

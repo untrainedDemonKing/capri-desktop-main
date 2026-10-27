@@ -151,6 +151,7 @@ export class Ring {
     this.saveTimer = 0;
     this.pending = {};
     this.onToggle = null;     // (open) => void
+    this.onGuide = null;      // () => void: her guide has a panel up as the ring opens (app.js drops it)
     this.onKey = (e) => this.key(e);
   }
 
@@ -190,6 +191,7 @@ export class Ring {
     const { capri, panel } = this;
     capri.wake?.();
     panel.park(); // (what's showing would be under the ring: a passing line goes, Claude's news waits)
+    if (panel.visible && panel.current?.guide) this.onGuide?.(); // her guide, mid-question: you chose the menu instead
     this.isOpen = true;
     panel.quiet = true;
     this.state = {};
