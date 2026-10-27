@@ -561,6 +561,20 @@ const voice = {
     }));
     root.append(heading(v.engine));
     root.append(pick(['system', 'capri', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: v.engines[id] })), cfg.ttsEngine || 'system', (id) => c.set({ ttsEngine: id })));
+    // her own voice, to taste: pace, pitch, softness (a line is said with it when a slider is let go)
+    if (cfg.ttsEngine === 'capri') {
+      const tune = (key, left, min, max, step, dflt, show) => root.append(slider({
+        left, min, max, step, value: cfg[key] ?? dflt, show,
+        onInput: (x) => c.drag({ [key]: x }),
+        onChange: () => {
+          c.drop();
+          setTimeout(() => c.actions.run?.('tuneVoice'), 350); // (once it is saved)
+        },
+      }));
+      tune('ttsRate', v.rate, 0.6, 1.8, 0.05, 1, (x) => `${x.toFixed(2)}×`);
+      tune('ttsPitch', v.pitch, 0.8, 1.3, 0.02, 1, (x) => `${Math.round(x * 100)}%`);
+      tune('ttsSoft', v.soft, 0, 1, 0.05, 0.5, (x) => `${Math.round(x * 100)}%`);
+    }
     root.append(buttons(go(c, v.setup, 'setupVoice'), go(c, v.test, 'testVoice')));
 
     // where it comes out: speakers, headphones... (and your own mic there, to check)

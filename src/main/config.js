@@ -44,7 +44,9 @@ const DEFAULTS = {
   ttsModel: '',      // its model (empty: tts.js DEFAULTS)
   ttsUrl: '',        // 'custom': an OpenAI-compatible speech server (http://127.0.0.1:8880/v1)
   ttsFx: true,       // her "many minds" effect on a speech service's voice
-  ttsRate: 1,        // how fast she talks
+  ttsRate: 1,        // how fast she talks (her own voice and the system's: 0.5..2)
+  ttsPitch: 1,       // her own voice: how high (0.8..1.3)
+  ttsSoft: 0.5,      // her own voice: 0 crisp and bright ... 1 very soft
   // her senses and her hands (all off by default: each one is a permission you turn on)
   vision: false,     // she can take a picture of your screen and react to it (screen.js, eyes.js)
   visionModel: '',   // the vision model (empty: her chat model if it can see, else a default)

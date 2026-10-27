@@ -69,6 +69,8 @@ export class Speech {
     this.muted = Boolean(cfg.muted);
     this.lang = cfg.lang || 'en';
     this.rate = Number(cfg.ttsRate) || 1;
+    this.pitch = Number(cfg.ttsPitch) || 1;
+    this.soft = typeof cfg.ttsSoft === 'number' ? cfg.ttsSoft : 0.5;
     if (this.mode === 'off' || this.muted) this.stop();
   }
 
@@ -168,7 +170,7 @@ export class Speech {
     let made;
     try {
       const { synthesize } = await import('./voice-synth.js');
-      made = synthesize(text, { lang: this.lang, mood, rate: this.rate });
+      made = synthesize(text, { lang: this.lang, mood, rate: this.rate, pitch: this.pitch, soft: this.soft });
     } catch (err) {
       this.onError?.(err.message);
       return false;

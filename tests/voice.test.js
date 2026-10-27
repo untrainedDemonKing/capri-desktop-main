@@ -108,22 +108,58 @@ const spell = (phrases) => phrases.map((p) => p.words.map((w) => w.phones.map((q
 test('Russian spelling becomes sounds: softness, voicing, endings, prepositions', async () => {
   const { phonemize } = await load('voice-phones.js');
   const ru = (t) => spell(phonemize(t, 'ru'));
-  assert.equal(ru('привет'), "p r' i v' e t", 'р and в are soft before и and е, п stays hard before р');
+  assert.equal(ru('привет'), "p r' I v' e t", 'р and в are soft before и and е, п stays hard before р, и before the stress is short');
   assert.equal(ru('дуб'), 'd u p', 'a voiced б at the end is said п');
-  assert.equal(ru('ложка'), 'l o S k a', 'ж before к is ш');
-  assert.equal(ru('сказка'), 's k a s k a', 'з before к is с');
-  assert.equal(ru('в доме'), "v d o m' e", 'a preposition and its word are one');
+  assert.equal(ru('ложка'), 'l o S k @', 'ж before к is ш');
+  assert.equal(ru('сказка'), 's k a s k @', 'з before к is с');
+  assert.equal(ru('в доме'), "v d o m' @", 'a preposition and its word are one');
   assert.equal(ru('к друзьям'), "g d r u z' j a m", 'к before a voiced sound is г');
   assert.equal(ru('что'), 'S t o', 'что is said "што"');
-  assert.match(ru('учиться'), /ts a$/, '-ться is said "ца"');
+  assert.match(ru('учиться'), /ts @$/, '-ться is said "ца"');
   assert.match(ru('жизнь'), /^Z y z.* n'$/, 'и after ж is ы; ь softens');
   assert.equal(ru('чай'), 'tC a j', 'ч is always soft and й is a glide');
   assert.equal(ru('яблоко').split(' ')[0], 'j', 'я at the start is "ja"');
-  assert.equal(ru('юбка'), 'j u p k a');
-  assert.equal(ru('ёлка'), 'j o l k a', 'ё at the start is "jo"');
+  assert.equal(ru('юбка'), 'j u p k @');
+  assert.equal(ru('ёлка'), 'j o l k @', 'ё at the start is "jo"');
   const vanna = phonemize('ванна', 'ru')[0].words[0].phones;
   assert.equal(vanna.filter((q) => q.p === 'n').length, 1, 'a doubled letter is one sound...');
   assert.ok(vanna.find((q) => q.p === 'n').long, '...held longer');
+});
+
+test('Russian is said the way it is said: stress from a list and from endings, vowels reduced, dots on ё put back', async () => {
+  const { phonemize, VOWELS } = await load('voice-phones.js');
+  const word = (t) => phonemize(t, 'ru')[0].words[0].phones;
+  const stressed = (t) => {
+    let i = -1;
+    let at = -1;
+    for (const q of word(t)) if (VOWELS.has(q.p.replace(/[~']/g, ''))) { i++; if (q.stress) at = i; }
+    return at;
+  };
+  const ru = (t) => word(t).map((q) => q.p).join(' ');
+  // the words she says most: stress right (the way a person says them, not the way they are spelled)
+  const known = { тебе: 1, меня: 1, дела: 1, привет: 1, сейчас: 1, хорошо: 2, говорить: 2, спасибо: 1, пожалуйста: 1, ничего: 2, человек: 2, глаза: 1, потому: 2, всегда: 1, который: 1, голос: 0, сервер: 0, микрофон: 2 };
+  for (const [t, at] of Object.entries(known)) assert.equal(stressed(t), at, `${t}: stress on vowel ${at}`);
+  // a word nobody told her about: by its ending, never nowhere and never off the word
+  for (const t of ['программирование', 'перезагрузка', 'нейросеть', 'подключаться']) {
+    const at = stressed(t);
+    assert.ok(at >= 0 && at < word(t).filter((q) => VOWELS.has(q.p.replace(/[~']/g, ''))).length, `${t}: stress ${at}`);
+  }
+  // the vowels before and after the stress are not said as spelled
+  assert.equal(ru('молоко'), 'm V l V k o', 'о before the stress is a short а');
+  assert.equal(ru('хорошо'), 'x V r V S o');
+  assert.equal(ru('человек'), "tC I l V v' e k", 'е before the stress is и');
+  assert.equal(ru('на столе'), "n @ s t o l' @", 'a preposition is a mere "ъ", the end of the word too');
+  assert.equal(ru('жена'), 'Z y n a', 'е after ж is ы');
+  assert.ok(word('работа').some((q) => q.short), 'the vowels far from the stress are short');
+  assert.ok(word('очень').every((q) => !q.stress || VOWELS.has(q.p)), 'the stress sits on a vowel');
+  // ё typed as е
+  assert.equal(ru('идет'), "I d' o t", 'идёт');
+  assert.equal(ru('еще'), 'j I C o', 'ещё');
+  assert.equal(stressed('нашел'), 1, 'нашёл');
+  // a one-vowel little word has no stress, but a one-vowel word that means something has
+  assert.equal(stressed('не'), -1);
+  assert.equal(stressed('дом'), 0);
+  assert.equal(stressed('что'), -1);
 });
 
 test('words that are laughs, numbers and mixed scripts', async () => {
@@ -294,6 +330,36 @@ test('her voice is soft, not harsh: no clipping, hiss comes in gradually, she ta
   const sorted = [...f].sort((x, y) => x - y);
   const spread = 12 * Math.log2(sorted[Math.floor(sorted.length * 0.9)] / sorted[Math.floor(sorted.length * 0.1)]);
   assert.ok(spread < 5, `a held vowel moves ${spread.toFixed(1)} semitones (10-90%)`);
+});
+
+test('she is quick and lively: a real pace, accents where the words matter, a pitch that moves', async () => {
+  const { synthesize } = await load('voice-synth.js');
+  const line = 'Ну что, чумба, опять взламываешь лёд? Я бы на твоём месте не стала.';
+  const calm = synthesize(line, { lang: 'ru', mood: 'calm' });
+  const letters = line.replace(/[^а-яё]/gi, '').length;
+  const pace = letters / calm.duration;
+  assert.ok(pace > 12 && pace < 17.5, `${pace.toFixed(1)} letters a second (a quick talker is 13 to 16)`);
+  // the tune moves: about 6 semitones or more between the low and the high of it, nobody squeaks
+  const p = pitches(calm.samples, calm.sampleRate).sort((x, y) => x - y);
+  const span = 12 * Math.log2(p[Math.floor(p.length * 0.9)] / p[Math.floor(p.length * 0.1)]);
+  assert.ok(span > 4.5, `her tune spans ${span.toFixed(1)} semitones`);
+  assert.ok(p[p.length - 1] < 360, `the top of it is ${Math.round(p[p.length - 1])} Hz`);
+  // a word in capitals is pressed: longer, and its tune is higher
+  const plain = synthesize('Я не знаю', { lang: 'ru', mood: 'calm', seed: 7 });
+  const shouted = synthesize('Я не ЗНАЮ', { lang: 'ru', mood: 'calm', seed: 7 });
+  assert.ok(shouted.duration > plain.duration * 1.04, `${plain.duration.toFixed(2)} s to ${shouted.duration.toFixed(2)} s`);
+  const top = (r) => Math.max(...pitches(r.samples, r.sampleRate));
+  assert.ok(top(shouted) > top(plain) * 1.04, `${Math.round(top(plain))} Hz to ${Math.round(top(shouted))} Hz`);
+  // little words get hardly any accent, so "я" and "не" do not lift the tune the way "знаю" does
+  const weak = synthesize('я не', { lang: 'ru', mood: 'calm', seed: 7 });
+  const full = synthesize('знаю', { lang: 'ru', mood: 'calm', seed: 7 });
+  assert.ok(median(pitches(full.samples, full.sampleRate)) > median(pitches(weak.samples, weak.sampleRate)) * 1.0, 'content words carry the accent');
+  // softness: 0 is crisp and bright, 1 is soft
+  const crisp = synthesize('Привет, как дела у тебя сегодня', { lang: 'ru', soft: 0, seed: 3 });
+  const soft = synthesize('Привет, как дела у тебя сегодня', { lang: 'ru', soft: 1, seed: 3 });
+  assert.ok(centroid(crisp.samples.subarray(4000, 6048), crisp.sampleRate) > centroid(soft.samples.subarray(4000, 6048), soft.sampleRate), 'crisp is brighter than soft');
+  const hf = (r) => { let a = 0; let e = 0; for (const v of r.samples) { a += (v - a) * 0.5; e += (v - a) ** 2; } return e / r.samples.length; };
+  assert.ok(hf(crisp) > hf(soft) * 1.15, 'and has more of the high end');
 });
 
 test('every language, every mood: finite sound, and a text with no sounds is silence, not a crash', async () => {

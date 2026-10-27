@@ -13,6 +13,8 @@
 //   and a trailing ' (an apostrophe) on a consonant means soft (palatalised), a trailing ~ a short vowel.
 //   Words that are really a laugh come out as { laugh: n }.
 
+import { STRESS_RULES, STRESS_WORDS } from './voice-stress-data.js';
+
 const CYR = /[а-яёА-ЯЁ]/;
 
 // ---------- Russian ----------
@@ -38,8 +40,35 @@ const RU_CLITIC = new Set(('и а но да или же бы ли ни не в �
 // the prepositions said together with the next word (so "в доме" is one word to the voicing rules)
 const RU_PROCLITIC = new Set(['в', 'к', 'с', 'о', 'у', 'и', 'а', 'на', 'по', 'за', 'из', 'от', 'до', 'во', 'со', 'ко', 'не', 'ни', 'об']);
 
+// Words that are said with a ё but usually typed with an е (the dots are often left off). Not here: все,
+// which is both все and всё.
+const RU_YO_PLAIN = {
+  еще: 'ещё', ее: 'её', нее: 'неё', нем: 'нём', твое: 'твоё', мое: 'моё', свое: 'своё', чье: 'чьё', твоем: 'твоём', моем: 'моём', своем: 'своём',
+};
+const RU_YO_STEMS = {
+  отчет: 'отчёт', счет: 'счёт', расчет: 'расчёт', учет: 'учёт', прием: 'приём', объем: 'объём', подъем: 'подъём', определенно: 'определённо',
+  ребен: 'ребён', темн: 'тёмн', тяжел: 'тяжёл', весел: 'весёл', желт: 'жёлт', черн: 'чёрн', зелен: 'зелён',
+};
+// verbs whose ending takes the stress: идет, живешь, берем, пошел, принес...
+const RU_YO_VERBS = new Set(('идти пойти прийти найти уйти пройти зайти отойти жить брать нести ждать звать вести давать ' +
+  'шел пошел прошел нашел пришел ушел зашел дошел отошел вел привел завел довел увел отвел нес принес унес').split(' '));
+const RU_YO_FORMS = ['ет', 'ешь', 'ем', 'ете'];
+const RU_YO_STEM_OF = {
+  ид: 'идти', пойд: 'пойти', придут: 'прийти', прид: 'прийти', найд: 'найти', уйд: 'уйти', пройд: 'пройти', зайд: 'зайти', отойд: 'отойти',
+  жив: 'жить', бер: 'брать', нес: 'нести', жд: 'ждать', зов: 'звать', вед: 'вести', да: 'давать',
+};
+function ruYo(word) {
+  if (RU_YO_PLAIN[word]) return RU_YO_PLAIN[word];
+  if (RU_YO_VERBS.has(word)) return word.replace(/е(л|с)$/, 'ё$1');
+  for (const [stem, form] of Object.entries(RU_YO_STEMS)) if (word.startsWith(stem)) return form + word.slice(stem.length);
+  for (const end of RU_YO_FORMS) {
+    if (word.endsWith(end) && RU_YO_STEM_OF[word.slice(0, -end.length)]) return `${word.slice(0, -end.length)}ё${end.slice(1)}`;
+  }
+  return word;
+}
+
 function ruPrepare(word) {
-  let w = word.toLowerCase().replace(/ё/g, 'ё');
+  let w = ruYo(word.toLowerCase());
   if (RU_SAID[w]) w = RU_SAID[w];
   w = w.replace(/(ого|его)$/, (m) => (m === 'ого' ? 'ова' : 'ева'))
     .replace(/ться$/, 'цца').replace(/тся$/, 'ца')
@@ -68,7 +97,7 @@ function ruLetters(w) {
       else if (c === 'э') p = 'E';
       else if (c === 'е') p = afterHardAlways ? 'E' : 'e';
       else p = afterHardAlways ? 'y' : 'i'; // и
-      out.push({ p, vowel: true, yo: c === 'ё' });
+      out.push({ p, vowel: true, yo: c === 'ё', letter: c, soft: iot || (RU_SOFT_VOWELS.includes(c) && !afterHardAlways) });
       continue;
     }
     const base = RU_CONS[c];
@@ -82,25 +111,68 @@ function ruLetters(w) {
   return out;
 }
 
-// Where the stress goes: ё, a single vowel, else by the ending (how many vowels from the end it falls
-// on; learned from running Russian text, right about half the time: it only shapes her tune, no vowel
-// is reduced by it), else the one before the last.
-const RU_STRESS_END = {
-  ться: 1, ется: 2, ешь: 1, ься: 1, ния: 2, тно: 1, ая: 2, та: 1, шь: 1, ки: 1, ий: 1, ый: 1, ка: 1, ия: 2, ло: 1,
-  жу: 0, ёт: 0, то: 1, ие: 2, ри: 0, ер: 1, ше: 1, ии: 2, ы: 1,
-};
+// Where the stress goes (Russian has no rule for it): ё; a word she knows (the common spoken words the
+// endings below get wrong, voice-stress-data.js); else by its ending (a decision list learned from a
+// frequency list of spoken Russian, right about three times in four on words it has not seen; see
+// tools/build-voice-stress.py); else the vowel before the last. A one-vowel little word (в, не, на,
+// что...) has none. -1 is none.
+let stressWords = null;
+let stressRules = null;
+function stressTables() {
+  if (stressWords) return;
+  stressWords = new Map();
+  for (const entry of STRESS_WORDS.split(' ')) {
+    const word = entry.toLowerCase();
+    let seen = -1;
+    for (let i = 0; i < entry.length; i++) {
+      if (!RU_VOWEL_LETTERS.includes(word[i])) continue;
+      seen++;
+      if (entry[i] !== word[i]) { stressWords.set(word, seen); break; }
+    }
+  }
+  stressRules = new Map();
+  for (const rule of STRESS_RULES.split(' ')) stressRules.set(rule.slice(0, -1), Number(rule.slice(-1)));
+}
 function ruStress(word, vowels) {
   const n = vowels.length;
   const yo = vowels.findIndex((v) => v.yo);
   if (yo >= 0) return yo;
-  const w = word.toLowerCase();
-  if (RU_CLITIC.has(w)) return -1;
-  if (n <= 1) return 0;
-  for (let len = 4; len >= 1; len--) {
-    const off = w.length > len ? RU_STRESS_END[w.slice(-len)] : undefined;
+  if (n <= 1) return n === 1 && !RU_CLITIC.has(word) ? 0 : -1;
+  stressTables();
+  const known = stressWords.get(word);
+  if (known !== undefined && known < n) return known;
+  for (let len = Math.min(5, word.length - 1); len >= 1; len--) {
+    const off = stressRules.get(word.slice(-len));
     if (off !== undefined) return Math.max(0, n - 1 - off);
   }
   return Math.max(0, n - 2);
+}
+
+// Vowels that are not stressed are not said as spelled (this is most of what makes Russian sound Russian):
+// о and а become a short "а" next to the stress and a mere "ъ" farther off or at the end, е and я become
+// "и", and so on. Words said with no stress of their own (в, на, не...) reduce the same way.
+const RU_WEAK = new Set('и а но да или же бы ли ни не в во на с со к ко по за из о об от до у для при про над под без через ну ка'.split(' '));
+function ruReduce(vowels, at, weak) {
+  const last = vowels.length - 1;
+  vowels.forEach((v, i) => {
+    if (v.stress) return;
+    const near = at >= 0 ? i === at - 1 || (i === 0 && i < at) : false; // the one just before the stress, or the first of the word
+    const end = at >= 0 && i === last && i > at;
+    const farther = !near;
+    const full = at < 0 && !weak; // a one-vowel word that is not a preposition: said as spelled, just short
+    if (full) { v.short = true; return; }
+    const hard = !v.soft;
+    switch (v.letter) {
+      case 'а': case 'о': v.p = near ? 'V' : '@'; break;
+      case 'я': case 'е': v.p = end ? '@' : hard ? 'y' : 'I'; break;
+      case 'э': v.p = near ? 'E' : '@'; break;
+      case 'и': v.p = hard ? 'y' : 'I'; break;
+      case 'у': case 'ю': v.p = near ? 'u' : 'U'; break;
+      default: break; // ы
+    }
+    if (end && 'аоэ'.includes(v.letter)) v.p = '@';
+    if (farther || at < 0) v.short = true;
+  });
 }
 
 // voicing rules over a whole group of letters (a word, or a preposition and its word): right to left, a
@@ -123,12 +195,13 @@ function ruAssimilate(phones) {
 }
 
 function ruWord(raw) {
-  const w = ruPrepare(raw);
-  const letters = ruLetters(w);
+  const low = ruYo(raw.toLowerCase());
+  const letters = ruLetters(ruPrepare(raw));
   const vowels = letters.filter((l) => l.vowel);
-  const at = ruStress(w, vowels);
+  const at = ruStress(low, vowels);
   vowels.forEach((v, i) => { v.stress = i === at; });
-  return letters.map(({ p, long, stress }) => ({ p, ...(long && { long }), ...(stress && { stress }) }));
+  ruReduce(vowels, at, RU_WEAK.has(low));
+  return letters.map(({ p, long, stress, short }) => ({ p, ...(long && { long }), ...(stress && { stress }), ...(short && { short }) }));
 }
 
 // ---------- Spanish ----------
@@ -453,6 +526,20 @@ function wordPhones(text, lang) {
   return fn(w);
 }
 
+// What her tune needs to know about a word: little function words (я, не, что, the, of...) get hardly any
+// accent, a word in CAPITALS is stressed hard, an interjection (ну, ох, ого) is pulled out.
+const EN_WEAK = new Set('a an the to of in on at for and or but if is it its be am are was were i you he she we they my your me us them that this do does did not no so as by with from'.split(' '));
+const RU_INTERJECTIONS = new Set('ну ох ах ой ай ого ух эх ага угу эй ура оу блин вау хм'.split(' '));
+function wordFlags(tok, lang) {
+  const low = tok.toLowerCase();
+  const flags = {};
+  if (tok.length >= 3 && tok === tok.toUpperCase() && tok !== low) flags.emphasis = true;
+  const weak = CYR.test(tok) ? RU_CLITIC.has(low) : lang === 'en' ? EN_WEAK.has(low) : lang !== 'ru' && tok.length <= 2;
+  if (weak) flags.weak = true;
+  if (RU_INTERJECTIONS.has(low)) flags.interjection = true;
+  return flags;
+}
+
 export function phonemize(text, lang = 'ru') {
   const src = String(text || '')
     .replace(/[«»“”"„]/g, ' ')
@@ -504,7 +591,7 @@ export function phonemize(text, lang = 'ru') {
     const cyr = CYR.test(tok);
     if (!cyr) {
       flush();
-      words.push({ text: tok, phones });
+      words.push({ text: tok, phones, ...wordFlags(tok, lang) });
       continue;
     }
     const proclitic = RU_PROCLITIC.has(tok.toLowerCase()) && CYR.test(tokens[t + 1] || '');
@@ -514,7 +601,7 @@ export function phonemize(text, lang = 'ru') {
       const group = pending.map((x, i) => (i === pending.length - 1 ? x.phones : x.phones.map((p) => ({ ...p, stress: false }))));
       const all = group.flat().map((p) => ({ ...p }));
       ruAssimilate(all);
-      words.push({ text: pending.map((x) => x.text).join(' '), phones: all });
+      words.push({ text: pending.map((x) => x.text).join(' '), phones: all, ...wordFlags(tok, lang) });
       pending = [];
     }
   }

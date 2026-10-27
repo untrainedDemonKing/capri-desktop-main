@@ -275,7 +275,7 @@ export const LIFE_LINES = {
       },
       voice: {
         off: 'Молчит (только блипы)', chat: 'Читает ответы чата', all: 'Читает всё',
-        mute: 'Без звука', volume: 'Громкость', engine: 'Голосовой движок',
+        mute: 'Без звука', volume: 'Громкость', rate: 'Темп', pitch: 'Высота', soft: 'Мягкость', engine: 'Голосовой движок',
         engines: { system: 'Системный', capri: 'Её голос (свой)', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'Свой сервер' },
         setup: 'Ключ, адрес, голос…', test: 'Проверить голос',
         outH: 'Куда звучит звук',
@@ -559,7 +559,7 @@ export const LIFE_LINES = {
       },
       voice: {
         off: 'Silent (blips only)', chat: 'Reads her chat answers', all: 'Reads everything',
-        mute: 'Mute', volume: 'Volume', engine: 'Voice engine',
+        mute: 'Mute', volume: 'Volume', rate: 'Pace', pitch: 'Pitch', soft: 'Softness', engine: 'Voice engine',
         engines: { system: 'System', capri: 'Her own voice', openai: 'OpenAI', elevenlabs: 'ElevenLabs', custom: 'My server' },
         setup: 'Key, address, voice…', test: 'Test her voice',
         outH: 'Where the sound goes',

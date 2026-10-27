@@ -733,6 +733,9 @@ async function boot() {
       case 'setupVoice': // her menu › Voice › Key, address or voice
         setupVoice();
         break;
+      case 'tuneVoice': // her menu › Voice › a slider of her own voice was let go: she says a line with it
+        speech.say(lifeLines(brain.lang).voice.test, { mood: heart.state.mood, force: true });
+        break;
       case 'testVoice': // her menu › Voice › Test her voice
         if (capri.stowed) {
           host.setConfig({ visible: true });
