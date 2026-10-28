@@ -23,6 +23,58 @@ function killTree(proc, { platform = process.platform, spawn = cp.spawn } = {}) 
   }
 }
 
+// Ends `proc` and everything it started when `signal` fires (her "Stop"). Returns the function that lets go of the
+// signal once the program is over on its own.
+function killOnAbort(proc, signal, opts) {
+  if (!signal) return () => {};
+  const stop = () => killTree(proc, opts);
+  if (signal.aborted) {
+    stop();
+    return () => {};
+  }
+  signal.addEventListener('abort', stop, { once: true });
+  return () => signal.removeEventListener('abort', stop);
+}
+
+// A program run to its end, with what it prints passed on (onData(chunk)). Resolves { ok, code }, or
+// { ok: false, error } when it will not start, or { ok: false, cancelled: true } as soon as `signal` fires: then
+// the program and what it started are ended, and nobody waits for them to close their pipes.
+function runToEnd(file, args, { signal, onData, env, stdio, spawn = cp.spawn, platform } = {}) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve({ ok: false, cancelled: true });
+      return;
+    }
+    let child;
+    try {
+      child = spawn(file, args, { windowsHide: true, ...(env && { env }), ...(stdio && { stdio }) });
+    } catch (err) {
+      resolve({ ok: false, error: err.message });
+      return;
+    }
+    const unkill = killOnAbort(child, signal, { platform, spawn });
+    const stopped = () => resolve({ ok: false, cancelled: true });
+    signal?.addEventListener('abort', stopped, { once: true });
+    const letGo = () => {
+      unkill();
+      signal?.removeEventListener('abort', stopped);
+    };
+    if (onData) {
+      const hear = (chunk) => { if (!signal?.aborted) onData(chunk); }; // (what is said while it is being ended is not passed on)
+      child.stdout?.on('data', hear);
+      child.stderr?.on('data', hear);
+    }
+    child.on('error', (err) => {
+      letGo();
+      resolve({ ok: false, error: err.message });
+    });
+    child.on('close', (code) => {
+      letGo();
+      resolve({ ok: code === 0, code });
+    });
+  });
+}
+
 // Where a command is on the PATH (null: not there).
 function which(cmd, { platform = process.platform, execFile = cp.execFile } = {}) {
   return new Promise((resolve) => {
@@ -58,4 +110,4 @@ function runPython(python, args, { spawnSync = cp.spawnSync, timeout = 30000, cw
   }
 }
 
-module.exports = { killTree, which, foldersLike, runPython };
+module.exports = { killTree, killOnAbort, runToEnd, which, foldersLike, runPython };

@@ -1,7 +1,7 @@
 'use strict';
 
 // What her main menu (renderer/hub.html) may ask of her: how things stand, a preview of a choice, a key tried,
-// the choice applied, the report, how her mind was fitted to this PC, the recording she has as her voice, what is on this PC
+// the choice applied, the report, the folder everything is fetched into, how her mind was fitted to this PC, the recording she has as her voice, what is on this PC
 // because of her and taking it off. Nothing else of her is
 // reachable from that page.
 
@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('hub', {
   retry: () => ipcRenderer.invoke('hub:retry'),
   stop: () => ipcRenderer.invoke('hub:stop'),
   report: () => ipcRenderer.invoke('hub:report'),
+  folderChoose: () => ipcRenderer.invoke('hub:folderChoose'),
+  folderReset: () => ipcRenderer.invoke('hub:folderReset'),
+  folderOpen: () => ipcRenderer.invoke('hub:folderOpen'),
   inventory: () => ipcRenderer.invoke('hub:inventory'),
   remove: (id) => ipcRenderer.invoke('hub:remove', String(id)),
   removeAll: () => ipcRenderer.invoke('hub:removeAll'),

@@ -31,9 +31,9 @@ const CLOUD = [
 const VOICES = ['piper', 'chatterbox', 'system', 'openai', 'elevenlabs'];
 const MINDS = ['ollama', 'cloud', 'skip'];
 
-const SECTIONS = new Set(['manage']); // the places of the page a button elsewhere can open it at
+const SECTIONS = new Set(['manage', 'folder']); // the places of the page a button elsewhere can open it at
 
-function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config, updateConfig, lang, connect, saveVoiceKey, keyPages, voiceKeyPages = {}, cleanup = null, uninstall = null, mind = null, protocolUrl, onClosed }) {
+function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config, updateConfig, lang, connect, saveVoiceKey, keyPages, voiceKeyPages = {}, cleanup = null, uninstall = null, mind = null, folder = null, protocolUrl, onClosed }) {
   let win = null;
   let applied = false; // the button was pressed in this window: closing it is not "skip"
   let last = null; // the last look at the PC, for the previews (a look takes a second or two)
@@ -70,6 +70,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
       cloud: cloudState(cfg),
       voiceKeys: { openai: Boolean(cfg.apiKeys?.openai), elevenlabs: Boolean(cfg.apiKeys?.elevenlabs) },
       node: { auto: cfg.autoNode !== false },
+      folder: folder ? folder.info() : null,
       tune: mind ? mind.status() : null,
       current: { provider: cfg.provider, chatModel: cfg.chatModel, ttsEngine: cfg.ttsEngine || 'system', customUrl: cfg.customUrl || '' },
       snapshot: provision.snapshot(),
@@ -159,6 +160,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
   }
 
   provision.on('change', (snapshot) => send('hub:change', snapshot));
+  provision.on('finish', () => { last = null; }); // (what is on this PC is not what the last look said)
   // how her mind was fitted to this PC (tune.js), and fitting it again
   ipcMain.handle('hub:tune', () => (mind ? mind.status() : null));
   ipcMain.handle('hub:retune', async () => {
@@ -189,6 +191,14 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
     return true;
   });
   ipcMain.handle('hub:report', () => provision.report());
+  // the folder everything she fetches goes in (downloads.js): the place picked, put back, looked at
+  const placed = (res) => {
+    if (res.ok) last = null; // (the room on the disk is another one now: the next look at the PC is a new one)
+    return { ...res, folder: folder ? folder.info() : null };
+  };
+  ipcMain.handle('hub:folderChoose', async () => (folder ? placed(await folder.choose(win)) : { ok: false, error: 'missing' }));
+  ipcMain.handle('hub:folderReset', () => (folder ? placed(folder.reset()) : { ok: false, error: 'missing' }));
+  ipcMain.handle('hub:folderOpen', () => (folder ? folder.open() : ''));
   // what is on this PC because of her, and taking it off (cleanup.js)
   const inventory = async () => (cleanup ? cleanup.inventory({ fresh: true }) : { items: [], ollamaUp: true, total: 0, count: 0 });
   ipcMain.handle('hub:inventory', () => inventory());

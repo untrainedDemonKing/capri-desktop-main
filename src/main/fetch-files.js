@@ -54,7 +54,7 @@ async function download(url, dest, { onProgress, signal, fetchFn = (...a) => fet
 
 // Unpacks a .zip into `dest`: the central directory is read from the end of the file, each file is streamed out
 // (stored or deflated), a path that leaves `dest` is refused. Big archives are fine: nothing is read whole.
-async function unzip(file, dest, { onProgress } = {}) {
+async function unzip(file, dest, { onProgress, signal } = {}) {
   const root = path.resolve(dest);
   fs.mkdirSync(root, { recursive: true });
   const fd = await fs.promises.open(file, 'r');
@@ -87,6 +87,7 @@ async function unzip(file, dest, { onProgress } = {}) {
     const totalBytes = entries.reduce((n, e) => n + e.usize, 0);
     let done = 0;
     for (const e of entries) {
+      signal?.throwIfAborted();
       const target = path.resolve(root, e.name);
       if (target !== root && !target.startsWith(root + path.sep)) throw new Error(`the zip has a path outside its folder: ${e.name}`);
       if (e.name.endsWith('/')) {
@@ -102,8 +103,8 @@ async function unzip(file, dest, { onProgress } = {}) {
       await fd.read(head, 0, 30, e.offset);
       const start = e.offset + 30 + head.readUInt16LE(26) + head.readUInt16LE(28);
       const source = fs.createReadStream(file, { start, end: start + e.csize - 1 });
-      if (e.method === 8) await pipeline(source, zlib.createInflateRaw(), fs.createWriteStream(target));
-      else if (e.method === 0) await pipeline(source, fs.createWriteStream(target));
+      if (e.method === 8) await pipeline(source, zlib.createInflateRaw(), fs.createWriteStream(target), { signal });
+      else if (e.method === 0) await pipeline(source, fs.createWriteStream(target), { signal });
       else throw new Error(`the zip uses a compression she cannot open (${e.method}): ${e.name}`);
       done += e.usize;
       onProgress?.({ completed: done, total: totalBytes });
@@ -114,10 +115,10 @@ async function unzip(file, dest, { onProgress } = {}) {
 }
 
 // Unpacks a .tar.gz into `dest` (tar is on Linux, macOS and Windows 10)
-function untar(file, dest, { execFile = cp.execFile } = {}) {
+function untar(file, dest, { execFile = cp.execFile, signal } = {}) {
   fs.mkdirSync(dest, { recursive: true });
   return new Promise((resolve, reject) => {
-    execFile('tar', ['-xzf', file, '-C', dest], { windowsHide: true, timeout: 10 * 60 * 1000 }, (err, _out, stderr) => (
+    execFile('tar', ['-xzf', file, '-C', dest], { windowsHide: true, timeout: 10 * 60 * 1000, signal }, (err, _out, stderr) => (
       err ? reject(new Error(`tar could not unpack ${path.basename(file)}: ${String(stderr || err.message).slice(0, 200)}`)) : resolve()));
   });
 }

@@ -34,6 +34,7 @@ h1 { margin: 0 0 4px; font: 700 21px/1.15 'Chakra Petch', 'JetBrains Mono', sans
 .group { background: var(--ink-2); border-left: 4px solid var(--violet); padding: 12px 14px 10px; box-shadow: 5px 5px 0 oklch(0.1 0.03 300); }
 .group[data-state='done'] { border-left-color: var(--green); }
 .group[data-state='failed'] { border-left-color: var(--red); }
+.group[data-state='stopped'] { border-left-color: var(--amber); }
 .group__title { margin: 0 0 8px; font: 700 13px/1.2 'Chakra Petch', 'JetBrains Mono', sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper); display: flex; justify-content: space-between; }
 .group__tag { font: 600 11px/1.2 'JetBrains Mono', monospace; letter-spacing: 0; text-transform: none; color: var(--dim); }
 
@@ -59,6 +60,7 @@ h1 { margin: 0 0 4px; font: 700 21px/1.15 'Chakra Petch', 'JetBrains Mono', sans
 .step[data-state='done'] .step__icon { background: var(--green); }
 .step[data-state='failed'] .step__icon { background: var(--red); color: var(--paper); }
 .step[data-state='skipped'] .step__icon { background: transparent; color: var(--dim); }
+.step[data-state='stopped'] .step__icon { background: var(--amber); font-size: 9px; }
 .step__name { font-weight: 600; }
 .step[data-state='pending'] .step__name { color: var(--dim); font-weight: 400; }
 .step__detail { color: var(--dim); font-size: 12px; word-break: break-word; }

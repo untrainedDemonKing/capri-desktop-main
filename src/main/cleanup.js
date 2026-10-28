@@ -3,7 +3,8 @@
 // Taking off what she put on this PC. A list of it with what each takes on the disk, one at a time (a model, her
 // voice, Ollama...), or all of it, so that the room it took is free again. She only touches what is hers:
 //
-// - what lies in her own data folder (the Piper and Chatterbox folders, her Node.js, a zipped Ollama) is hers;
+// - what lies in her own data folder, or in the "Capri" folder you picked for what she fetches (downloads.js: one with
+//   her mark in it), is hers: the Piper and Chatterbox folders, her Node.js, a zipped Ollama;
 // - what she installed in the usual way (Ollama, Python), and the models she pulled into Ollama, she wrote down at
 //   the time (installed.js): those she takes off;
 // - a folder you put next to her, an Ollama you installed yourself, models you pulled: not hers. They are shown
@@ -15,16 +16,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const cp = require('node:child_process');
+const { inside, underMark, MARK, TEMP } = require('./downloads');
 
 const OLLAMA_ID = 'Ollama.Ollama';
 const PYTHON_ID = 'Python.Python.3.11';
-
-// is `child` somewhere under `parent`? (never `parent` itself)
-function inside(parent, child) {
-  if (!parent || !child) return false;
-  const rel = path.relative(path.resolve(parent), path.resolve(child));
-  return Boolean(rel) && !rel.startsWith('..') && !path.isAbsolute(rel);
-}
 
 // How many bytes a folder (or a file) takes, counted without blocking her for long: it stops counting after
 // `budgetMs` and says so ({ bytes, partial }).
@@ -99,12 +94,18 @@ class Cleanup {
     return names.filter((n) => /^models--ResembleAI--/i.test(n)).map((n) => path.join(hub, n));
   }
 
+  // Is it hers to take off? It lies under her data folder, or under a folder that was made for her (downloads.js: the
+  // mark in it), also one that is not the folder in her settings any more.
+  mine(target) {
+    return inside(this.d.userData, target) || underMark(target, { fsx: this.d.fsx });
+  }
+
   ollamaPlace() {
     const cfg = this.d.cfg();
     const man = this.d.installed.get();
-    const { userData, fsx, platform, env, home } = this.d;
+    const { fsx, platform, env, home } = this.d;
     const named = String(cfg.ollamaDir || '').trim();
-    if (named && inside(userData, named) && fsx.existsSync(named)) return { dir: named, ours: true, how: 'zip' };
+    if (named && this.mine(named) && fsx.existsSync(named)) return { dir: named, ours: true, how: 'zip' };
     if (man.ollama && (man.ollama.how === 'winget' || man.ollama.how === 'installer') && platform === 'win32') {
       const dir = path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Programs', 'Ollama');
       if (fsx.existsSync(dir)) return { dir, ours: true, how: man.ollama.how };
@@ -115,30 +116,33 @@ class Cleanup {
 
   // Does the Ollama in her folder keep its models there too? Then all of them are hers and go with it.
   modelsInHerFolder(place = this.ollamaPlace()) {
-    return Boolean(place?.ours && place.how === 'zip' && inside(this.d.userData, this.d.ollamaHost?.status?.().modelsDir || ''));
+    return Boolean(place?.ours && place.how === 'zip' && this.mine(this.d.ollamaHost?.status?.().modelsDir || ''));
   }
 
   piperPlace() {
-    const { userData, fsx } = this.d;
+    const { fsx } = this.d;
     const dir = this.d.piper?.defaultDir?.();
-    if (dir && inside(userData, dir) && fsx.existsSync(dir)) return { dir, ours: true };
+    if (dir && this.mine(dir) && fsx.existsSync(dir)) return { dir, ours: true };
     const named = String(this.d.cfg().piperDir || '').trim();
-    return named && fsx.existsSync(named) ? { dir: named, ours: false } : null;
+    return named && fsx.existsSync(named) ? { dir: named, ours: this.mine(named) } : null;
   }
 
   chatterboxPlace() {
-    const { userData, fsx } = this.d;
+    const { fsx } = this.d;
     const named = String(this.d.cfg().chatterboxDir || '').trim();
     if (!named || !fsx.existsSync(named)) return null;
-    return { dir: named, ours: inside(userData, named) };
+    return { dir: named, ours: this.mine(named) };
   }
 
   nodePlace() {
     const { userData, fsx } = this.d;
     const man = this.d.installed.get();
-    const dir = path.join(userData, 'node');
-    if (fsx.existsSync(dir)) return { dir, ours: true };
-    if (man.node?.dir && inside(userData, man.node.dir) && fsx.existsSync(man.node.dir)) return { dir: man.node.dir, ours: true };
+    const picked = String(this.d.cfg().dataDir || '').trim();
+    for (const base of [picked, userData]) {
+      const dir = base && path.join(base, 'node');
+      if (dir && fsx.existsSync(dir) && (base === userData || this.mine(dir))) return { dir, ours: true };
+    }
+    if (man.node?.dir && this.mine(man.node.dir) && fsx.existsSync(man.node.dir)) return { dir: man.node.dir, ours: true };
     return null;
   }
 
@@ -193,7 +197,7 @@ class Cleanup {
 
   // a folder of hers: gone, with what is in it (never anything outside her data folder)
   async removeDir(dir) {
-    if (!inside(this.d.userData, dir)) throw new Error(`not hers to remove: ${dir}`);
+    if (!this.mine(dir)) throw new Error(`not hers to remove: ${dir}`);
     await wait(this.d.settle); // (what was stopped lets go of its files)
     try {
       this.d.fsx.rmSync(dir, { recursive: true, force: true, maxRetries: 6, retryDelay: 400 });
@@ -352,6 +356,21 @@ class Cleanup {
     }
   }
 
+  // The Capri folder you picked, when nothing else is left in it (her mark and the work folder only): it goes too, so
+  // that no empty folder is left on the disk. It is made again when she fetches something again.
+  removeEmptyRoot() {
+    const { fsx } = this.d;
+    const root = String(this.d.cfg().dataDir || '').trim();
+    try {
+      if (!root || !fsx.existsSync(path.join(root, MARK))) return false;
+      if (fsx.readdirSync(root).some((n) => n !== MARK && n !== TEMP)) return false;
+      fsx.rmSync(root, { recursive: true, force: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // Everything that is hers, in an order that works (what needs Python or Ollama before them). Models she did not
   // pull and folders you put next to her stay. Resolves { ok, freed, removed: [id], failed: [{ id, error }], left }
   async removeAll() {
@@ -376,6 +395,7 @@ class Cleanup {
           failed.push({ id: item.id, error: String(err.message || err).slice(0, 300) });
         }
       }
+      if (!failed.length) this.removeEmptyRoot();
       return { ok: failed.length === 0, freed, removed, failed, left: items.filter((i) => !i.ours).map((i) => i.id) };
     } finally {
       this.seen = null;

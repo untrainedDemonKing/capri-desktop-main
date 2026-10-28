@@ -12,6 +12,7 @@ const { spawn, execFile } = require('node:child_process');
 const { safeStorage } = require('electron');
 const ollama = require('./ollama');
 const { download, extract } = require('./fetch-files');
+const { runToEnd } = require('./proc');
 
 const WIN = process.platform === 'win32';
 
@@ -53,22 +54,17 @@ async function ollamaState() {
   return { running: false, installed: fs.existsSync(ollamaFiles().cli) || Boolean(onPath), models: null, winget: Boolean(winget) };
 }
 
-// Installs something with winget (Windows' own package manager); onLine(text) for what it prints.
-function wingetInstall(id, onLine) {
-  return new Promise((resolve) => {
-    const child = spawn('winget', [
-      'install', '--id', id, '--exact', '--silent',
-      '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity',
-    ], { windowsHide: true });
-    // its progress bars redraw with \r: the last state of each line is enough
-    const read = (chunk) => String(chunk).split(/[\r\n]+/).map((l) => l.trim()).filter((l) => /[a-z]{3}/i.test(l)).forEach((l) => onLine?.(l));
-    child.stdout.on('data', read);
-    child.stderr.on('data', read);
-    child.on('error', (err) => resolve({ ok: false, error: err.message }));
-    child.on('close', (code) => resolve({ ok: code === 0, code }));
-  });
+// Installs something with winget (Windows' own package manager); onLine(text) for what it prints. `signal`: her "Stop"
+// ends winget and the installer it started at once.
+function wingetInstall(id, onLine, signal, { spawnFn = spawn } = {}) {
+  // its progress bars redraw with \r: the last state of each line is enough
+  const read = (chunk) => String(chunk).split(/[\r\n]+/).map((l) => l.trim()).filter((l) => /[a-z]{3}/i.test(l)).forEach((l) => onLine?.(l));
+  return runToEnd('winget', [
+    'install', '--id', id, '--exact', '--silent',
+    '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity',
+  ], { signal, onData: read, spawn: spawnFn });
 }
-const installOllama = (onLine) => wingetInstall('Ollama.Ollama', onLine);
+const installOllama = (onLine, signal) => wingetInstall('Ollama.Ollama', onLine, signal);
 
 // Python's own installer, if you put one next to her (python-3.11.9-amd64.exe from python.org): for a PC with no
 // winget or no internet. A few folders are looked in: `roots` and a `python` or `installers` folder in each.
@@ -92,61 +88,66 @@ function findPythonInstaller(roots = [], { fsx = fs } = {}) {
 }
 
 // Python: the installer next to her if there is one (silent, for you only, on the PATH), else winget
-function installPython(onLine, roots = []) {
+function installPython(onLine, roots = [], signal, { spawnFn = spawn } = {}) {
   const file = findPythonInstaller(roots);
-  if (!file || !WIN) return wingetInstall('Python.Python.3.11', onLine);
-  return new Promise((resolve) => {
-    onLine?.(path.basename(file));
-    const child = spawn(file, ['/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_test=0', 'Include_launcher=1'], { windowsHide: true, stdio: 'ignore' });
-    child.on('error', (err) => resolve({ ok: false, error: err.message }));
-    child.on('close', (code) => resolve({ ok: code === 0, code }));
-  });
+  if (!file || !WIN) return wingetInstall('Python.Python.3.11', onLine, signal, { spawnFn });
+  onLine?.(path.basename(file));
+  return runToEnd(file, ['/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_test=0', 'Include_launcher=1'], { signal, stdio: 'ignore', spawn: spawnFn });
 }
 
-// Ollama's own installer, downloaded and run silently (for a Windows with no winget). onLine(text): how far.
-async function downloadOllama(onLine) {
+// Ollama's own installer, downloaded (into `tmp`) and run silently (for a Windows with no winget). onLine(text): how
+// far. `signal`: "Stop" ends the download, or the installer.
+async function downloadOllama(onLine, signal, { tmp = os.tmpdir(), spawnFn = spawn } = {}) {
   if (!WIN) return { ok: false, error: 'Windows only' };
-  const file = path.join(os.tmpdir(), 'OllamaSetup.exe');
+  const file = path.join(tmp, `capri-OllamaSetup-${process.pid}.exe`);
   try {
-    const res = await fetch('https://ollama.com/download/OllamaSetup.exe', { redirect: 'follow' });
+    fs.mkdirSync(tmp, { recursive: true });
+    const res = await fetch('https://ollama.com/download/OllamaSetup.exe', { redirect: 'follow', signal });
     if (!res.ok || !res.body) return { ok: false, error: `the download answered ${res.status}` };
     const total = Number(res.headers.get('content-length')) || 0;
     const out = fs.createWriteStream(file);
     let got = 0;
     let shown = 0;
-    for await (const chunk of res.body) {
-      out.write(chunk);
-      got += chunk.length;
-      if (total && got - shown > total / 50) {
-        shown = got;
-        onLine?.(`${Math.round((got / total) * 100)}%`);
+    try {
+      for await (const chunk of res.body) {
+        out.write(chunk);
+        got += chunk.length;
+        if (total && got - shown > total / 50) {
+          shown = got;
+          onLine?.(`${Math.round((got / total) * 100)}%`);
+        }
       }
+    } finally {
+      await new Promise((resolve) => out.end(resolve));
     }
-    await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
   } catch (err) {
-    return { ok: false, error: err.message };
+    fs.rmSync(file, { force: true });
+    return signal?.aborted ? { ok: false, cancelled: true } : { ok: false, error: err.message };
   }
-  return new Promise((resolve) => {
-    const child = spawn(file, ['/SILENT', '/NORESTART'], { windowsHide: true, stdio: 'ignore' });
-    child.on('error', (err) => resolve({ ok: false, error: err.message }));
-    child.on('close', (code) => resolve({ ok: code === 0, code }));
-  });
+  try {
+    return await runToEnd(file, ['/SILENT', '/NORESTART'], { signal, stdio: 'ignore', spawn: spawnFn });
+  } finally {
+    fs.rmSync(file, { force: true }); // (not left behind in the folder she was given: it is a gigabyte)
+  }
 }
 
 // Ollama's zip (from its releases on GitHub: the program and its libraries, no installer, no administrator, no
 // winget) unpacked into `dir`. For a Windows where neither of the above worked. Resolves { ok, dir }.
-async function downloadOllamaZip(dir, onLine, signal) {
+async function downloadOllamaZip(dir, onLine, signal, { tmp = os.tmpdir() } = {}) {
   if (!WIN) return { ok: false, error: 'Windows only' };
   const arm = process.env.PROCESSOR_ARCHITECTURE === 'ARM64' || process.env.PROCESSOR_ARCHITEW6432 === 'ARM64';
-  const file = path.join(os.tmpdir(), `capri-ollama-${process.pid}.zip`);
+  const file = path.join(tmp, `capri-ollama-${process.pid}.zip`);
+  const existed = fs.existsSync(dir);
   try {
+    fs.mkdirSync(tmp, { recursive: true });
     await download(`https://github.com/ollama/ollama/releases/latest/download/ollama-windows-${arm ? 'arm64' : 'amd64'}.zip`, file, {
       signal, onProgress: ({ completed, total }) => onLine?.(total ? `${Math.round((completed / total) * 100)}%` : `${Math.round(completed / 1048576)} MB`),
     });
     onLine?.('…');
-    await extract(file, dir);
+    await extract(file, dir, { signal });
   } catch (err) {
-    return { ok: false, error: err.message };
+    if (!existed) fs.rmSync(dir, { recursive: true, force: true }); // (what was unpacked so far is not a program)
+    return signal?.aborted ? { ok: false, cancelled: true } : { ok: false, error: err.message };
   } finally {
     fs.rmSync(file, { force: true });
   }
@@ -202,5 +203,5 @@ function openKey(stored) {
 const openKeys = (apiKeys = {}) => Object.fromEntries(Object.entries(apiKeys).map(([id, v]) => [id, openKey(v)]));
 
 module.exports = {
-  MODELS, KEY_PAGES, ollamaState, installOllama, installPython, findPythonInstaller, downloadOllama, downloadOllamaZip, startOllama, pullModel, launchThroughOllama, sealKey, openKeys,
+  MODELS, KEY_PAGES, ollamaState, wingetInstall, installOllama, installPython, findPythonInstaller, downloadOllama, downloadOllamaZip, startOllama, pullModel, launchThroughOllama, sealKey, openKeys,
 };

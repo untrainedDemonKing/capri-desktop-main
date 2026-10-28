@@ -26,7 +26,7 @@ class FakeWindow extends EventEmitter {
   close() { this.destroyed = true; this.emit('closed'); }
 }
 
-function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', threads: 8 }, disk: { path: '', free: 200 * GB, total: 500 * GB } }), have = { ollama: false, models: [], chatterbox: false, piper: false }, cfg = {}, connect, cleanup, uninstall, mind } = {}) {
+function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', threads: 8 }, disk: { path: '', free: 200 * GB, total: 500 * GB } }), have = { ollama: false, models: [], chatterbox: false, piper: false }, cfg = {}, connect, cleanup, uninstall, mind, folder } = {}) {
   const handlers = new Map();
   const listeners = new Map();
   const ipcMain = { handle: (c, fn) => handlers.set(c, fn), on: (c, fn) => listeners.set(c, fn) };
@@ -51,7 +51,7 @@ function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', t
     saveVoiceKey: ({ engine, key }) => { updateConfig({ ttsEngine: engine, apiKeys: { ...config.value.apiKeys, [engine]: `enc:${key}` } }); return { ok: true }; },
     keyPages: { groq: 'https://console.groq.com/keys', gemini: 'https://aistudio.google.com/apikey' },
     voiceKeyPages: { openai: 'https://platform.openai.com/api-keys' },
-    cleanup, uninstall, mind,
+    cleanup, uninstall, mind, folder,
     protocolUrl: 'capri://app/src/renderer/hub.html',
   });
   return { hub, handlers, listeners, config, updates, prov, opened, clipboard, call: (c, ...a) => handlers.get(c)({}, ...a), fire: (c, ...a) => listeners.get(c)({}, ...a) };
@@ -273,6 +273,8 @@ test('her menu\'s "More" tab opens the main menu at the part about what is on th
   const before = win.sent.length;
   w.fire('hub:show', 'somewhere else');
   assert.equal(win.sent.length, before, 'a place she does not know is ignored');
+  w.fire('hub:show', 'folder');
+  assert.deepEqual(win.sent.pop(), ['hub:focus', 'folder'], 'and at the folder everything is fetched into');
   const plain = world();
   plain.fire('hub:show');
   assert.equal(FakeWindow.last.url, 'capri://app/src/renderer/hub.html');
@@ -348,4 +350,43 @@ test('the words of her main menu and of her preparation: Russian and English hav
       assert.equal(blanks(LINES.ru[key]), blanks(LINES.en[key]), `${mod}: ${key} has the same blanks in both languages`);
     }
   }
+});
+
+test('the folder everything is fetched into: told to the page, picked, put back; the look at the PC is made again after (the room on the disk is another)', async () => {
+  const calls = [];
+  const info = { dir: 'D:\\Capri', custom: true, standard: 'C:\\Users\\x\\AppData\\Roaming\\Capri', free: 123 * GB };
+  const folder = {
+    info: () => info,
+    choose: async (win) => { calls.push(['choose', Boolean(win)]); return { ok: true, ...info }; },
+    reset: () => { calls.push(['reset']); return { ok: true, ...info, custom: false }; },
+    open: () => { calls.push(['open']); return ''; },
+  };
+  const w = world({ folder });
+  const st = await w.call('hub:state');
+  assert.deepEqual(st.folder, info);
+  const before = w.prov.previews;
+  const picked = await w.call('hub:folderChoose');
+  assert.equal(picked.ok, true);
+  assert.deepEqual(picked.folder, info, 'the page is told how it stands now');
+  await w.call('hub:state');
+  assert.equal(w.prov.previews, before + 1, 'the PC is looked at again');
+  const back = await w.call('hub:folderReset');
+  assert.equal(back.ok, true);
+  await w.call('hub:folderOpen');
+  assert.deepEqual(calls.map((c) => c[0]), ['choose', 'reset', 'open']);
+  // without it (an older set-up of her): nothing to show and nothing to do
+  const none = world();
+  assert.equal((await none.call('hub:state')).folder, null);
+  assert.deepEqual(await none.call('hub:folderChoose'), { ok: false, error: 'missing' });
+});
+
+test('what a run leaves behind is looked at again: the look at the PC is dropped when a preparation finishes', async () => {
+  const w = world();
+  await w.call('hub:state');
+  const n = w.prov.previews;
+  await w.call('hub:state');
+  assert.equal(w.prov.previews, n, 'a look a moment ago is reused');
+  w.prov.emit('finish', { ok: true });
+  await w.call('hub:state');
+  assert.equal(w.prov.previews, n + 1);
 });

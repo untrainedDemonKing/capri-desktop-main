@@ -457,6 +457,29 @@
     }
   }
 
+  // ---- the folder everything is fetched into (downloads.js) ----
+
+  function renderFolder(said = '', bad = false) {
+    const f = data.folder;
+    $('folder').hidden = !f;
+    if (!f) return;
+    $('folderPath').textContent = fill(f.custom ? ui.folderNow : ui.folderNowDefault, { dir: f.dir });
+    $('folderFree').textContent = f.free ? fill(ui.folderFree, { size: fmtBytes(f.free) }) : '';
+    $('folderReset').hidden = !f.custom;
+    for (const id of ['folderChoose', 'folderReset']) $(id).disabled = running() || working;
+    const out = $('folderResult');
+    out.textContent = said;
+    out.dataset.kind = said ? (bad ? 'bad' : 'ok') : '';
+  }
+
+  // the answer to picking the place (or putting the default back): the folder as it is now, and the plan counted again for the disk it is on
+  async function folderChanged(res, doneLine) {
+    if (res.error === 'canceled') return;
+    if (res.folder) data.folder = res.folder;
+    renderFolder(res.ok ? fill(doneLine, { dir: res.folder?.dir || '' }) : ui[`folderErr-${res.error}`] || ui['folderErr-missing'], !res.ok);
+    if (res.ok) await refreshPlan();
+  }
+
   // ---- how it is going ----
 
   let drawnRunning = false;
@@ -469,9 +492,13 @@
     if (shown) renderGroups(snap, groups, { ui, actions: ACTIONS, open, toggle: toggleLog });
     else groups.replaceChildren();
     const failed = shown && snap.steps.some((s) => s.state === 'failed');
+    const stopped = shown && !running() && snap.cancelled === true;
     const summary = $('summary');
     if (running()) {
-      summary.textContent = ui.installing;
+      summary.textContent = snap.stopping ? ui.stopping : ui.installing;
+      summary.dataset.kind = '';
+    } else if (stopped) {
+      summary.textContent = ui.stoppedAll;
       summary.dataset.kind = '';
     } else if (shown && snap.finished && snap.ok) {
       summary.textContent = groups.children.length ? ui.allDone : ui.savedNothing;
@@ -484,7 +511,10 @@
       summary.dataset.kind = '';
     }
     $('stop').hidden = !running();
-    $('retry').hidden = running() || !failed;
+    if (data?.folder) for (const id of ['folderChoose', 'folderReset']) $(id).disabled = running() || working; // (the place is not changed while something is fetched)
+    $('stop').disabled = snap.stopping === true; // (pressed: it is being stopped, and it says so)
+    $('stop').textContent = snap.stopping ? ui.stopping : ui.stop;
+    $('retry').hidden = running() || !(failed || stopped);
     $('skip').hidden = applied;
     // while it works, the choices are not to be changed
     for (const id of ['mindChoices', 'voiceChoices', 'models']) for (const input of $(id).querySelectorAll('input')) input.disabled = running();
@@ -598,6 +628,7 @@
     renderVoiceKey();
     showPanels();
     renderTune();
+    renderFolder();
     window.hub.sample().then((st) => renderSample(st)).catch(() => {});
     snap = data.snapshot;
     renderProgress();
@@ -647,6 +678,11 @@
     $('sampleRemove').textContent = ui.sampleRemove;
     numbered($('manageTitle'), ui.manageTitle);
     $('manageSub').textContent = ui.manageSub;
+    $('folderTitle').textContent = ui.folderTitle;
+    $('folderNote').textContent = `${ui.folderNote} ${ui.folderStays} ${ui.folderStaysOllama}`;
+    $('folderChoose').textContent = ui.folderChoose;
+    $('folderOpen').textContent = ui.folderOpen;
+    $('folderReset').textContent = ui.folderReset;
     $('nodeLabel').textContent = ui.nodeLabel;
     $('nodeWhat').textContent = ui.nodeWhat;
     $('nodeBox').addEventListener('change', (e) => { sel.node = e.target.checked; refreshPlan(); });
@@ -669,6 +705,9 @@
       renderProgress();
     });
     $('retune').addEventListener('click', retune);
+    $('folderChoose').addEventListener('click', async () => folderChanged(await window.hub.folderChoose().catch(() => ({ ok: false, error: 'missing' })), ui.folderSet));
+    $('folderReset').addEventListener('click', async () => folderChanged(await window.hub.folderReset().catch(() => ({ ok: false, error: 'missing' })), ui.folderResetDone));
+    $('folderOpen').addEventListener('click', () => window.hub.folderOpen());
     $('sampleChoose').addEventListener('click', chooseSample);
     $('sampleRemove').addEventListener('click', async () => renderSample(await window.hub.sampleRemove()));
     window.hub.onTune((next) => {
@@ -676,7 +715,11 @@
       data.tune = next;
       renderTune();
     });
-    $('stop').addEventListener('click', () => window.hub.stop());
+    $('stop').addEventListener('click', () => {
+      $('stop').disabled = true; // (at once, before the answer: it was pressed)
+      $('stop').textContent = ui.stopping;
+      window.hub.stop();
+    });
     $('retry').addEventListener('click', () => window.hub.retry());
     $('skip').addEventListener('click', () => window.hub.skip());
     $('close').addEventListener('click', () => window.hub.close());
@@ -695,18 +738,19 @@
       snap = next;
       renderProgress();
       // (a fetch finished: what is there now is what the next look says)
-      if (was && !next.running) window.hub.state().then((fresh) => { data.have = fresh.have; data.models = fresh.models; data.cloud = fresh.cloud; buildModels(); renderOllamaLine(); refreshPlan(); });
+      if (was && !next.running) window.hub.state().then((fresh) => { data.have = fresh.have; data.models = fresh.models; data.cloud = fresh.cloud; data.folder = fresh.folder; renderFolder(); buildModels(); renderOllamaLine(); refreshPlan(); });
     });
     // a button elsewhere (her menu's "More" tab) opens the page at the part about what is on this PC
     const goTo = (section) => {
-      if (section !== 'manage') return;
-      $('manage').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      $('manage').dataset.flash = 'true';
-      setTimeout(() => { $('manage').dataset.flash = 'false'; }, 1800);
+      const card = section === 'folder' ? $('install') : section === 'manage' ? $('manage') : null;
+      if (!card) return;
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      card.dataset.flash = 'true';
+      setTimeout(() => { card.dataset.flash = 'false'; }, 1800);
     };
     window.hub.onFocus(goTo);
     await load(first);
-    if (location.hash === '#manage') goTo('manage');
+    if (location.hash === '#manage' || location.hash === '#folder') goTo(location.hash.slice(1));
   }
   init();
 })();

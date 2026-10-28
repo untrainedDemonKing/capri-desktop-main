@@ -31,6 +31,7 @@ const tuner = require('./tune');
 const { createSample } = require('./voice-sample');
 const { Provision } = require('./provision');
 const { createInstalled } = require('./installed');
+const { createFolder } = require('./downloads');
 const { Cleanup } = require('./cleanup');
 const nodeCheck = require('./node-check');
 const { createPrepare } = require('./prepare');
@@ -56,10 +57,33 @@ const THEMES = ['classic', 'netrunner', 'toxic', 'violet', 'gold', 'sakura', 'gh
 const TTS_KEYS = { openai: 'openai', elevenlabs: 'elevenlabs', custom: 'tts' };
 // her voice (Chatterbox) and her mind (Ollama), models on this PC: she finds their folders next to her, starts
 // them, keeps them, and gets them ready when something is missing (provision.js, shown by prepare.js)
+// where everything she fetches goes (downloads.js): the Capri folder you picked in her main menu, else her data folder
+let somethingRunning = () => false; // (said below, where what fetches and what takes off are made: the place is not changed meanwhile)
+const folder = createFolder({
+  cfg: () => config.load(),
+  save: (patch) => updateConfig(patch),
+  userData: app.getPath('userData'),
+  pickDir: async (parent, startAt) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(parent && !parent.isDestroyed() ? parent : undefined, {
+      title: 'Capri', properties: ['openDirectory', 'createDirectory'], defaultPath: startAt || app.getPath('home'),
+    });
+    return canceled || !filePaths[0] ? null : filePaths[0];
+  },
+  openPath: (dir) => shell.openPath(dir),
+  appDirs: [path.dirname(process.execPath), process.resourcesPath].filter(Boolean),
+  diskOf: (dir) => hardware.diskOf(dir),
+  busy: () => somethingRunning(),
+  // Piper is looked for in the folder in use, nowhere else: the one she fetched before stays found by being named in her settings
+  leaving: (oldRoot) => {
+    const there = path.join(oldRoot, 'piper');
+    if (!String(config.load().piperDir || '').trim() && fs.existsSync(there)) updateConfig({ piperDir: there });
+  },
+});
 const placesNextToHer = () => {
-  // next to her first (her folder, the one she was started from), then the places a folder gets put
+  // next to her first (her folder, the one she was started from), then the places a folder gets put; the Capri folder
+  // you picked is one too (what is there from an earlier time is found again)
   const place = (name) => { try { return app.getPath(name); } catch { return ''; } };
-  return [path.dirname(process.execPath), ROOT, path.resolve(ROOT, '..'), process.env.PORTABLE_EXECUTABLE_DIR, process.cwd(), place('desktop'), place('downloads'), place('documents'), place('home')]
+  return [path.dirname(process.execPath), folder.custom() && folder.root(), ROOT, path.resolve(ROOT, '..'), process.env.PORTABLE_EXECUTABLE_DIR, process.cwd(), place('desktop'), place('downloads'), place('documents'), place('home')]
     .filter(Boolean).filter((p, i, all) => all.indexOf(p) === i);
 };
 let overlay = null; // her window
@@ -73,7 +97,7 @@ const ollamaHost = new OllamaHost({ roots: placesNextToHer });
 ollamaHost.on('change', (status) => toOverlay('ollama:status', status));
 const piper = new Piper({
   roots: placesNextToHer,
-  defaultDir: () => path.join(app.getPath('userData'), 'piper'),
+  defaultDir: () => folder.sub('piper'),
   is64: hardware.systemIs64(),
 });
 piper.on('change', (status) => toOverlay('piper:status', status));
@@ -81,7 +105,7 @@ piper.on('change', (status) => toOverlay('piper:status', status));
 // not change), unless she is asked to look again; the free space of the disk is measured every time.
 const LOOK_KEEPS = 14 * 24 * 3600 * 1000;
 async function lookAtPc({ force = false } = {}) {
-  const dir = app.getPath('userData');
+  const dir = folder.root(); // (the free room is the room of the disk her things go to)
   const fingerprint = `v1|${os.totalmem()}|${process.arch}|${os.release()}`; // (v: the shape of what is kept)
   const kept = config.load().hardwareCache;
   if (!force && kept && kept.key === fingerprint && Date.now() - kept.at < LOOK_KEEPS && kept.hw?.os) return { ...kept.hw, disk: hardware.diskOf(dir) };
@@ -101,12 +125,16 @@ const provision = new Provision({
   piper,
   ollamaApi: { models: () => ollama.models(), pull: (name, onProgress, signal) => ollama.pull(name, onProgress, signal) },
   installOllama: process.platform === 'win32' ? setup.installOllama : null,
-  downloadOllama: process.platform === 'win32' ? setup.downloadOllama : null,
-  downloadOllamaZip: process.platform === 'win32' ? (onLine, signal) => setup.downloadOllamaZip(path.join(app.getPath('userData'), 'ollama'), onLine, signal) : null,
-  installPython: process.platform === 'win32' ? (onLine) => setup.installPython(onLine, placesNextToHer()) : null,
+  downloadOllama: process.platform === 'win32' ? (onLine, signal) => setup.downloadOllama(onLine, signal, { tmp: folder.temp() || os.tmpdir() }) : null,
+  downloadOllamaZip: process.platform === 'win32' ? (onLine, signal) => setup.downloadOllamaZip(folder.sub('ollama'), onLine, signal, { tmp: folder.temp() || os.tmpdir() }) : null,
+  installPython: process.platform === 'win32' ? (onLine, signal) => setup.installPython(onLine, placesNextToHer(), signal) : null,
   roots: placesNextToHer,
-  defaultDir: () => path.join(app.getPath('userData'), 'chatterbox'),
-  nodeDir: () => path.join(app.getPath('userData'), 'node'),
+  defaultDir: () => folder.sub('chatterbox'),
+  nodeDir: () => folder.sub('node'),
+  tempDir: () => folder.temp(),
+  cleanTemp: () => folder.cleanTemp(),
+  ensureRoot: () => folder.ensure(),
+  preferZip: () => folder.custom(), // (a folder picked for everything: Ollama comes into it, as the zip, before the ways that put it elsewhere)
   hardware: lookAtPc,
   // what the profile of this PC says about how she asks Ollama, and how Ollama is started
   tune: (tuning, profileId) => setProfileTuning(tuning, profileId),
@@ -114,6 +142,7 @@ const provision = new Provision({
 });
 // Taking off what she put on this PC (cleanup.js), made once the app is ready
 let cleanupTool = null;
+somethingRunning = () => Boolean(provision.running || cleanupTool?.busy);
 const theCleanup = () => (cleanupTool ||= new Cleanup({
   userData: app.getPath('userData'),
   home: app.getPath('home'),
@@ -1508,6 +1537,7 @@ function main() {
       cleanup: theCleanup(),
       uninstall: uninstallCapri,
       mind: { status: tuneStatus, measure: () => tuneMind({ force: true }) },
+      folder,
       protocolUrl: 'capri://app/src/renderer/hub.html',
       onClosed: () => rebuildTray(),
     });

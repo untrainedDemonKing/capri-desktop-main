@@ -82,6 +82,18 @@
     <section id="install" class="card" aria-labelledby="installTitle">
       <h2 id="installTitle" class="card__title"></h2>
       <p id="installSub" class="card__sub"></p>
+      <div id="folder" class="panel folder" hidden>
+        <h3 id="folderTitle" class="panel__title"></h3>
+        <p id="folderNote" class="panel__line"></p>
+        <p id="folderPath" class="folder__path"></p>
+        <p id="folderFree" class="panel__line"></p>
+        <div class="folder__btns">
+          <button id="folderChoose" type="button" class="btn btn--small"></button>
+          <button id="folderOpen" type="button" class="btn btn--small"></button>
+          <button id="folderReset" type="button" class="btn btn--small" hidden></button>
+        </div>
+        <p id="folderResult" class="keybox__result" role="status" aria-live="polite"></p>
+      </div>
       <label class="check" for="nodeBox"><input id="nodeBox" type="checkbox"> <span id="nodeLabel"></span></label>
       <p id="nodeWhat" class="check__what"></p>
       <table id="plan" class="plan"><tbody></tbody></table>

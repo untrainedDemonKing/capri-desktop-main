@@ -54,16 +54,16 @@ function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provi
   // what happens in the preparation shows on the window, and opens it when it matters
   provision.on('change', (snap) => {
     send('prepare:change', snap);
-    if (snap.attention && !win && !dismissed && config.load().prepareWindow !== false && !isHubOpen?.()) show(); // (her main menu shows it itself)
+    if (snap.attention && !snap.cancelled && !win && !dismissed && config.load().prepareWindow !== false && !isHubOpen?.()) show(); // (her main menu shows it itself; and one that was stopped is not to be shown again)
   });
-  provision.on('finish', ({ ok, attention }) => {
+  provision.on('finish', ({ ok, attention, cancelled }) => {
     send('prepare:change', provision.snapshot());
-    if (!ok && attention && !win && config.load().prepareWindow !== false && !isHubOpen?.()) show();
+    if (!ok && !cancelled && attention && !win && config.load().prepareWindow !== false && !isHubOpen?.()) show();
     if (ok && win && !userOpened) {
       clearTimeout(closeTimer);
       closeTimer = setTimeout(() => hide(), AUTO_CLOSE);
     }
-    if (!ok) dismissed = false;
+    if (!ok && !cancelled) dismissed = false;
   });
   chatterbox.on('change', () => send('prepare:change', provision.snapshot()));
   ollamaHost.on('change', () => send('prepare:change', provision.snapshot()));

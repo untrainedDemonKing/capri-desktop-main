@@ -87,8 +87,12 @@
     renderGroups(snap, groups, { ui, actions: ACTIONS, open, toggle: toggleLog });
     const failed = snap.steps.some((s) => s.state === 'failed');
     const summary = $('summary');
+    const stopped = !snap.running && snap.cancelled === true;
     if (snap.running) {
-      summary.textContent = ui.working;
+      summary.textContent = snap.stopping ? ui.stopping : ui.working;
+      summary.dataset.kind = '';
+    } else if (stopped) {
+      summary.textContent = ui.stoppedAll;
       summary.dataset.kind = '';
     } else if (snap.finished && snap.ok) {
       summary.textContent = groups.children.length ? ui.allDone : ui.nothing;
@@ -100,7 +104,9 @@
       summary.textContent = '';
     }
     $('skip').hidden = !snap.running;
-    $('retryAll').hidden = snap.running || !failed;
+    $('skip').disabled = snap.stopping === true;
+    $('skip').textContent = snap.stopping ? ui.stopping : ui.skip;
+    $('retryAll').hidden = snap.running || !(failed || stopped);
   }
 
   async function init() {

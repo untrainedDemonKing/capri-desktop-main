@@ -34,6 +34,8 @@
     "test:chatterbox": "node --test tests/chatterbox.test.js",
     "test:ollama": "node --test tests/ollama-host.test.js",
     "test:provision": "node --test tests/provision.test.js",
+    "test:stop": "node --test tests/stop.test.js",
+    "test:downloads": "node --test tests/downloads.test.js",
     "test:prepare": "node --test tests/prepare.e2e.test.js",
     "test:hardware": "node --test tests/hardware.test.js",
     "test:profiles": "node --test tests/profiles.test.js",

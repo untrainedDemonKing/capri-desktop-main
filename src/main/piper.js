@@ -171,8 +171,11 @@ class Piper extends EventEmitter {
     const dir = this.defaultDir();
     const file = path.join(dir, asset);
     await download(`${this.release}/${asset}`, file, { onProgress, signal, fetchFn: this.fetchFn });
-    await extract(file, dir);
-    fs.rmSync(file, { force: true });
+    try {
+      await extract(file, dir, { signal });
+    } finally {
+      fs.rmSync(file, { force: true }); // (and not left behind when she was stopped)
+    }
     const loc = this.locate({});
     if (!loc) throw new Error(`${asset} unpacked, but it has no piper program in it`);
     if (this.platform !== 'win32') fs.chmodSync(loc.exe, 0o755);

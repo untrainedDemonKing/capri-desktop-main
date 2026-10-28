@@ -8,10 +8,11 @@
     if (text !== undefined) e.textContent = text;
     return e;
   };
-  const ICON = { pending: '·', running: '…', done: '✓', failed: '!', skipped: '–' };
+  const ICON = { pending: '·', running: '…', done: '✓', failed: '!', skipped: '–', stopped: '■' };
   const groupState = (steps) => {
     if (steps.some((s) => s.state === 'failed')) return 'failed';
     if (steps.every((s) => s.state === 'done')) return 'done';
+    if (steps.some((s) => s.state === 'stopped')) return 'stopped';
     return steps.some((s) => s.state === 'running') ? 'running' : 'pending';
   };
   const fill = (text, args = {}) => String(text).replace(/\{(\w+)\}/g, (_m, k) => (args[k] === undefined ? '' : args[k]));

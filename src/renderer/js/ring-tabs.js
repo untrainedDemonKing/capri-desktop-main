@@ -731,6 +731,10 @@ const more = {
         c.hide();
         host.hubShow?.('manage');
       }),
+      button(m.folder, () => {
+        c.hide();
+        host.hubShow?.('folder');
+      }),
     ));
     root.append(buttons(
       button(m.hide, () => {

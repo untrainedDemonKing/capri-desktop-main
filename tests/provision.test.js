@@ -339,10 +339,161 @@ test('stopping while a model is being fetched stops the fetch and says so', asyn
   const run = w.p.run();
   await new Promise((r) => setTimeout(r, 8));
   w.p.cancel();
+  assert.equal(w.p.snapshot().stopping, true, 'it says at once that it is stopping');
   await run;
   assert.equal(w.p.ok, false);
-  assert.equal(w.p.step('ollama-model').state, 'failed');
+  assert.equal(w.p.step('ollama-model').state, 'stopped', 'a stop is not a failure');
+  assert.equal(w.p.snapshot().cancelled, true);
+  assert.equal(w.p.snapshot().stopping, false);
   assert.equal(w.p.running, false);
+  assert.ok(!w.p.steps.some((s) => s.state === 'failed'));
+});
+
+// a program that runs until it is ended: what pip, an installer or a download is, to "Stop"
+const endless = (signal, result = { ok: false, cancelled: true, tail: [] }) => new Promise((resolve) => signal?.addEventListener('abort', () => setTimeout(() => resolve(result), 5), { once: true }));
+const waitFor = async (what, cond, ms = 2000) => {
+  const until = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > until) throw new Error(`never happened: ${what}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+};
+const within = (ms, promise) => Promise.race([promise, new Promise((_r, reject) => setTimeout(() => reject(new Error(`still going after ${ms} ms`)), ms))]);
+
+test('stopping while pip fetches the package ends pip at once and leaves the step stopped; trying again goes on', async () => {
+  const w = world({ cfg: { ttsEngine: 'chatterbox', chatterboxDir: readyFolder('Chatterbox-Stop') }, state: { hasPackage: false, ollamaRunning: true, cbProgress: [0.5] } });
+  const seen = [];
+  w.p.d.tools.pip = async (_py, _args, onLine, opts) => {
+    seen.push(opts);
+    onLine('Downloading torch-2.6.0-cp311-win_amd64.whl (2.5 GB)');
+    return endless(opts.signal);
+  };
+  const run = w.p.run();
+  await waitFor('pip begun', () => w.p.step('cb-package').state === 'running' && seen.length);
+  w.p.cancel();
+  await within(1000, run);
+  assert.ok(seen[0].signal.aborted, 'pip was given the signal that was fired');
+  assert.equal(w.p.step('cb-package').state, 'stopped');
+  assert.equal(w.p.step('cb-model').state, 'pending', 'nothing after it was begun');
+  assert.equal(w.state.cbPhase, 'off', 'the voice server was not started');
+  assert.ok(!w.p.steps.some((s) => s.state === 'failed'));
+  assert.equal(w.p.snapshot().cancelled, true);
+  // and again
+  w.p.d.tools.pip = async () => { w.state.hasPackage = true; return { ok: true, tail: [] }; };
+  await w.p.retry();
+  assert.equal(w.p.step('cb-package').state, 'done');
+  assert.equal(w.p.snapshot().cancelled, false, 'a new run starts not stopped');
+  fs.rmSync(path.join(tmp, 'roots', 'Chatterbox-Stop'), { recursive: true, force: true });
+});
+
+test('stopping works even when the installer under it does not listen: Python, and Ollama\'s three ways', async () => {
+  const stubborn = () => new Promise(() => {}); // never answers, never hears the signal
+  const w = world({ cfg: { ttsEngine: 'chatterbox' }, state: { hasPackage: false, ollamaRunning: true, systemPython: null } });
+  w.p.d.installPython = stubborn;
+  let run = w.p.run();
+  await waitFor('Python being installed', () => w.p.step('cb-python').state === 'running');
+  w.p.cancel();
+  await within(1000, run);
+  assert.equal(w.p.step('cb-python').state, 'stopped');
+
+  const o = world({ cfg: { ttsEngine: 'openai' }, state: { ollamaFound: false }, installOllama: stubborn });
+  run = o.p.run();
+  await waitFor('Ollama being installed', () => o.p.step('ollama-find').state === 'running');
+  o.p.cancel();
+  await within(1000, run);
+  assert.equal(o.p.step('ollama-find').state, 'stopped');
+  assert.equal(o.p.step('ollama-run').state, 'pending', 'the next way of installing was not tried');
+});
+
+test('stopping while the voice model loads ends the voice server, so that the download does not go on behind it', async () => {
+  const w = world({ cfg: { ttsEngine: 'chatterbox', chatterboxDir: readyFolder('Chatterbox-Load') }, state: { ollamaRunning: true, cbProgress: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1] } });
+  let stops = 0;
+  w.p.d.chatterbox.stop = () => { stops++; w.state.cbPhase = 'off'; };
+  const run = w.p.run();
+  await waitFor('the model loading', () => w.p.step('cb-model').state === 'running');
+  w.p.cancel();
+  await within(1000, run);
+  assert.equal(w.p.step('cb-model').state, 'stopped');
+  assert.ok(stops >= 1, 'the server was ended');
+  fs.rmSync(path.join(tmp, 'roots', 'Chatterbox-Load'), { recursive: true, force: true });
+});
+
+test('a stop with nothing going on does nothing; one during the first look leaves nothing begun', async () => {
+  const idle = world({});
+  idle.p.cancel();
+  assert.equal(idle.p.snapshot().cancelled, false);
+  const w = world({ cfg: { ttsEngine: 'openai' }, deps: { hardware: async () => { await new Promise((r) => setTimeout(r, 40)); return { ram: 32 * GB, vram: 8 * GB }; } } });
+  const run = w.p.run();
+  await new Promise((r) => setTimeout(r, 5));
+  w.p.cancel();
+  await within(1000, run);
+  assert.equal(w.p.finished, true);
+  assert.equal(w.p.ok, false);
+  assert.ok(w.p.steps.filter((s) => s.id !== 'scan').every((s) => s.state === 'pending'), 'what was not begun waits');
+});
+
+test('with a folder picked for everything: Ollama comes first as the zip into it, pip works in its temp folder, Node.js too, and the work files are cleared away after', async () => {
+  const work = path.join(tmp, 'picked', 'Capri', 'temp');
+  const order = [];
+  const calls = { ensure: 0, clean: 0, pip: [] };
+  const w = world({
+    cfg: { ttsEngine: 'chatterbox', chatterboxDir: readyFolder('Chatterbox-Picked') },
+    state: { ollamaFound: false, hasPackage: false, nodeFound: false },
+    installOllama: async () => { order.push('winget'); return { ok: false }; },
+    deps: {
+      downloadOllama: async () => { order.push('installer'); return { ok: false }; },
+      downloadOllamaZip: async () => { order.push('zip'); w.state.ollamaFound = true; return { ok: true, dir: path.join(tmp, 'picked', 'Capri', 'ollama') }; },
+      preferZip: () => true,
+      tempDir: () => work,
+      cleanTemp: () => { calls.clean++; },
+      ensureRoot: () => { calls.ensure++; },
+    },
+  });
+  w.p.d.tools.pip = async (_py, _args, _onLine, opts) => { calls.pip.push(opts); w.state.hasPackage = true; return { ok: true, tail: [] }; };
+  w.p.d.nodeTools.install = async ({ dir, tmp: at, onProgress }) => { calls.node = at; onProgress({ completed: 1, total: 1 }); w.state.nodeFound = true; return { exe: path.join(dir, 'node.exe'), dir, version: '24.0.0' }; };
+  await w.p.run();
+  assert.deepEqual(order, ['zip'], 'the zip first, and the others not needed');
+  assert.deepEqual(calls.pip[0].env, { TEMP: work, TMP: work, TMPDIR: work });
+  assert.equal(calls.node, work);
+  assert.equal(calls.ensure, 1);
+  assert.equal(calls.clean, 1);
+  assert.equal(w.p.step('ollama-find').state, 'done');
+  // without a folder picked: the usual order, and the system's own temp
+  const o2 = [];
+  const plain = world({ cfg: { ttsEngine: 'openai' }, state: { ollamaFound: false }, installOllama: async () => { o2.push('winget'); return { ok: false }; }, deps: { downloadOllama: async () => { o2.push('installer'); return { ok: false }; }, downloadOllamaZip: async () => { o2.push('zip'); return { ok: false }; } } });
+  await plain.p.run();
+  assert.deepEqual(o2, ['winget', 'installer', 'zip']);
+  fs.rmSync(path.join(tmp, 'roots', 'Chatterbox-Picked'), { recursive: true, force: true });
+});
+
+test('pip given a signal ends the program and everything it started, and answers cancelled at once', async () => {
+  const cp = require('node:child_process');
+  const setup = require('../src/main/chatterbox-setup.js');
+  let child;
+  const spawn = (_cmd, _args, opts) => {
+    child = cp.spawn(process.execPath, ['-e', 'setInterval(() => console.log("Downloading torch-2.6.0 (2.5 GB)"), 20)'], { ...opts, stdio: ['ignore', 'pipe', 'pipe'] });
+    return child;
+  };
+  const ac = new AbortController();
+  const lines = [];
+  const started = Date.now();
+  const res = setup.pip('python', ['install', 'x'], (l) => lines.push(l), { spawn, signal: ac.signal });
+  while (!lines.length) await new Promise((r) => setTimeout(r, 10));
+  ac.abort();
+  const out = await within(2000, res);
+  assert.equal(out.cancelled, true);
+  assert.equal(out.ok, false);
+  assert.ok(Date.now() - started < 2000);
+  await new Promise((r) => (child.exitCode !== null || child.signalCode ? r() : child.once('exit', r)));
+  assert.ok(child.killed || child.signalCode, 'the program is gone');
+  const after = lines.length;
+  await new Promise((r) => setTimeout(r, 80));
+  assert.equal(lines.length, after, 'and says nothing more');
+  // already stopped before it began: not even started
+  let started2 = false;
+  const never = await setup.pip('python', [], null, { spawn: () => { started2 = true; }, signal: AbortSignal.abort() });
+  assert.equal(never.cancelled, true);
+  assert.equal(started2, false);
 });
 
 test('the report says what is done and what failed, for pasting into a message', async () => {

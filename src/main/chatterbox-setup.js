@@ -8,7 +8,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const cp = require('node:child_process');
-const { runPython, which } = require('./proc');
+const { runPython, which, runToEnd } = require('./proc');
 
 const MIN = [3, 10];
 const MAX = [3, 12]; // (what Chatterbox is built for; a newer one often has no torch yet)
@@ -70,34 +70,26 @@ function installTarget(dir, { fsx = fs } = {}) {
   return { args: ['chatterbox-tts'], label: 'chatterbox-tts' };
 }
 
-// pip, with what it prints passed on line by line: onLine(text). Resolves { ok, code, tail }.
-function pip(python, args, onLine, { spawn = cp.spawn, env = {} } = {}) {
-  return new Promise((resolve) => {
-    const tail = [];
-    let child;
-    try {
-      child = spawn(python, ['-m', 'pip', ...args], {
-        windowsHide: true,
-        env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: '1', PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1', ...env },
-      });
-    } catch (err) {
-      resolve({ ok: false, code: -1, tail: [err.message] });
-      return;
+// pip, with what it prints passed on line by line: onLine(text). Resolves { ok, code, tail }, and cancelled: true
+// when `signal` stopped it (pip and everything it started are ended at once: a download of gigabytes does not go on
+// behind her "Stop"). env: more for its environment (a TEMP in the folder she was given, for one).
+async function pip(python, args, onLine, { spawn = cp.spawn, env = {}, signal } = {}) {
+  const tail = [];
+  const read = (chunk) => {
+    for (const line of String(chunk).split(/[\r\n]+/)) {
+      const text = line.trim();
+      if (!text) continue;
+      tail.push(text.slice(0, 300));
+      if (tail.length > 30) tail.shift();
+      onLine?.(text);
     }
-    const read = (chunk) => {
-      for (const line of String(chunk).split(/[\r\n]+/)) {
-        const text = line.trim();
-        if (!text) continue;
-        tail.push(text.slice(0, 300));
-        if (tail.length > 30) tail.shift();
-        onLine?.(text);
-      }
-    };
-    child.stdout?.on('data', read);
-    child.stderr?.on('data', read);
-    child.on('error', (err) => resolve({ ok: false, code: -1, tail: [err.message] }));
-    child.on('close', (code) => resolve({ ok: code === 0, code, tail }));
+  };
+  const res = await runToEnd(python, ['-m', 'pip', ...args], {
+    spawn, signal, onData: read,
+    env: { ...process.env, PIP_DISABLE_PIP_VERSION_CHECK: '1', PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1', ...env },
   });
+  if (res.error) tail.push(res.error);
+  return { ok: res.ok, code: res.code ?? -1, ...(res.cancelled && { cancelled: true }), tail };
 }
 
 // How far pip is, from a line of its output: what it is getting, in words

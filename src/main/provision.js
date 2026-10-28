@@ -68,7 +68,10 @@ class Provision extends EventEmitter {
   //       installOllama(onLine), downloadOllama(onLine), installPython(onLine), roots(), defaultDir(), onModelsChanged(),
   //       hardware({ force }) a look at this PC, tune(tuning, profileId) what the profile says Ollama is told, tools,
   //       nodeTools, nodeDir() where she fetches Node.js to, platform, record(kind, value) writes down what she put on
-  //       this PC (installed.js), so that she can take it off again (cleanup.js)
+  //       this PC (installed.js), so that she can take it off again (cleanup.js), tempDir() where downloads and pip work
+  //       while they are on their way ('' the system's), cleanTemp() empties it, preferZip() Ollama comes first as the zip
+  //       into her folder (when you picked a folder for everything she fetches), ensureRoot() makes that folder.
+  //       The installers get (onLine, signal): "Stop" ends them at once.
   constructor(deps) {
     super();
     this.d = { hardware: () => hardwareLib.scan(), tools, nodeTools, nodeDir: () => '', platform: process.platform, installOllama: null, downloadOllama: null, installPython: null, tune: null, piper: null, onModelsChanged: async () => {}, record: () => {}, ...deps };
@@ -102,6 +105,7 @@ class Provision extends EventEmitter {
   snapshot() {
     return {
       running: this.running, finished: this.finished, ok: this.ok, attention: this.attention, plan: this.plan,
+      stopping: this.running && this.cancelled, cancelled: this.cancelled,
       pc: this.hw ? profiles.describe(this.hw) : null,
       profile: this.profile && {
         id: this.profile.id, auto: this.profile.auto, wanted: this.profile.wanted, mind: this.profile.mind, voice: this.profile.voice,
@@ -114,12 +118,14 @@ class Provision extends EventEmitter {
 
   update(id, patch) {
     const s = this.step(id);
+    if (s.state === 'stopped' && !patch.state) return; // (a bar still on its way when she was stopped)
     Object.assign(s, patch);
     if (patch.heavy || patch.state === 'failed') this.attention = true;
     this.emit('change', this.snapshot());
   }
 
   begin(id, patch = {}) {
+    this.checkStop();
     this.update(id, { state: 'running', progress: null, error: '', actions: [], detail: '', heavy: false, ...patch });
   }
 
@@ -128,8 +134,38 @@ class Provision extends EventEmitter {
   }
 
   fail(id, error, actions = ['retry'], log = []) {
+    this.checkStop(); // (what ends because she was stopped did not fail)
     this.update(id, { state: 'failed', progress: null, detail: '', error: String(error).slice(0, 400), actions, heavy: false, log });
     throw Object.assign(new Error(error), { step: id, handled: true });
+  }
+
+  // ---- "Stop" ----
+
+  stopped(id = '') {
+    return Object.assign(new Error('stopped'), { step: id, handled: true, cancelled: true });
+  }
+
+  checkStop() {
+    if (this.cancelled) throw this.stopped();
+  }
+
+  // Waits for `promise`, but not past "Stop": what cannot be ended itself (a server coming up) is let go of. It
+  // goes on in the background and is not heard of again.
+  raceStop(promise) {
+    const { signal } = this.abort;
+    if (signal.aborted) return Promise.reject(this.stopped());
+    return new Promise((resolve, reject) => {
+      const onStop = () => reject(this.stopped());
+      signal.addEventListener('abort', onStop, { once: true });
+      promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onStop));
+    });
+  }
+
+  // the steps that were going on when she was stopped say so (they are not failures; the ones not begun wait)
+  settleStopped() {
+    for (const s of this.steps) {
+      if (s.state === 'running') Object.assign(s, { state: 'stopped', progress: null, detail: this.t('stoppedStep'), error: '', actions: [], heavy: false });
+    }
   }
 
   skip(id, detail = '') {
@@ -208,13 +244,14 @@ class Provision extends EventEmitter {
     this.abort = new AbortController();
     this.started = Date.now();
     this.reset();
+    this.d.ensureRoot?.(); // (the folder you picked for what she fetches is there, with her mark in it)
     this.emit('change', this.snapshot());
     try {
       await this.scan({ rescan });
     } catch (err) {
       if (!err.handled) this.update('scan', { state: 'failed', error: String(err.message || err).slice(0, 400), actions: ['retry'] });
     }
-    if (this.step('scan').state === 'done') {
+    if (this.step('scan').state === 'done' && !this.cancelled) {
       const cfg = this.d.cfg();
       this.plan = this.decide(cfg, this.profile, this.have);
       for (const s of this.steps) {
@@ -229,11 +266,12 @@ class Provision extends EventEmitter {
       // (a voice that is the system's, or a mind that is a cloud one: nothing to get ready, but it is her voice from now on)
       if (!this.plan.chatterbox && !this.plan.piper && this.plan.adopt) this.d.save({ provisioned: true });
       await Promise.all(jobs);
-    } else {
+    } else if (!this.cancelled) {
       for (const s of this.steps) if (s.id !== 'scan') s.state = 'skipped';
     }
+    if (this.cancelled) this.settleStopped();
     // (what was to be fetched is there now: the plan counts again what is still missing)
-    if (this.profile && this.step('scan').state === 'done') {
+    if (!this.cancelled && this.profile && this.step('scan').state === 'done') {
       try {
         this.have = await this.inventory(this.d.cfg());
         this.profile = profiles.refresh(this.profile, this.have);
@@ -243,8 +281,9 @@ class Provision extends EventEmitter {
     this.finished = true;
     this.ok = this.steps.every((s) => s.state === 'done' || s.state === 'skipped');
     if (this.cancelled) this.ok = false;
+    this.d.cleanTemp?.(); // (what a stopped download left behind)
     this.emit('change', this.snapshot());
-    this.emit('finish', { ok: this.ok, plan: this.plan, attention: this.attention, profile: this.profile?.id });
+    this.emit('finish', { ok: this.ok, plan: this.plan, attention: this.attention, profile: this.profile?.id, cancelled: this.cancelled });
   }
 
   wanted(step) {
@@ -295,10 +334,13 @@ class Provision extends EventEmitter {
     }
   }
 
-  // stops what is being fetched (the window's "skip", or her quitting)
+  // stops what is being fetched (the window's "stop" or "skip", or her quitting): the programs under it are ended
+  // at once, and the steps that were going on say they were stopped
   cancel() {
+    if (!this.running || this.cancelled) return;
     this.cancelled = true;
     this.abort?.abort();
+    this.emit('change', this.snapshot()); // ("Stopping…" at once, before the last of it has ended)
   }
 
   retry() {
@@ -328,11 +370,11 @@ class Provision extends EventEmitter {
     let got;
     try {
       got = await nodeTools.install({
-        dir: this.d.nodeDir(), arch, signal: this.abort.signal,
+        dir: this.d.nodeDir(), arch, signal: this.abort.signal, tmp: this.d.tempDir?.() || undefined,
         onProgress: ({ completed, total }) => this.update('node', { heavy: true, progress: total ? Math.min(1, completed / total) : null, detail: this.t('nodeFetchingOf', { done: bytes(completed, lang), total: total ? bytes(total, lang) : '?' }) }),
       });
     } catch (err) {
-      this.fail('node', this.t('nodeFailed', { error: this.cancelled ? 'cancelled' : err.message }), ['retry', 'open-node-site']);
+      this.fail('node', this.t('nodeFailed', { error: err.message }), ['retry', 'open-node-site']);
     }
     const onPath = nodeTools.addToUserPath(got.dir);
     this.d.record('node', { dir: got.dir, onPath: onPath.ok });
@@ -354,9 +396,11 @@ class Provision extends EventEmitter {
       if (!found && !String(cfg().ollamaDir || '').trim()) {
         // nowhere: get it (winget, else its own installer, else its zip)
         const installs = [['winget', this.d.installOllama], ['installer', this.d.downloadOllama], ['zip', this.d.downloadOllamaZip]].filter(([, fn]) => fn);
+        if (this.d.preferZip?.()) installs.sort(([a], [b]) => (b === 'zip') - (a === 'zip')); // (a folder you picked for everything: Ollama comes into it first)
         for (const [how, install] of installs) {
           this.begin('ollama-find', { heavy: true, detail: this.t('olInstalling', { line: '' }) });
-          const res = await install((line) => this.update('ollama-find', { detail: this.t('olInstalling', { line: String(line).slice(0, 80) }) }), this.abort.signal).catch((err) => ({ ok: false, error: err.message }));
+          const res = await this.raceStop(Promise.resolve(install((line) => this.update('ollama-find', { detail: this.t('olInstalling', { line: String(line).slice(0, 80) }) }), this.abort.signal)).catch((err) => ({ ok: false, error: err.message })));
+          this.checkStop();
           if (res.ok && res.dir) this.d.save({ ollamaDir: res.dir }); // (the zip is unpacked into a folder of hers)
           if (res.ok) found = await ollamaHost.locate(cfg());
           if (found) {
@@ -372,7 +416,7 @@ class Provision extends EventEmitter {
     this.begin('ollama-run', { detail: this.t('olStarting') });
     try {
       if (ollamaHost.status().phase === 'failed') ollamaHost.stop(false);
-      await ollamaHost.ready(cfg(), 90000);
+      await this.raceStop(ollamaHost.ready(cfg(), 90000));
     } catch (err) {
       this.fail('ollama-run', err.message, ['retry', 'choose-ollama'], ollamaHost.status().log);
     }
@@ -413,7 +457,6 @@ class Provision extends EventEmitter {
         });
       }, this.abort.signal);
     } catch (err) {
-      if (this.cancelled) this.fail('ollama-model', this.t('olPullFailed', { model: target, error: 'cancelled' }), ['retry']);
       this.fail('ollama-model', this.t('olPullFailed', { model: target, error: err.message }), ['retry']);
     }
     const after = await ollamaApi.models().catch(() => []);
@@ -464,7 +507,8 @@ class Provision extends EventEmitter {
         let installedPython = false;
         if ((!sys || sys.tooNew) && this.d.installPython) {
           this.update('cb-python', { detail: this.t('cbPythonInstalling', { line: '' }) });
-          await this.d.installPython((line) => this.update('cb-python', { detail: this.t('cbPythonInstalling', { line: String(line).slice(0, 80) }) })).catch(() => ({ ok: false }));
+          await this.raceStop(Promise.resolve(this.d.installPython((line) => this.update('cb-python', { detail: this.t('cbPythonInstalling', { line: String(line).slice(0, 80) }) }), this.abort.signal)).catch(() => ({ ok: false })));
+          this.checkStop();
           sys = setup.findSystemPython();
           installedPython = Boolean(sys && !sys.tooNew); // (hers: she put it on this PC)
         }
@@ -493,7 +537,7 @@ class Provision extends EventEmitter {
         if (a) this.update('cb-package', { detail: this.t('cbPackageInstalling', { what: `${a.what}${a.size ? ` (${a.size})` : ''}` }) });
       };
       const wheels = this.wheelhouse(dir);
-      const res = await setup.pip(python, ['install', '--no-cache-dir', ...(wheels ? ['--find-links', wheels] : []), ...target.args], onLine); // (no cache: gigabytes of wheels would stay behind)
+      const res = await this.raceStop(setup.pip(python, ['install', '--no-cache-dir', ...(wheels ? ['--find-links', wheels] : []), ...target.args], onLine, this.pipOptions())); // (no cache: gigabytes of wheels would stay behind)
       if (!res.ok) this.fail('cb-package', this.t('cbPackageFailed', { error: res.tail.slice(-3).join(' ') }), ['retry'], res.tail);
     }
     if (python) await this.graphicsCard(python);
@@ -501,22 +545,44 @@ class Provision extends EventEmitter {
     // start it, and wait for the model
     this.begin('cb-model', { detail: this.t('cbLoading') });
     if (!cfg().ttsEngine || cfg().ttsEngine !== 'chatterbox') this.d.save({ ttsEngine: 'chatterbox', voiceMode: cfg().voiceMode === 'off' ? 'chat' : cfg().voiceMode, provisioned: true });
-    if (chatterbox.status().phase === 'failed') await chatterbox.restart(cfg());
-    else await chatterbox.sync(cfg());
-    const until = Date.now() + CB_MODEL_WAIT;
-    while (Date.now() < until) {
-      if (this.cancelled) this.fail('cb-model', this.t('cbFailed', { error: 'cancelled' }), ['retry']);
-      const st = chatterbox.status();
-      if (st.phase === 'ready') {
-        this.done('cb-model', this.t('cbReady', { device: st.device || 'cpu' }));
-        return;
+    const starting = chatterbox.status().phase === 'failed' ? chatterbox.restart(cfg()) : chatterbox.sync(cfg());
+    try {
+      await this.raceStop(starting);
+      const until = Date.now() + CB_MODEL_WAIT;
+      while (Date.now() < until) {
+        this.checkStop();
+        const st = chatterbox.status();
+        if (st.phase === 'ready') {
+          this.done('cb-model', this.t('cbReady', { device: st.device || 'cpu' }));
+          return;
+        }
+        if (st.phase === 'failed') this.fail('cb-model', this.t('cbFailed', { error: st.error }), ['retry', 'choose-chatterbox'], st.log);
+        if (st.progress !== null) this.update('cb-model', { heavy: true, progress: st.progress, detail: this.t('cbDownloading', { percent: Math.round(st.progress * 100) }) });
+        else this.update('cb-model', { detail: st.log.length ? `${this.t('cbLoading')} ${st.log[st.log.length - 1].slice(0, 80)}` : this.t('cbLoading') });
+        await this.raceStop(sleep(400));
       }
-      if (st.phase === 'failed') this.fail('cb-model', this.t('cbFailed', { error: st.error }), ['retry', 'choose-chatterbox'], st.log);
-      if (st.progress !== null) this.update('cb-model', { heavy: true, progress: st.progress, detail: this.t('cbDownloading', { percent: Math.round(st.progress * 100) }) });
-      else this.update('cb-model', { detail: st.log.length ? `${this.t('cbLoading')} ${st.log[st.log.length - 1].slice(0, 80)}` : this.t('cbLoading') });
-      await sleep(400);
+    } catch (err) {
+      if (err.cancelled) {
+        // (the model it was fetching is not fetched in the background any more: the server is ended, also one that was only then being started)
+        chatterbox.stop();
+        starting.then(() => chatterbox.stop(), () => {});
+      }
+      throw err;
     }
     this.fail('cb-model', this.t('cbFailed', { error: 'timeout' }), ['retry'], chatterbox.status().log);
+  }
+
+  // how pip is run: ended by "Stop", and working in the temp folder of the place she was given (when you picked one)
+  pipOptions() {
+    const options = { signal: this.abort.signal, env: {} };
+    const dir = this.d.tempDir?.() || '';
+    if (dir) {
+      try {
+        fs.mkdirSync(dir, { recursive: true });
+        options.env = { TEMP: dir, TMP: dir, TMPDIR: dir };
+      } catch { /* the system's then */ }
+    }
+    return options;
   }
 
   // a folder of wheels next to the Chatterbox folder or in it (for a PC with no internet: `pip download chatterbox-tts` on another)
@@ -547,7 +613,7 @@ class Provision extends EventEmitter {
     this.update('cb-package', { heavy: true, detail: this.t('cbGpu') });
     // (no cache here either: the build for the card is gigabytes)
     const uncached = args[0] === 'install' && !args.includes('--no-cache-dir') ? [args[0], '--no-cache-dir', ...args.slice(1)] : args;
-    const res = await setup.pip(python, uncached, () => {});
+    const res = await this.raceStop(setup.pip(python, uncached, () => {}, this.pipOptions()));
     if (!res.ok) this.update('cb-package', { detail: this.t('cbCpu') });
   }
 
@@ -569,7 +635,7 @@ class Provision extends EventEmitter {
           onProgress: ({ completed, total }) => this.update('pp-find', { heavy: true, progress: total ? Math.min(1, completed / total) : null, detail: this.t('ppFetchingOf', { done: bytes(completed, this.d.lang()), total: total ? bytes(total, this.d.lang()) : '?' }) }),
         });
       } catch (err) {
-        this.fail('pp-find', this.t('ppFetchFailed', { error: this.cancelled ? 'cancelled' : err.message }), ['retry', 'choose-piper']);
+        this.fail('pp-find', this.t('ppFetchFailed', { error: err.message }), ['retry', 'choose-piper']);
       }
     }
     this.done('pp-find', this.t('ppFoundAt', { path: loc.exe }));
@@ -584,14 +650,14 @@ class Provision extends EventEmitter {
           onProgress: ({ completed, total }) => this.update('pp-voice', { heavy: true, progress: total ? Math.min(1, completed / total) : null, detail: this.t('ppVoiceFetchingOf', { done: bytes(completed, this.d.lang()), total: total ? bytes(total, this.d.lang()) : '?' }) }),
         });
       } catch (err) {
-        this.fail('pp-voice', this.t('ppVoiceFailed', { error: this.cancelled ? 'cancelled' : err.message }), ['retry', 'choose-piper']);
+        this.fail('pp-voice', this.t('ppVoiceFailed', { error: err.message }), ['retry', 'choose-piper']);
       }
     }
     this.done('pp-voice', this.t('ppVoiceHave', { voice: voice.key }));
     // it works: a word is said to be sure
     this.begin('pp-run', { detail: this.t('ppChecking') });
     try {
-      await piper.check(cfg(), lang);
+      await this.raceStop(piper.check(cfg(), lang));
     } catch (err) {
       this.fail('pp-run', this.t('ppFailed', { error: err.message }), ['retry', 'choose-piper'], piper.status().log);
     }
