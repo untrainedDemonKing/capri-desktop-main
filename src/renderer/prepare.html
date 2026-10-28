@@ -18,6 +18,21 @@
       </div>
     </header>
 
+    <section id="pc" class="group pc" data-group="pc" hidden>
+      <h2 class="group__title"><span id="pcTitle"></span><span id="pcTag" class="group__tag"></span></h2>
+      <dl id="pcFacts" class="pc__facts"></dl>
+      <div id="pcScan"></div>
+      <p id="planLine" class="pc__plan"></p>
+      <ul id="notes" class="pc__notes"></ul>
+      <div class="pc__profile">
+        <label id="profileLabel" for="profile"></label>
+        <select id="profile"></select>
+        <button id="applyProfile" type="button" class="btn btn--small" disabled></button>
+        <button id="rescan" type="button" class="btn btn--small"></button>
+        <button id="openAi" type="button" class="btn btn--small" hidden></button>
+      </div>
+    </section>
+
     <section id="groups" class="prep__groups"></section>
 
     <p id="summary" class="prep__summary" role="status" aria-live="polite"></p>

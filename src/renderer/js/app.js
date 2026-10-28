@@ -564,10 +564,10 @@ async function boot() {
       const cfg = await host.getConfig();
       const engine = await guide.ask({
         face: 'look', line: tv.which, quote: tv.whichHow,
-        actions: [...['system', 'chatterbox', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: tv.engines[id], primary: id === cfg.ttsEngine })), { id: 'later', label: tv.later }],
+        actions: [...['system', 'piper', 'chatterbox', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: tv.engines[id], primary: id === cfg.ttsEngine })), { id: 'later', label: tv.later }],
       });
       if (!engine || engine === 'later') return;
-      if (engine === 'system') { // (nothing to ask: no key, no address)
+      if (engine === 'system' || engine === 'piper') { // (nothing to ask: no key, no address; Piper is fetched by her, by the preparation)
         await host.ttsSetup({ engine });
         saved = true;
         return;

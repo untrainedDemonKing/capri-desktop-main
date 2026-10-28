@@ -4,6 +4,15 @@
 // the overlay's page, which can't reach other local ports. Everything stays on this machine
 // unless OLLAMA_HOST points somewhere else.
 
+// How she asks for her answers, set from the profile of this PC (profiles.js): how much of the talk the model
+// holds at once (the memory it takes grows with it) and how long it stays loaded after the last question.
+let tuning = { numCtx: 0, keepAlive: '15m' };
+function tune(t = {}) {
+  tuning = { numCtx: Number(t.numCtx) || 0, keepAlive: t.keepAlive || '15m' };
+}
+// (the same context in every call: a different one makes Ollama load the model again)
+const withContext = (options = {}) => (tuning.numCtx ? { ...options, num_ctx: tuning.numCtx } : options);
+
 function base() {
   let host = process.env.OLLAMA_HOST || '127.0.0.1:11434';
   if (!/^https?:\/\//.test(host)) host = `http://${host}`;
@@ -44,7 +53,7 @@ async function once({ model, messages }, signal) {
   const res = await fetch(`${base()}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: false, keep_alive: '15m', options: { temperature: 0.4, num_predict: 300 } }),
+    body: JSON.stringify({ model, messages, stream: false, keep_alive: tuning.keepAlive, options: withContext({ temperature: 0.4, num_predict: 300 }) }),
     signal,
   });
   if (!res.ok) throw await failure(res);
@@ -59,7 +68,7 @@ function warm(model) {
   fetch(`${base()}/api/generate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model, keep_alive: '15m' }),
+    body: JSON.stringify({ model, keep_alive: tuning.keepAlive, options: withContext() }),
   }).catch(() => {});
 }
 
@@ -72,8 +81,8 @@ async function chat({ model, messages }, onDelta, signal) {
       model,
       messages,
       stream: true,
-      keep_alive: '15m', // she stays loaded while you chat
-      options: { temperature: 0.85, num_predict: 240 },
+      keep_alive: tuning.keepAlive, // she stays loaded while you chat
+      options: withContext({ temperature: 0.85, num_predict: 240 }),
     }),
     signal,
   });
@@ -136,4 +145,4 @@ async function pull(name, onProgress, signal) {
   }
 }
 
-module.exports = { base, version, models, warm, chat, once, pull };
+module.exports = { base, tune, version, models, warm, chat, once, pull };

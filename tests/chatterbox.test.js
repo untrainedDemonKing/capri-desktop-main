@@ -332,3 +332,38 @@ test('end to end: a model that cannot load is a clear failure in her menu, not a
     box.stop();
   }
 });
+
+test('the torch for a card: the build its driver can run, a newer one for the newest cards, none when the driver is too old', () => {
+  const setup = require('../src/main/chatterbox-setup.js');
+  const torch = { version: '2.6.0', audio: '2.6.0', cuda: false };
+  assert.match(setup.cudaBuild({ driver: '552.22', compute: 8.6 }).index, /cu124$/, 'a driver of 2024');
+  assert.match(setup.cudaBuild({ driver: '537.13', compute: 7.5 }).index, /cu118$/, 'an older driver gets the older build');
+  assert.match(setup.cudaBuild({ driver: '572.16', compute: 12 }).index, /cu128$/, 'the newest cards (Blackwell) need CUDA 12.8');
+  assert.equal(setup.cudaBuild({ driver: '551.0', compute: 12 }), null, 'and a driver that knows it');
+  assert.equal(setup.cudaBuild({ driver: '391.35', compute: 5 }), null, 'a driver too old for any build');
+  assert.match(setup.cudaBuild({}).index, /cu124$/, 'nothing known: the usual one');
+  assert.deepEqual(setup.cudaTorchArgs(torch, { driver: '552.22', compute: 8.6 }), ['install', '--force-reinstall', '--no-deps', 'torch==2.6.0', 'torchaudio==2.6.0', '--index-url', 'https://download.pytorch.org/whl/cu124']);
+  assert.deepEqual(setup.cudaTorchArgs(torch, { driver: '572.16', compute: 12 }).slice(3, 5), ['torch==2.7.1', 'torchaudio==2.7.1'], 'a newer torch for the newest cards');
+  assert.equal(setup.cudaTorchArgs(torch, { driver: '391.35' }), null);
+});
+
+test('a copy of the model hub\'s cache in the Chatterbox folder is what the model is read from', () => {
+  const { modelCache } = require('../src/main/chatterbox.js');
+  const dir = mk('cached', 'Chatterbox');
+  assert.equal(modelCache(dir), '');
+  assert.equal(modelCache(''), '');
+  fs.mkdirSync(path.join(dir, 'huggingface', 'hub'), { recursive: true });
+  assert.equal(modelCache(dir), path.join(dir, 'huggingface'));
+  // and the server is started with it
+  let env = null;
+  const { EventEmitter } = require('node:events');
+  const cb = new Chatterbox({
+    roots: () => [path.dirname(dir)], port: async () => 1, pollMs: 100000,
+    spawn: (_cmd, _args, opts) => { env = opts.env; const p = new EventEmitter(); p.stdout = new EventEmitter(); p.stderr = new EventEmitter(); p.stdin = { end() {}, on() {} }; p.kill = () => {}; return p; },
+  });
+  return cb.start({ ttsEngine: 'chatterbox', chatterboxDir: dir }).then(() => {
+    assert.equal(env.HF_HOME, path.join(dir, 'huggingface'));
+    assert.ok(cb.status().log.some((l) => /read from/.test(l)));
+    cb.stop();
+  });
+});

@@ -39,7 +39,7 @@ const DEFAULTS = {
   musicAware: true,  // she knows what's playing (title and artist, from Windows' media controls)
   learn: true,       // she gets to know you and adapts to you (bond.js, kept in bond.json on this PC)
   voiceMode: 'chat', // her voice: 'off', 'chat' (her chat answers) or 'all' (everything she says)
-  ttsEngine: 'system', // 'system' (Windows' voices, offline), 'chatterbox' (on this PC, started by her), 'openai', 'elevenlabs' or 'custom' (tts.js)
+  ttsEngine: 'system', // 'system' (Windows' voices, offline), 'chatterbox' or 'piper' (on this PC, run by her), 'openai', 'elevenlabs' or 'custom' (tts.js)
   ttsVoice: '',      // the speech service's voice (empty: tts.js DEFAULTS)
   ttsModel: '',      // its model (empty: tts.js DEFAULTS)
   ttsUrl: '',        // 'custom': an OpenAI-compatible speech server (http://127.0.0.1:8000/v1)
@@ -52,7 +52,11 @@ const DEFAULTS = {
   ollamaDir: '',     // Ollama's folder ('' she looks for one with "ollama" in its name next to her, then the PATH and the usual place)
   autoSetup: true,   // at start-up she gets her mind (Ollama) and her voice (Chatterbox) ready, installing what is missing
   prepareWindow: true, // her preparation window opens by itself when an install or a download takes long, or fails
-  provisioned: false, // she has taken Chatterbox as her voice (the first time, if yours was still the system's)
+  provisioned: false, // she has taken her voice (Chatterbox or Piper, by this PC) the first time, if yours was still the system's
+  profile: 'auto',   // what this PC gets: 'auto' (she looks at it), or 'cloud', 'light', 'standard', 'strong' (profiles.js)
+  profileApplied: '', // the profile whose model has been fetched (so that what you pick in her menu afterwards stays)
+  piperDir: '',      // Piper's folder ('' she looks for one with "piper" in its name next to her, then fetches it)
+  hardwareCache: null, // the last look at this PC ({ at, key, hw }): it is looked at again after two weeks, or when asked
   ttsRate: 1,        // how fast she talks (0.5..2)
   // her senses and her hands (all off by default: each one is a permission you turn on)
   vision: false,     // she can take a picture of your screen and react to it (screen.js, eyes.js)

@@ -76,12 +76,17 @@ class OllamaHost extends EventEmitter {
     this.phase = 'off'; // 'off', 'starting', 'ready', 'failed'
     this.error = '';
     this.code = '';
+    this.extraEnv = {}; // what the profile of this PC says Ollama is started with (profiles.js tuningFor)
     this.found = null; // { exe, dir, modelsDir, where }
     this.ours = false; // she started it (so she stops it)
     this.log = [];
     this.timer = null;
     this.started = 0;
     this.pending = null;
+  }
+
+  setEnv(env = {}) {
+    this.extraEnv = { ...env };
   }
 
   status() {
@@ -150,7 +155,8 @@ class OllamaHost extends EventEmitter {
       return;
     }
     this.set('starting');
-    const env = { ...process.env };
+    // (what the profile of this PC tells Ollama, unless you have set it yourself)
+    const env = { ...this.extraEnv, ...process.env };
     if (this.found.modelsDir && !env.OLLAMA_MODELS) env.OLLAMA_MODELS = this.found.modelsDir;
     let proc;
     try {

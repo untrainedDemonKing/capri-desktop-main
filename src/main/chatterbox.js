@@ -23,6 +23,21 @@ const SKIP = new Set(['node_modules', '.git', 'site-packages', '__pycache__', 'l
 const PREFER = ['venv', '.venv', 'env', '.env', 'python_embeded', 'python_embedded', 'python', 'runtime'];
 
 const withCode = (err, code) => Object.assign(err, { code });
+// a copy of the model hub's cache that you put in the Chatterbox folder (the `huggingface` folder of another PC's
+// ~/.cache): the model is read from it and not downloaded
+const CACHE_NAMES = ['hf_home', 'hf-home', 'huggingface', 'hf_cache', 'hf-cache'];
+function modelCache(dir, { fsx = fs } = {}) {
+  if (!dir) return '';
+  for (const name of CACHE_NAMES) {
+    const full = path.join(dir, name);
+    try {
+      if (fsx.statSync(full).isDirectory()) return full;
+    } catch {
+      // not here
+    }
+  }
+  return '';
+}
 
 // How to say what a folder is: its Python, if it has one (a venv, or an embedded Python).
 function pythonHome(dir, platform, fsx) {
@@ -225,6 +240,11 @@ class Chatterbox extends EventEmitter {
     const voices = findVoiceDirs(dir, { fsx: this.fsx });
     const args = [this.script, '--port', String(port), '--device', cfg.chatterboxDevice || 'auto', '--watch-stdin', ...voices.flatMap((v) => ['--voices', v])];
     const env = String(cfg.hfEndpoint || '').trim() ? { HF_ENDPOINT: String(cfg.hfEndpoint).trim() } : {}; // (a mirror of the model hub, where it is blocked)
+    const cache = modelCache(dir, { fsx: this.fsx });
+    if (cache) {
+      env.HF_HOME = cache;
+      this.log.push(`the model is read from ${cache}`);
+    }
     return this.launch(candidates, args, dir || path.dirname(this.script), env);
   }
 
@@ -354,4 +374,4 @@ class Chatterbox extends EventEmitter {
   }
 }
 
-module.exports = { Chatterbox, findPython, findFolder, findVoiceDirs, pythonCandidates, moodDials, MOOD, serverScript };
+module.exports = { Chatterbox, findPython, findFolder, findVoiceDirs, modelCache, pythonCandidates, moodDials, MOOD, serverScript };

@@ -206,3 +206,42 @@ test('ollama.once answers in one go, and ollama.version says "" when nothing ans
     delete process.env.OLLAMA_HOST;
   }
 });
+
+test('the profile of the PC: Ollama is started with its settings (but what you set yourself stands), and she asks with its context and keep-alive', { skip: !posix && 'the stand-in is a script' }, async () => {
+  const root = mk('tuned', 'Ollama-Portable');
+  installFake(root, ['gemma3:4b']);
+  const port = await freePort();
+  process.env.OLLAMA_HOST = `127.0.0.1:${port}`;
+  const log = path.join(tmp, 'tuned.jsonl');
+  process.env.FAKE_OLLAMA_LOG = log;
+  process.env.OLLAMA_NUM_PARALLEL = '7'; // yours
+  delete process.env.OLLAMA_MAX_LOADED_MODELS;
+  const host = new OllamaHost({ roots: () => [path.dirname(root)], pollMs: 100 });
+  host.setEnv({ OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_NUM_PARALLEL: '1' });
+  ollama.tune({ numCtx: 2048, keepAlive: '10m' });
+  try {
+    await host.sync({});
+    await host.ready({}, 15000);
+    await ollama.once({ model: 'gemma3:4b', messages: [{ role: 'user', content: 'hi' }] });
+    await ollama.chat({ model: 'gemma3:4b', messages: [{ role: 'user', content: 'hello' }] }, () => {});
+    ollama.warm('gemma3:4b');
+    await new Promise((r) => setTimeout(r, 300));
+    const lines = fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const chat = lines.filter((l) => l.url === '/api/chat');
+    assert.equal(chat.length, 2);
+    for (const l of chat) assert.deepEqual([l.options.num_ctx, l.keepAlive], [2048, '10m'], 'the same context every time: another would load the model again');
+    assert.equal(lines.find((l) => l.url === '/api/generate').options.num_ctx, 2048, 'and the warm-up too');
+    assert.deepEqual([lines[0].env.maxLoaded, lines[0].env.parallel], ['1', '7'], 'the profile\'s setting is used, yours is not overridden');
+    // no profile: no context of hers (Ollama\'s own), the usual keep-alive
+    ollama.tune({});
+    await ollama.once({ model: 'gemma3:4b', messages: [{ role: 'user', content: 'again' }] });
+    const last = fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).pop();
+    assert.deepEqual([last.options.num_ctx, last.keepAlive], [undefined, '15m']);
+  } finally {
+    host.stop();
+    ollama.tune({});
+    delete process.env.OLLAMA_HOST;
+    delete process.env.FAKE_OLLAMA_LOG;
+    delete process.env.OLLAMA_NUM_PARALLEL;
+  }
+});

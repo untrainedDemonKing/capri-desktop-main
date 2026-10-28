@@ -11,7 +11,7 @@ const { table } = require('./prepare-lines');
 const SITES = /^https:\/\/(www\.)?(ollama\.com|python\.org)(\/|$)/;
 const AUTO_CLOSE = 6000;
 
-function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, lang, ollamaHost, chatterbox, protocolUrl }) {
+function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, lang, ollamaHost, chatterbox, piper, openAiTab, protocolUrl }) {
   let win = null;
   let userOpened = false; // opened from the menu: it stays until it is closed
   let dismissed = false; // closed on purpose during this run: not opened again by what happens next (a failure at the end is)
@@ -67,6 +67,7 @@ function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provi
   });
   chatterbox.on('change', () => send('prepare:change', provision.snapshot()));
   ollamaHost.on('change', () => send('prepare:change', provision.snapshot()));
+  piper?.on('change', () => send('prepare:change', provision.snapshot()));
 
   ipcMain.handle('prepare:state', () => state());
   ipcMain.handle('prepare:retry', async () => {
@@ -79,15 +80,18 @@ function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provi
     return true;
   });
   ipcMain.handle('prepare:choose', async (_e, what) => {
-    const key = what === 'ollama' ? 'ollamaDir' : what === 'chatterbox' ? 'chatterboxDir' : null;
+    const key = { ollama: 'ollamaDir', chatterbox: 'chatterboxDir', piper: 'piperDir' }[what];
     if (!key) return null;
     const { canceled, filePaths } = await dialog.showOpenDialog(win && !win.isDestroyed() ? win : undefined, {
-      title: what === 'ollama' ? 'Ollama' : 'Chatterbox', properties: ['openDirectory'], defaultPath: config.load()[key] || path.dirname(process.execPath),
+      title: { ollama: 'Ollama', chatterbox: 'Chatterbox', piper: 'Piper' }[what], properties: ['openDirectory'], defaultPath: config.load()[key] || path.dirname(process.execPath),
     });
     if (canceled || !filePaths[0]) return null;
     if (what === 'ollama') {
       ollamaHost.stop(false);
       updateConfig({ ollamaDir: filePaths[0] });
+    } else if (what === 'piper') {
+      piper?.stop(false);
+      updateConfig({ piperDir: filePaths[0], ttsEngine: 'piper' });
     } else {
       updateConfig({ chatterboxDir: filePaths[0], ttsEngine: 'chatterbox' });
       chatterbox.stop(false);
@@ -96,6 +100,30 @@ function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provi
     provision.run();
     return filePaths[0];
   });
+  // the profile you pick for this PC (or "auto"): her mind's model and her voice are chosen again by it. A voice
+  // of a service (OpenAI, ElevenLabs...) is left as it is: only the ones she runs herself are chosen anew.
+  ipcMain.handle('prepare:profile', async (_e, id) => {
+    const cfg = config.load();
+    const patch = { profile: ['cloud', 'light', 'standard', 'strong'].includes(id) ? id : 'auto', profileApplied: '', provisioned: false };
+    if (['system', 'chatterbox', 'piper'].includes(cfg.ttsEngine || 'system')) patch.ttsEngine = 'system';
+    chatterbox.stop(false);
+    piper?.stop(false);
+    if (provision.running) {
+      provision.cancel();
+      await provision.job?.catch(() => {});
+    }
+    updateConfig(patch);
+    dismissed = false;
+    provision.run();
+    return true;
+  });
+  ipcMain.handle('prepare:rescan', async () => {
+    if (provision.running) return false;
+    dismissed = false;
+    provision.run({ rescan: true });
+    return true;
+  });
+  ipcMain.on('prepare:openAi', () => openAiTab?.());
   ipcMain.handle('prepare:report', () => provision.report());
   ipcMain.on('prepare:copy', (_e, text) => clipboard.writeText(String(text).slice(0, 20000)));
   ipcMain.on('prepare:open', (_e, url) => { if (SITES.test(String(url))) shell.openExternal(String(url)); });

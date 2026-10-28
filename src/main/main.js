@@ -20,6 +20,8 @@ const apps = require('./apps');
 const launch = require('./launch');
 const tts = require('./tts');
 const { Chatterbox } = require('./chatterbox');
+const { Piper } = require('./piper');
+const hardware = require('./hardware');
 const { OllamaHost } = require('./ollama-host');
 const ollama = require('./ollama');
 const { Provision } = require('./provision');
@@ -57,25 +59,53 @@ const chatterbox = new Chatterbox({ roots: placesNextToHer });
 chatterbox.on('change', (status) => toOverlay('chatterbox:status', status));
 const ollamaHost = new OllamaHost({ roots: placesNextToHer });
 ollamaHost.on('change', (status) => toOverlay('ollama:status', status));
+const piper = new Piper({
+  roots: placesNextToHer,
+  defaultDir: () => path.join(app.getPath('userData'), 'piper'),
+  is64: hardware.systemIs64(),
+});
+piper.on('change', (status) => toOverlay('piper:status', status));
+// A look at this PC (hardware.js). It is kept for two weeks (PowerShell takes a second or two, and this PC does
+// not change), unless she is asked to look again; the free space of the disk is measured every time.
+const LOOK_KEEPS = 14 * 24 * 3600 * 1000;
+async function lookAtPc({ force = false } = {}) {
+  const dir = app.getPath('userData');
+  const fingerprint = `v1|${os.totalmem()}|${process.arch}|${os.release()}`; // (v: the shape of what is kept)
+  const kept = config.load().hardwareCache;
+  if (!force && kept && kept.key === fingerprint && Date.now() - kept.at < LOOK_KEEPS && kept.hw?.os) return { ...kept.hw, disk: hardware.diskOf(dir) };
+  const hw = await hardware.scan({ dir });
+  config.save({ hardwareCache: { at: Date.now(), key: fingerprint, hw: { ...hw, disk: undefined } } });
+  return hw;
+}
 const provision = new Provision({
   cfg: () => config.load(),
   save: (patch) => updateConfig(patch),
   lang: () => resolveLang(config.load().lang),
   ollamaHost,
   chatterbox,
+  piper,
   ollamaApi: { models: () => ollama.models(), pull: (name, onProgress, signal) => ollama.pull(name, onProgress, signal) },
   installOllama: process.platform === 'win32' ? setup.installOllama : null,
   downloadOllama: process.platform === 'win32' ? setup.downloadOllama : null,
-  installPython: process.platform === 'win32' ? setup.installPython : null,
+  downloadOllamaZip: process.platform === 'win32' ? (onLine, signal) => setup.downloadOllamaZip(path.join(app.getPath('userData'), 'ollama'), onLine, signal) : null,
+  installPython: process.platform === 'win32' ? (onLine) => setup.installPython(onLine, placesNextToHer()) : null,
   roots: placesNextToHer,
   defaultDir: () => path.join(app.getPath('userData'), 'chatterbox'),
+  hardware: lookAtPc,
+  // what the profile of this PC says about how she asks Ollama, and how Ollama is started
+  tune: (tuning) => {
+    ollama.tune(tuning);
+    ollamaHost.setEnv(tuning.ollamaEnv);
+  },
   onModelsChanged: () => refreshModels(),
 });
 let prepare = null; // her preparation window (prepare.js), made once the app is ready
 provision.on('change', (snapshot) => toOverlay('provision:status', snapshot));
-provision.on('finish', async ({ ok, plan, attention }) => {
+provision.on('finish', async ({ ok, plan, attention, profile }) => {
   await refreshModels();
   rebuildTray();
+  // a PC that cannot carry a local mind: the first time, she opens the tab where a cloud one is picked
+  if (ok && plan.adopt && profile === 'cloud' && (config.load().provider || 'ollama') === 'ollama') sendCommand('ring', { tab: 'ai' });
   // she says so, the first time and after anything long: a line in her own voice is the proof it all works
   if (ok && (attention || plan.adopt)) sendCommand('testVoice');
 });
@@ -334,8 +364,11 @@ function updateConfig(patch) {
   if (did('ears', 'pushToTalk')) registerPushToTalk();
   if (did('ttsEngine', 'chatterboxDir', 'chatterboxUrl', 'chatterboxAuto', 'chatterboxDevice', 'hfEndpoint')) chatterbox.sync(config.load()).catch(() => {});
   if (did('ollamaDir')) ollamaHost.stop(false);
-  // picking Ollama or Chatterbox (here, in her menu or in her ring) gets what they need ready, by herself
-  if (config.load().autoSetup !== false && ((did('provider') && config.load().provider === 'ollama') || (did('ttsEngine') && config.load().ttsEngine === 'chatterbox'))) provision.run();
+  if (did('piperDir')) piper.stop(false);
+  // picking Ollama, Chatterbox or Piper (here, in her menu or in her ring), or a language that needs another Piper voice,
+  // gets what they need ready, by herself
+  const voice = config.load().ttsEngine;
+  if (config.load().autoSetup !== false && ((did('provider') && config.load().provider === 'ollama') || (did('ttsEngine') && ['chatterbox', 'piper'].includes(voice)) || (did('lang') && voice === 'piper'))) provision.run();
   const cfg = rendererConfig();
   overlay?.webContents.send('capri:config', cfg);
   rebuildTray();
@@ -1008,7 +1041,7 @@ function registerIpc() {
     const cfg = config.load();
     try {
       const base = cfg.ttsEngine === 'chatterbox' ? await chatterbox.ready(cfg) : '';
-      const audio = await tts.speak(cfg, setup.openKeys(cfg.apiKeys), { text, mood, lang, base });
+      const audio = await tts.speak(cfg, setup.openKeys(cfg.apiKeys), { text, mood, lang, base, piper });
       return { ok: true, audio };
     } catch (err) {
       return { ok: false, error: err.message, code: err.code || null };
@@ -1028,6 +1061,7 @@ function registerIpc() {
   ipcMain.on('tts:keyPage', (_e, engine) => tts.KEY_PAGES[engine] && shell.openExternal(tts.KEY_PAGES[engine]));
   // Chatterbox: how it is doing, which folder it is, and starting it again
   ipcMain.handle('chatterbox:status', () => chatterbox.status());
+  ipcMain.handle('piper:status', () => piper.status());
   ipcMain.handle('ollama:status', async () => ({ ...ollamaHost.status(), model: pickModel(), models: chatModels || [] }));
   ipcMain.handle('provision:status', () => provision.snapshot());
   ipcMain.handle('chatterbox:choose', async () => {
@@ -1233,7 +1267,8 @@ function main() {
     allowLoopbackAudio();
     registerPushToTalk();
     prepare = createPrepare({
-      BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, ollamaHost, chatterbox,
+      BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, ollamaHost, chatterbox, piper,
+      openAiTab: () => sendCommand('ring', { tab: 'ai' }),
       lang: () => resolveLang(config.load().lang),
       protocolUrl: 'capri://app/src/renderer/prepare.html',
     });
@@ -1257,7 +1292,7 @@ function main() {
   app.on('will-quit', () => {
     config.flush(); // the last changes, written now
     // what she started goes with her (each on its own: one failing must not leave the other running)
-    for (const stop of [() => provision.cancel(), () => chatterbox.stop(), () => ollamaHost.stop()]) {
+    for (const stop of [() => provision.cancel(), () => chatterbox.stop(), () => piper.stop(), () => ollamaHost.stop()]) {
       try { stop(); } catch (err) { console.error('[capri] stopping what she started:', err.message); }
     }
     clearTimeout(trayTimer);

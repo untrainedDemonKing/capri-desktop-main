@@ -1,8 +1,8 @@
 'use strict';
 
-// Getting her mind (Ollama) and her voice (Chatterbox) ready by herself (src/main/provision.js), with
-// stand-ins for what is slow or far: the Ollama program and its model fetch, the Python tools, the voice
-// server. The real pieces together are in tests/prepare.e2e.test.js.
+// Getting her mind (Ollama) and her voice (Chatterbox or Piper) ready by herself, by the PC she is on
+// (src/main/provision.js), with stand-ins for what is slow or far: the look at the PC, the Ollama program and its
+// model fetch, the Python tools, the voice servers. The real pieces together are in tests/prepare.e2e.test.js.
 //   node --test tests/provision.test.js
 
 const test = require('node:test');
@@ -12,7 +12,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 
-const { Provision, pickInstalled, chooseModel, bytes } = require('../src/main/provision.js');
+const { Provision, pickInstalled, sameModel, bytes } = require('../src/main/provision.js');
+const hardware = require('../src/main/hardware.js');
 
 const GB = 1024 ** 3;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-prov-'));
@@ -31,14 +32,12 @@ test('the model to talk with: yours, then the ones she likes, never an embedding
   assert.equal(pickInstalled(['gemma3:4b'], 'gone:1b'), 'gemma3:4b', 'a config model that is not installed is not chosen');
 });
 
-test('the model to fetch fits the PC: a big card, a middling one, a small PC', () => {
-  assert.equal(chooseModel({ ram: 32 * GB, vram: 24 * GB }), 'qwen2.5:7b');
-  assert.equal(chooseModel({ ram: 32 * GB, vram: 8 * GB }), 'gemma3:4b', 'the voice wants the card too');
-  assert.equal(chooseModel({ ram: 32 * GB, vram: 0 }), 'qwen2.5:7b', 'no card: the RAM decides');
-  assert.equal(chooseModel({ ram: 16 * GB, vram: 0 }), 'gemma3:4b');
-  assert.equal(chooseModel({ ram: 8 * GB, vram: 0 }), 'llama3.2');
-  assert.equal(chooseModel({ ram: 16 * GB, vram: 4 * GB }), 'gemma3:4b');
-  assert.equal(chooseModel(), 'llama3.2');
+test('an installed model that is the one wanted: the same name, or the same with a variant after it', () => {
+  assert.equal(sameModel(['gemma3:4b'], 'gemma3:4b'), 'gemma3:4b');
+  assert.equal(sameModel(['gemma3:4b-it-q4_K_M'], 'gemma3:4b'), 'gemma3:4b-it-q4_K_M');
+  assert.equal(sameModel(['gemma3:12b'], 'gemma3:1b'), null, '1b is not 12b');
+  assert.equal(sameModel(['gemma3:4b'], 'gemma3:1b'), null);
+  assert.equal(sameModel([], 'gemma3:4b'), null);
   assert.equal(bytes(3.3 * GB, 'ru'), '3.3 ГБ');
   assert.equal(bytes(200 * 1048576, 'en'), '200 MB');
 });
@@ -52,7 +51,9 @@ function world(overrides = {}) {
   const state = {
     ollamaRunning: false, ollamaFound: true, ollamaStartFails: '', models: [], pullFails: '', pulls: [],
     cbPhase: 'off', cbProgress: [], cbFails: '', hasPackage: true, pipFails: false, systemPython: { cmd: 'python3', pre: [], version: '3.11.4' },
-    installed: [], ...(overrides.state || {}),
+    installed: [], piperFound: false, piperVoice: '', piperInstallFails: '', piperVoiceFails: '', piperCheckFails: '', piperInstalls: 0, voiceFetches: [],
+    tuned: [], hardwareCalls: [], hw: { ram: 32 * GB, vram: 8 * GB }, hardwareFails: false, cudaCalls: [], pips: [], torchHasCuda: true,
+    ...(overrides.state || {}),
   };
   const ollamaHost = {
     versionFn: async () => (state.ollamaRunning ? '0.1' : ''),
@@ -100,9 +101,38 @@ function world(overrides = {}) {
       return { ok: true, tail: [] };
     },
     pipActivity: require('../src/main/chatterbox-setup.js').pipActivity,
-    torchStatus: () => ({ version: '2.6.0', audio: '2.6.0', cuda: true }),
+    torchStatus: () => ({ version: '2.6.0', audio: '2.6.0', cuda: state.torchHasCuda }),
     hasNvidia: async () => false,
-    cudaTorchArgs: () => [],
+    cudaTorchArgs: (torch, gpu) => { state.cudaCalls.push(gpu); return state.cudaNone ? null : ['install', '--force-reinstall', 'torch==cuda']; },
+  };
+  const realPip = tools.pip;
+  tools.pip = async (py, args, onLine) => { state.pips.push(args); return realPip(py, args, onLine); };
+  const piper = {
+    locate: () => (state.piperFound ? { exe: '/p/piper', dir: '/p', root: '/p' } : null),
+    voices: () => (state.piperVoice ? [{ key: state.piperVoice }] : []),
+    voiceFor: () => (state.piperVoice ? { key: state.piperVoice } : null),
+    install: async ({ onProgress }) => {
+      if (state.piperInstallFails) throw new Error(state.piperInstallFails);
+      for (const done of [1, 2, 3, 4]) {
+        onProgress({ completed: done * 5e6, total: 2e7 });
+        await new Promise((r) => setTimeout(r, 3));
+      }
+      state.piperFound = true;
+      state.piperInstalls++;
+      return { exe: '/p/piper', dir: '/p', root: '/p' };
+    },
+    fetchVoice: async (_cfg, lang, { onProgress }) => {
+      state.voiceFetches.push(lang);
+      if (state.piperVoiceFails) throw new Error(state.piperVoiceFails);
+      for (const done of [1, 2]) {
+        onProgress({ completed: done * 3e7, total: 6e7 });
+        await new Promise((r) => setTimeout(r, 3));
+      }
+      state.piperVoice = lang === 'ru' ? 'ru_RU-irina-medium' : 'en_US-amy-medium';
+      return { key: state.piperVoice, onnx: '/p/voices/x.onnx' };
+    },
+    check: async () => { if (state.piperCheckFails) throw new Error(state.piperCheckFails); },
+    status: () => ({ phase: state.piperCheckFails ? 'failed' : 'ready', voice: state.piperVoice, exe: '/p/piper', log: ['piper log'] }),
   };
   const api = {
     models: async () => [...state.models],
@@ -121,17 +151,22 @@ function world(overrides = {}) {
     cfg: () => cfg,
     save: (patch) => { saved.push(patch); Object.assign(cfg, patch); },
     lang: () => 'en',
-    ollamaHost, chatterbox, ollamaApi: api, tools,
+    ollamaHost, chatterbox, piper, ollamaApi: api, tools,
     installOllama: overrides.installOllama === undefined ? async () => { state.installed.push('ollama'); state.ollamaFound = true; return { ok: true }; } : overrides.installOllama,
     downloadOllama: null,
     installPython: async () => { state.installed.push('python'); state.systemPython = { cmd: 'python3', pre: [], version: '3.11.4' }; return { ok: true }; },
     roots: () => [path.join(tmp, 'roots')],
     defaultDir: () => path.join(tmp, 'userdata', `chatterbox-${++worlds}`),
-    hardware: async () => ({ ram: 32 * GB, vram: 8 * GB }),
+    hardware: async (opts) => {
+      state.hardwareCalls.push(opts);
+      if (state.hardwareFails) throw new Error('powershell is not there');
+      return state.hw;
+    },
+    tune: (tuning) => state.tuned.push(tuning),
     onModelsChanged: async () => {},
     ...(overrides.deps || {}),
   });
-  return { p, cfg, saved, state };
+  return { p, cfg, saved, state, piper };
 }
 const states = (p) => Object.fromEntries(p.steps.map((s) => [s.id, s.state]));
 
@@ -147,7 +182,10 @@ test('everything is there already: nothing is shown, nothing is fetched, her cho
   const dir = readyFolder('Chatterbox-Ready');
   const { p, saved, state, cfg } = world({ state: { ollamaRunning: true, models: ['gemma3:4b'], hasPackage: true, cbProgress: [] } });
   await p.run();
-  assert.deepEqual(states(p), { 'ollama-find': 'done', 'ollama-run': 'done', 'ollama-model': 'done', 'cb-find': 'done', 'cb-python': 'done', 'cb-package': 'done', 'cb-model': 'done' });
+  assert.deepEqual(states(p), {
+    scan: 'done', 'ollama-find': 'done', 'ollama-run': 'done', 'ollama-model': 'done', 'cb-find': 'done', 'cb-python': 'done', 'cb-package': 'done', 'cb-model': 'done',
+    'pp-find': 'skipped', 'pp-voice': 'skipped', 'pp-run': 'skipped',
+  });
   assert.equal(p.ok, true);
   assert.equal(p.attention, false, 'nothing long happened: the window stays shut');
   assert.deepEqual(state.pulls, []);
@@ -186,8 +224,9 @@ test('what she is not using she does not prepare: Claude for the mind, ElevenLab
   const { p } = world({ cfg: { provider: 'anthropic', ttsEngine: 'elevenlabs', provisioned: true } });
   await p.run();
   assert.equal(p.ok, true);
-  assert.ok(p.steps.every((s) => s.state === 'skipped'));
-  assert.deepEqual(p.plan, { ollama: false, chatterbox: false, adopt: false });
+  assert.ok(p.steps.filter((s) => s.id !== 'scan').every((s) => s.state === 'skipped'));
+  assert.equal(p.step('scan').state, 'done', 'she looks at the PC all the same');
+  assert.deepEqual(p.plan, { ollama: false, chatterbox: false, piper: false, adopt: false, engine: 'elevenlabs' });
   // and a voice she was given before is not taken from you the first time either
   const w = world({ cfg: { provider: 'ollama', ttsEngine: 'openai', provisioned: false }, state: { ollamaRunning: true, models: ['gemma3:4b'] } });
   await w.p.run();
@@ -303,4 +342,226 @@ test('the report says what is done and what failed, for pasting into a message',
   assert.match(text, /error: I did not find Ollama/);
   assert.match(text, /plan: \{"ollama":true/);
   assert.match(text, /ollama: \{"phase":"off"/);
+});
+
+// ---- by the PC she is on ----
+
+const pc = (o = {}) => hardware.make({ disk: { path: '', free: 300 * GB, total: 500 * GB }, ...o });
+const nvidia = (name, vram, extra = {}) => ({ name: `NVIDIA GeForce ${name}`, vram: vram * GB, driver: '552.22', compute: 8.6, ...extra });
+
+test('she looks at the PC first, and says what it is and what profile it got, with what that costs to fetch', async () => {
+  const { p, state } = world({ cfg: { provider: 'anthropic', ttsEngine: 'openai' }, state: { hw: pc({ ram: 15.9 * GB, cpu: { name: 'Intel(R) Core(TM) i5-12400F CPU', threads: 12 }, gpus: [nvidia('RTX 3060', 12)] }) } });
+  const seen = [];
+  p.on('change', (s) => seen.push(s));
+  await p.run();
+  assert.equal(p.step('scan').state, 'done');
+  assert.match(p.step('scan').detail, /Core i5-12400F.*memory 15\.9 GB.*graphics card: RTX 3060 12\.0 GB.*profile “Strong”/);
+  const snap = p.snapshot();
+  assert.equal(snap.profile.id, 'strong');
+  assert.equal(snap.profile.auto, true);
+  assert.deepEqual([snap.profile.mind.model, snap.profile.voice.engine, snap.profile.voice.device], ['gemma3:4b', 'chatterbox', 'cuda']);
+  assert.ok(snap.profile.download.total > 10 * GB);
+  assert.equal(snap.pc.gpu.vram, 12 * GB);
+  assert.equal(snap.pc.threads, 12);
+  assert.ok(seen.some((s) => s.steps.find((x) => x.id === 'scan').state === 'running' && !s.pc), 'the window hears of the look before its result');
+  assert.deepEqual(state.hardwareCalls, [{ force: false }]);
+  assert.deepEqual(state.tuned.map((t) => t.numCtx), [8192], 'how she asks Ollama is set by the profile');
+  await p.run({ rescan: true });
+  assert.deepEqual(state.hardwareCalls[1], { force: true }, 'asked to look again, she does not take the last look');
+  assert.match(p.report(), /pc: .* ram 16 GB, gpu NVIDIA GeForce RTX 3060 12 GB, driver 552\.22/);
+  assert.match(p.report(), /profile: strong \(by herself\), mind ollama gemma3:4b, voice chatterbox\/cuda/);
+});
+
+test('a plain PC (16 GB, no card): the 4B model and the Piper voice; no Python, no Chatterbox', async () => {
+  const { p, cfg, state } = world({ state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true } });
+  const changes = [];
+  p.on('change', (s) => changes.push(s));
+  await p.run();
+  assert.equal(p.ok, true, JSON.stringify(states(p)));
+  assert.deepEqual(state.pulls, ['gemma3:4b']);
+  assert.equal(cfg.chatModel, 'gemma3:4b');
+  assert.deepEqual(['cb-find', 'cb-python', 'cb-package', 'cb-model'].map((id) => p.step(id).state), ['skipped', 'skipped', 'skipped', 'skipped'], 'none of Chatterbox');
+  assert.deepEqual(['pp-find', 'pp-voice', 'pp-run'].map((id) => p.step(id).state), ['done', 'done', 'done']);
+  assert.equal(state.piperInstalls, 1, 'the program was fetched');
+  assert.deepEqual(state.voiceFetches, ['en'], 'and the voice of the language she speaks');
+  assert.equal(cfg.ttsEngine, 'piper');
+  assert.equal(cfg.provisioned, true);
+  assert.equal(p.attention, true, 'a fetch happened: the window was worth showing');
+  assert.match(p.step('pp-run').detail, /The voice works \(en_US-amy-medium\)/);
+  const bar = changes.map((c) => c.steps.find((s) => s.id === 'pp-find')).filter((s) => s.state === 'running' && s.progress !== null).map((s) => s.progress);
+  assert.ok(bar.length >= 3 && bar[bar.length - 1] === 1, `the program's bar went up: ${bar}`);
+  assert.ok(changes.some((c) => /Fetching a voice: \d+ MB of \d+ MB/.test(c.steps.find((s) => s.id === 'pp-voice').detail)));
+  assert.equal(p.snapshot().plan.piper, true);
+  assert.equal(p.snapshot().profile.download.total, 0, 'after all of it is fetched the plan has nothing left to fetch');
+});
+
+test('the second start on a plain PC: the program and the voice are there, nothing is fetched, and the window stays shut', async () => {
+  const { p, state, cfg } = world({ cfg: { ttsEngine: 'piper', provisioned: true, chatModel: 'gemma3:4b' }, state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, models: ['gemma3:4b'], piperFound: true, piperVoice: 'en_US-amy-medium' } });
+  await p.run();
+  assert.equal(p.ok, true);
+  assert.equal(p.attention, false);
+  assert.deepEqual([state.piperInstalls, state.voiceFetches, state.pulls], [0, [], []]);
+  assert.equal(cfg.ttsEngine, 'piper');
+});
+
+test('her language decides the voice she fetches', async () => {
+  const w = world({ state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, models: ['gemma3:4b'] }, deps: { lang: () => 'ru' } });
+  await w.p.run();
+  assert.deepEqual(w.state.voiceFetches, ['ru']);
+  assert.match(w.p.step('pp-run').detail, /ru_RU-irina-medium/);
+});
+
+test('a small PC (4 GB): the 1B model, which cannot see the screen, and the Piper voice', async () => {
+  const { p, state, cfg } = world({ state: { hw: pc({ ram: 3.9 * GB, gpus: [{ name: 'Intel(R) UHD Graphics', vram: 1 * GB }] }), ollamaRunning: true } });
+  await p.run();
+  assert.equal(p.ok, true, JSON.stringify(states(p)));
+  assert.deepEqual(state.pulls, ['gemma3:1b']);
+  assert.equal(cfg.ttsEngine, 'piper');
+  assert.equal(p.snapshot().profile.id, 'light');
+  assert.ok(p.snapshot().profile.notes.includes('noEyes'));
+  assert.deepEqual(state.tuned.map((t) => t.numCtx), [2048]);
+});
+
+test('a PC that cannot carry local models: no Ollama, no download of a model; the mind is left for a cloud one, the voice is the lightest', async () => {
+  const { p, state, cfg } = world({ state: { hw: pc({ arch: 'ia32', env: { PROCESSOR_ARCHITECTURE: 'x86' }, ram: 3 * GB }), ollamaFound: false } });
+  await p.run();
+  assert.equal(p.ok, true, JSON.stringify(states(p)));
+  assert.deepEqual([state.installed, state.pulls], [[], []], 'nothing is installed and no model is fetched');
+  assert.ok(['ollama-find', 'ollama-run', 'ollama-model'].every((id) => p.step(id).state === 'skipped'));
+  assert.equal(p.snapshot().profile.id, 'cloud');
+  assert.ok(p.snapshot().profile.notes.includes('os32'));
+  assert.equal(p.snapshot().plan.ollama, false);
+  assert.equal(cfg.ttsEngine, 'system', 'a 32-bit Windows has no Piper');
+  assert.equal(cfg.provisioned, true, 'and it is settled: she does not look for a voice again on every start');
+  // an Ollama that is already there on such a PC is still her mind (nobody asked for the cloud)
+  const has = world({ state: { hw: pc({ ram: 3 * GB }), ollamaFound: true, ollamaRunning: true, models: ['gemma3:1b'] } });
+  await has.p.run();
+  assert.equal(has.p.step('ollama-model').state, 'done');
+  // but if you ask for the cloud, it is the cloud
+  const asked = world({ cfg: { profile: 'cloud' }, state: { hw: pc({ ram: 31 * GB }), ollamaFound: true, ollamaRunning: true, models: ['gemma3:4b'] } });
+  await asked.p.run();
+  assert.equal(asked.p.step('ollama-model').state, 'skipped');
+});
+
+test('a profile you ask for is given, with its own model, once; after that your choice of model stands', async () => {
+  const w = world({ cfg: { profile: 'light', chatModel: 'gemma3:4b', ttsEngine: 'piper' }, state: { hw: pc({ ram: 31 * GB }), ollamaRunning: true, models: ['gemma3:4b'], piperFound: true, piperVoice: 'en_US-amy-medium' } });
+  await w.p.run();
+  assert.deepEqual(w.state.pulls, ['gemma3:1b'], 'the light profile fetches its own model, though a bigger one is there');
+  assert.equal(w.cfg.chatModel, 'gemma3:1b');
+  assert.equal(w.cfg.profileApplied, 'light');
+  // then you pick another model in her menu: the next start does not undo it
+  w.cfg.chatModel = 'gemma3:4b';
+  await w.p.run();
+  assert.equal(w.cfg.chatModel, 'gemma3:4b');
+  assert.deepEqual(w.state.pulls, ['gemma3:1b']);
+  // the profile asked for is in the plan whatever the PC would have picked
+  assert.equal(w.p.snapshot().profile.id, 'light');
+  assert.equal(w.p.snapshot().profile.auto, false);
+  // a profile whose model is installed already is not fetched
+  const have = world({ cfg: { profile: 'standard', ttsEngine: 'piper' }, state: { hw: pc({ ram: 8 * GB }), ollamaRunning: true, models: ['gemma3:4b-it-q4_K_M'], piperFound: true, piperVoice: 'en_US-amy-medium' } });
+  await have.p.run();
+  assert.deepEqual(have.state.pulls, []);
+  assert.equal(have.cfg.chatModel, 'gemma3:4b-it-q4_K_M');
+});
+
+test('a Chatterbox folder that you put next to her stays her voice on a plain PC (and she says the voice will be slow)', async () => {
+  const dir = readyFolder('Chatterbox-Given');
+  const { p, cfg } = world({ state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, models: ['gemma3:4b'], hasPackage: true } });
+  await p.run();
+  assert.equal(cfg.ttsEngine, 'chatterbox');
+  assert.equal(p.step('cb-model').state, 'done');
+  assert.equal(p.step('pp-find').state, 'skipped');
+  const notes = p.snapshot().profile.notes;
+  assert.ok(notes.includes('folderWins') && notes.includes('slowVoice'), notes.join());
+  // but if you pick the profile yourself, it is the profile's voice
+  const asked = world({ cfg: { profile: 'standard' }, state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, models: ['gemma3:4b'], hasPackage: true } });
+  await asked.p.run();
+  assert.equal(asked.cfg.ttsEngine, 'piper');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a look at the PC that fails does not stop her: a usual PC is assumed', async () => {
+  const { p } = world({ cfg: { provider: 'anthropic', ttsEngine: 'openai' }, state: { hardwareFails: true } });
+  await p.run();
+  assert.equal(p.step('scan').state, 'done');
+  assert.equal(p.ok, true);
+  assert.ok(p.snapshot().profile.id);
+});
+
+test('Piper failing says where, with the buttons that help: no program, no voice, a voice that will not speak; and it goes on from there', async () => {
+  const a = world({ state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, models: ['gemma3:4b'], piperInstallFails: 'api.github.com answered 503' } });
+  await a.p.run();
+  assert.equal(a.p.step('pp-find').state, 'failed');
+  assert.match(a.p.step('pp-find').error, /Could not get Piper: api\.github\.com answered 503/);
+  assert.deepEqual(a.p.step('pp-find').actions, ['retry', 'choose-piper']);
+  assert.equal(a.p.step('pp-voice').state, 'pending');
+  assert.equal(a.cfg.ttsEngine, 'system', 'she keeps the voice she had until the new one works');
+  a.state.piperInstallFails = '';
+  await a.p.retry();
+  assert.equal(a.p.ok, true, JSON.stringify(states(a.p)));
+  assert.equal(a.cfg.ttsEngine, 'piper');
+
+  const b = world({ state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, models: ['gemma3:4b'], piperFound: true, piperVoiceFails: 'the voice library answered 503' } });
+  await b.p.run();
+  assert.equal(b.p.step('pp-voice').state, 'failed');
+  assert.match(b.p.step('pp-voice').error, /Could not fetch a voice: the voice library answered 503/);
+
+  const c = world({ state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, models: ['gemma3:4b'], piperFound: true, piperVoice: 'en_US-amy-medium', piperCheckFails: 'Failed to load model: invalid protobuf' } });
+  await c.p.run();
+  assert.equal(c.p.step('pp-run').state, 'failed');
+  assert.match(c.p.step('pp-run').error, /Piper did not speak: Failed to load model/);
+  assert.deepEqual(c.p.step('pp-run').log, ['piper log']);
+  assert.equal(c.cfg.ttsEngine, 'system');
+
+  const d = world({ cfg: { piperDir: '/nowhere' }, state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, models: ['gemma3:4b'] }, deps: { piper: { locate: () => null } } });
+  await d.p.run();
+  assert.match(d.p.step('pp-find').error, /There is no folder \/nowhere/);
+  assert.deepEqual(d.p.step('pp-find').actions, ['retry', 'choose-piper']);
+});
+
+test('the card and its driver decide the torch: a card without its torch gets the build for its driver; one no build fits is left on the processor, said', async () => {
+  const gpu = nvidia('RTX 3060', 12, { driver: '552.22' });
+  const a = world({ state: { hw: pc({ ram: 15.9 * GB, gpus: [gpu] }), ollamaRunning: true, models: ['gemma3:4b'], hasPackage: true, torchHasCuda: false } });
+  readyFolder('Chatterbox-Card');
+  await a.p.run();
+  assert.equal(a.state.cudaCalls.length, 1);
+  assert.equal(a.state.cudaCalls[0].driver, '552.22', 'the build is chosen by the card\'s driver and capability');
+  assert.ok(a.state.pips.some((args) => args.includes('torch==cuda')), 'and installed');
+  const b = world({ state: { hw: pc({ ram: 15.9 * GB, gpus: [gpu] }), ollamaRunning: true, models: ['gemma3:4b'], hasPackage: true, torchHasCuda: false, cudaNone: true } });
+  await b.p.run();
+  assert.match(b.p.step('cb-package').detail, /without graphics-card support|installed/);
+  assert.equal(b.state.pips.length, 0, 'no build fits: nothing is installed');
+  // a PC with no card is not given a torch for one
+  const c = world({ cfg: { ttsEngine: 'chatterbox', provisioned: true }, state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, models: ['gemma3:4b'], hasPackage: true, torchHasCuda: false } });
+  await c.p.run();
+  assert.equal(c.state.cudaCalls.length, 0);
+  fs.rmSync(path.join(tmp, 'roots', 'Chatterbox-Card'), { recursive: true, force: true });
+});
+
+test('Ollama that cannot be installed otherwise is fetched as a zip into a folder of hers, which she remembers', async () => {
+  const w = world({
+    state: { ollamaFound: false, hw: pc({ ram: 15.9 * GB }) }, installOllama: async () => ({ ok: false }),
+    deps: { downloadOllamaZip: async (onLine) => { onLine('50%'); w.state.ollamaFound = true; return { ok: true, dir: '/userdata/ollama' }; } },
+  });
+  await w.p.run();
+  assert.equal(w.cfg.ollamaDir, '/userdata/ollama');
+  assert.equal(w.p.step('ollama-find').state, 'done');
+});
+
+test('Python\'s own installer next to her is found (the 3.11 one first, the right bits), for a PC with no winget', () => {
+  const setup = require('../src/main/setup.js');
+  const root = mk('py-installers');
+  touch(path.join(root, 'python-3.12.4-amd64.exe'));
+  touch(path.join(root, 'python-3.11.9-amd64.exe'));
+  touch(path.join(root, 'python', 'python-3.10.11-amd64.exe'));
+  touch(path.join(root, 'python-3.13.0-amd64.exe')); // too new for Chatterbox
+  touch(path.join(root, 'notes.txt'));
+  assert.equal(setup.findPythonInstaller([root]), path.join(root, 'python-3.11.9-amd64.exe'));
+  fs.rmSync(path.join(root, 'python-3.11.9-amd64.exe'));
+  assert.equal(setup.findPythonInstaller([root]), path.join(root, 'python-3.12.4-amd64.exe'));
+  assert.equal(setup.findPythonInstaller([mk('py-nothing')]), null);
+  assert.equal(setup.findPythonInstaller([path.join(tmp, 'not-a-folder')]), null);
+  const inner = mk('py-installers2');
+  touch(path.join(inner, 'installers', 'python-3.11.9-amd64.exe'));
+  assert.equal(setup.findPythonInstaller([inner]), path.join(inner, 'installers', 'python-3.11.9-amd64.exe'), 'a folder called installers');
 });

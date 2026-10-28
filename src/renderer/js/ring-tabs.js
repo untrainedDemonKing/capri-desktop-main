@@ -574,7 +574,7 @@ const voice = {
       onChange: () => c.drop(),
     }));
     root.append(heading(v.engine));
-    root.append(pick(['system', 'chatterbox', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: v.engines[id] })), cfg.ttsEngine || 'system', (id) => c.set({ ttsEngine: id })));
+    root.append(pick(['system', 'piper', 'chatterbox', 'openai', 'elevenlabs', 'custom'].map((id) => ({ id, label: v.engines[id] })), cfg.ttsEngine || 'system', (id) => c.set({ ttsEngine: id })));
     // Chatterbox, on this PC: whether it is up, which folder, and a button to start it again
     if (cfg.ttsEngine === 'chatterbox' && c.host.chatterboxStatus) {
       const box = el('div');
@@ -597,6 +597,20 @@ const voice = {
       };
       c.host.chatterboxStatus().then(paint).catch(() => {});
       c.onLeave(c.host.onChatterbox(paint));
+    }
+    // Piper, on this PC: whether it works, which voice, and the preparation window
+    if (cfg.ttsEngine === 'piper' && c.host.piperStatus) {
+      const box = el('div');
+      root.append(box);
+      const paint = (st) => {
+        const text = st.phase === 'ready' ? v.ppReady.replace('{voice}', st.voice || '')
+          : st.phase === 'starting' ? v.ppStarting
+          : st.phase === 'failed' ? v.ppFailed.replace('{error}', String(st.error || '').slice(0, 160))
+          : v.ppOff;
+        box.replaceChildren(note(text, st.phase !== 'failed'), buttons(button(v.cbPrepare, () => c.host.prepareShow?.())));
+      };
+      c.host.piperStatus().then(paint).catch(() => {});
+      c.onLeave(c.host.onPiper(paint));
     }
     root.append(buttons(go(c, v.setup, 'setupVoice'), go(c, v.test, 'testVoice')));
 

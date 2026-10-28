@@ -125,11 +125,28 @@ async function hasNvidia({ platform = process.platform, whichFn = which } = {}) 
   return Boolean(await whichFn('nvidia-smi', { platform }));
 }
 
-// The CUDA build of the same torch the package pulled in (the plain one from PyPI has no card support on
-// Windows): same versions, from PyTorch's own index. Returns pip's result.
-function cudaTorchArgs(torch, index = 'https://download.pytorch.org/whl/cu124') {
-  const pins = [`torch==${torch.version}`, ...(torch.audio ? [`torchaudio==${torch.audio}`] : [])];
-  return ['install', '--force-reinstall', '--no-deps', ...pins, '--index-url', index];
+// Which of PyTorch's builds for NVIDIA cards fits this card and its driver: the card's capability (the newest
+// cards, "Blackwell", need CUDA 12.8 and a torch of 2.7), then the driver (an older driver cannot run a newer
+// build). null: a driver too old for any of them. `gpu`: { driver, compute } as hardware.js has them; without
+// them, the middle one (what most drivers of the last years run).
+function cudaBuild(gpu = {}) {
+  const driver = parseFloat(String(gpu.driver || '').split('.').slice(0, 2).join('.')) || 0;
+  const compute = Number(gpu.compute) || 0;
+  const url = (tag) => `https://download.pytorch.org/whl/${tag}`;
+  if (compute >= 12) return driver && driver < 570 ? null : { index: url('cu128'), pin: '2.7.1' };
+  if (!driver || driver >= 551) return { index: url('cu124'), pin: '' };
+  if (driver >= 452) return { index: url('cu118'), pin: '' };
+  return null;
 }
 
-module.exports = { candidates, parseVersion, findSystemPython, venvPython, createVenv, hasChatterbox, installTarget, pip, pipActivity, torchStatus, hasNvidia, cudaTorchArgs, MIN, MAX };
+// The CUDA build of the same torch the package pulled in (the plain one from PyPI has no card support on
+// Windows): same versions, from PyTorch's own index. Returns pip's arguments, or null if no build fits the card.
+function cudaTorchArgs(torch, gpu = {}) {
+  const build = cudaBuild(gpu);
+  if (!build) return null;
+  const version = build.pin || torch.version;
+  const pins = [`torch==${version}`, ...(torch.audio ? [`torchaudio==${build.pin || torch.audio}`] : [])];
+  return ['install', '--force-reinstall', '--no-deps', ...pins, '--index-url', build.index];
+}
+
+module.exports = { candidates, parseVersion, findSystemPython, venvPython, createVenv, hasChatterbox, installTarget, pip, pipActivity, torchStatus, hasNvidia, cudaBuild, cudaTorchArgs, MIN, MAX };

@@ -6,8 +6,9 @@
 //
 // OpenAI (gpt-4o-mini-tts takes instructions: her tone and mood), ElevenLabs (any voice of your
 // library; with an eleven_v3 model her mood goes in as an audio tag), Chatterbox (a model on your own PC,
-// started and kept by her: chatterbox.js; her mood goes in as its dials), or any OpenAI-compatible
-// server (a local one like openedai-speech: /v1/audio/speech).
+// started and kept by her: chatterbox.js; her mood goes in as its dials), Piper (a light model for a PC with
+// no card, run by her: piper.js), or any OpenAI-compatible server (a local one like openedai-speech:
+// /v1/audio/speech).
 
 const { moodDials } = require('./chatterbox');
 
@@ -16,6 +17,7 @@ const ENGINES = {
   openai: { label: 'OpenAI', url: 'https://api.openai.com/v1', key: 'openai', env: 'OPENAI_API_KEY' },
   elevenlabs: { label: 'ElevenLabs', url: 'https://api.elevenlabs.io/v1', key: 'elevenlabs', env: 'ELEVENLABS_API_KEY' },
   chatterbox: { label: 'Chatterbox (on this PC, started by her)' },
+  piper: { label: 'Piper (on this PC, light, run by her)' },
   custom: { label: 'OpenAI-compatible server', key: 'tts' },
 };
 
@@ -73,14 +75,18 @@ async function failure(res) {
   return withCode(new Error(message), res.status === 401 || res.status === 403 ? 'badkey' : null);
 }
 
-// The audio of `text` said by the engine picked in her config, as a Buffer (mp3, or wav from Chatterbox).
-// keys: the opened API keys ({ openai, elevenlabs, tts }); lang: what she speaks; base: where Chatterbox
-// is listening (chatterbox.js knows).
-async function speak(cfg, keys, { text, mood = 'calm', lang = 'en', base: chatterboxBase = '' }) {
+// The audio of `text` said by the engine picked in her config, as a Buffer (mp3, or wav from Chatterbox and
+// Piper). keys: the opened API keys ({ openai, elevenlabs, tts }); lang: what she speaks; base: where
+// Chatterbox is listening (chatterbox.js knows); piper: her Piper (piper.js).
+async function speak(cfg, keys, { text, mood = 'calm', lang = 'en', base: chatterboxBase = '', piper = null }) {
   const input = String(text || '').trim().slice(0, 1500);
   if (!input) throw new Error('nothing to say');
   const engine = ENGINES[cfg.ttsEngine] ? cfg.ttsEngine : 'system';
   if (engine === 'system') throw withCode(new Error('this voice is made and played by the overlay'), engine);
+  if (engine === 'piper') {
+    if (!piper) throw withCode(new Error('Piper is not running'), 'nourl');
+    return piper.speak(cfg, { text: input, lang: String(lang || 'en').slice(0, 2) });
+  }
   const def = DEFAULTS[engine] || {};
   const model = cfg.ttsModel || def.model;
   const voice = cfg.ttsVoice || def.voice;

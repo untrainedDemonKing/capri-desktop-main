@@ -20,7 +20,10 @@ const [hostname, port] = host.split(':');
 const modelsDir = process.env.OLLAMA_MODELS || path.join(__dirname, 'no-models');
 const library = path.join(modelsDir, 'manifests', 'registry.ollama.ai', 'library');
 const record = (what) => {
-  if (process.env.FAKE_OLLAMA_LOG) fs.appendFileSync(process.env.FAKE_OLLAMA_LOG, `${JSON.stringify({ ...what, models: process.env.OLLAMA_MODELS || '' })}\n`);
+  if (process.env.FAKE_OLLAMA_LOG) {
+    const env = { maxLoaded: process.env.OLLAMA_MAX_LOADED_MODELS || '', parallel: process.env.OLLAMA_NUM_PARALLEL || '' };
+    fs.appendFileSync(process.env.FAKE_OLLAMA_LOG, `${JSON.stringify({ ...what, env, models: process.env.OLLAMA_MODELS || '' })}\n`);
+  }
 };
 const installed = () => {
   const out = [];
@@ -50,7 +53,7 @@ http.createServer(async (req, res) => {
   if (url === '/api/version') return json(200, { version: '0.0.0-fake' });
   if (url === '/api/tags') return json(200, { models: installed().map((name) => ({ name, size: 1e9 })) });
   const b = req.method === 'POST' ? await body(req) : {};
-  record({ url, model: b.model, stream: b.stream, last: b.messages?.[b.messages.length - 1]?.content });
+  record({ url, model: b.model, stream: b.stream, last: b.messages?.[b.messages.length - 1]?.content, options: b.options, keepAlive: b.keep_alive });
   if (url === '/api/pull') {
     res.writeHead(200, { 'content-type': 'application/x-ndjson' });
     const line = (o) => res.write(`${JSON.stringify(o)}\n`);

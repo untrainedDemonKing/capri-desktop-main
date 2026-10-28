@@ -65,6 +65,8 @@ contextBridge.exposeInMainWorld('host', {
   chatterboxChoose: () => ipcRenderer.invoke('chatterbox:choose'),
   chatterboxRestart: () => ipcRenderer.invoke('chatterbox:restart'),
   onChatterbox: on('chatterbox:status'),
+  piperStatus: () => ipcRenderer.invoke('piper:status'),
+  onPiper: on('piper:status'),
   ollamaStatus: () => ipcRenderer.invoke('ollama:status'),
   onOllama: on('ollama:status'),
   provisionStatus: () => ipcRenderer.invoke('provision:status'),
