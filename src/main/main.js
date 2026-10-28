@@ -22,10 +22,12 @@ const tts = require('./tts');
 const { Chatterbox } = require('./chatterbox');
 const { Piper } = require('./piper');
 const hardware = require('./hardware');
+const { needsRaise } = require('./stacking');
 const { OllamaHost } = require('./ollama-host');
 const ollama = require('./ollama');
 const { Provision } = require('./provision');
 const { createPrepare } = require('./prepare');
+const { createHub } = require('./hub');
 const stt = require('./stt');
 const vision = require('./screen');
 const control = require('./control');
@@ -100,6 +102,7 @@ const provision = new Provision({
   onModelsChanged: () => refreshModels(),
 });
 let prepare = null; // her preparation window (prepare.js), made once the app is ready
+let hub = null; // her main menu (hub.js), the same
 provision.on('change', (snapshot) => toOverlay('provision:status', snapshot));
 provision.on('finish', async ({ ok, plan, attention, profile }) => {
   await refreshModels();
@@ -225,12 +228,17 @@ function rearmOverlay() {
   console.log('[capri] mouse hook set up again');
 }
 
-// Back on top of everything, the taskbar included (it comes up over her when it's clicked). Twice:
-// the taskbar can come up again a moment later, as its menus and previews open.
-function raiseOverlay() {
+// Back on top of everything, the taskbar included (it comes up over her when it's clicked, and when a window
+// opens or is switched to: stacking.js). Twice: the taskbar can come up again a moment later, as its menus
+// and previews open. `hard`: lowered and raised again, which puts her on top for certain.
+let lastRaise = 0;
+function raiseOverlay({ hard = false } = {}) {
+  if (Date.now() - lastRaise < 60) return; // (the watcher looks every 40 ms: once is enough)
+  lastRaise = Date.now();
   for (const wait of [0, 400]) {
     setTimeout(() => {
       if (!overlay || overlay.isDestroyed()) return;
+      if (hard && wait === 0) overlay.setAlwaysOnTop(false);
       overlay.setAlwaysOnTop(true, 'screen-saver');
       overlay.moveTop();
     }, wait);
@@ -359,7 +367,10 @@ function updateConfig(patch) {
   const changed = config.save(patch);
   if (!changed.length) return rendererConfig();
   const did = (...keys) => keys.some((k) => changed.includes(k));
-  if (did('rest')) fitOverlay(); // the taskbar in her window or not
+  if (did('rest')) {
+    fitOverlay(); // the taskbar in her window or not
+    if (config.load().rest === 'taskbar') raiseOverlay(); // and her legs over it
+  }
   if (did('musicAware')) watchMedia();
   if (did('ears', 'pushToTalk')) registerPushToTalk();
   if (did('ttsEngine', 'chatterboxDir', 'chatterboxUrl', 'chatterboxAuto', 'chatterboxDevice', 'hfEndpoint')) chatterbox.sync(config.load()).catch(() => {});
@@ -373,6 +384,35 @@ function updateConfig(patch) {
   overlay?.webContents.send('capri:config', cfg);
   rebuildTray();
   return cfg;
+}
+
+// Who answers her chat, with its key or address if it needs one: saved, tried, and undone if it fails (the
+// wizard in her overlay and her main menu both connect a service this way).
+async function useProvider({ provider, key, url } = {}) {
+  if (!llm.PROVIDERS[provider]) return { ok: false, error: 'unknown provider' };
+  const before = config.load();
+  const patch = { provider };
+  if (key) patch.apiKeys = { ...before.apiKeys, [provider]: setup.sealKey(String(key).trim()) };
+  if (url) patch.customUrl = String(url).trim();
+  updateConfig(patch);
+  const models = await refreshModels();
+  if (models?.length) return { ok: true, model: pickModel() };
+  const error = models ? 'no model' : chatError || 'offline';
+  updateConfig({ provider: before.provider, apiKeys: before.apiKeys, customUrl: before.customUrl });
+  await refreshModels();
+  return { ok: false, error };
+}
+
+// A voice service's key (or address, or voice) pasted in her panel or her main menu: the key kept encrypted.
+function ttsSetup({ engine, key, url, voice } = {}) {
+  const before = config.load();
+  const patch = {};
+  if (engine && tts.ENGINES[engine]) patch.ttsEngine = engine;
+  const slot = TTS_KEYS[patch.ttsEngine || before.ttsEngine];
+  if (key && slot) patch.apiKeys = { ...before.apiKeys, [slot]: setup.sealKey(String(key).trim()) };
+  if (typeof url === 'string' && url.trim()) patch.ttsUrl = url.trim();
+  if (typeof voice === 'string' && voice.trim()) patch.ttsVoice = voice.trim().slice(0, 80);
+  return updateConfig(patch);
 }
 
 // The tray menu is rebuilt from scratch (a hundred items), so asks for it are gathered: a slider
@@ -414,6 +454,7 @@ function buildTray() {
     { label: t.satellite, click: () => sendCommand('satellite') },
     { label: t.demo, click: playDemo },
     { label: t.help, click: () => sendCommand('welcome') },
+    { label: t.hub, click: () => hub?.show() },
     { label: t.prepare, click: () => { prepare?.show({ manual: true }); provision.run(); } },
     ...(cfg.claude ? [{ label: t.report, click: () => sendCommand('report') }] : []),
     { label: t.talk, click: () => sendCommand('chat') },
@@ -797,8 +838,10 @@ function watchWindows() {
   windowWatch = startWindowWatch({
     overlay,
     onUpdate: (data) => {
-      // a click on the taskbar brings it up over her: sitting on it, her legs would vanish behind it
-      if (data.taskbar && !lastWindows?.taskbar && config.load().rest === 'taskbar') raiseOverlay();
+      // the taskbar comes up over her (a click on it, a window opened, a program switched to): sitting on it,
+      // her legs would vanish behind it
+      const raise = needsRaise(data, lastWindows, config.load().rest);
+      if (raise) raiseOverlay({ hard: raise === 'hard' });
       lastWindows = data;
       overlay?.webContents.send('windows:update', data);
     },
@@ -975,20 +1018,7 @@ function registerIpc() {
   });
   ipcMain.on('setup:cancel', () => pulling?.abort());
   // who answers her chat, with its key or address if it needs one: saved, tried, and undone if it fails
-  ipcMain.handle('setup:use', async (_e, { provider, key, url }) => {
-    if (!llm.PROVIDERS[provider]) return { ok: false, error: 'unknown provider' };
-    const before = config.load();
-    const patch = { provider };
-    if (key) patch.apiKeys = { ...before.apiKeys, [provider]: setup.sealKey(String(key).trim()) };
-    if (url) patch.customUrl = String(url).trim();
-    updateConfig(patch);
-    const models = await refreshModels();
-    if (models?.length) return { ok: true, model: pickModel() };
-    const error = models ? 'no model' : chatError || 'offline';
-    updateConfig({ provider: before.provider, apiKeys: before.apiKeys, customUrl: before.customUrl });
-    await refreshModels();
-    return { ok: false, error };
-  });
+  ipcMain.handle('setup:use', (_e, payload) => useProvider(payload));
   ipcMain.on('setup:keyPage', (_e, provider) => setup.KEY_PAGES[provider] && shell.openExternal(setup.KEY_PAGES[provider]));
   ipcMain.handle('setup:launch', (_e, integration) => setup.launchThroughOllama(integration));
   // closing an app you asked her to close, once you've clicked to confirm (apps.js)
@@ -1048,16 +1078,7 @@ function registerIpc() {
     }
   });
   // her voice's key, address or voice, pasted in her panel (the key kept encrypted like her chat's)
-  ipcMain.handle('tts:setup', (_e, { engine, key, url, voice }) => {
-    const before = config.load();
-    const patch = {};
-    if (engine && tts.ENGINES[engine]) patch.ttsEngine = engine;
-    const slot = TTS_KEYS[patch.ttsEngine || before.ttsEngine];
-    if (key && slot) patch.apiKeys = { ...before.apiKeys, [slot]: setup.sealKey(String(key).trim()) };
-    if (typeof url === 'string' && url.trim()) patch.ttsUrl = url.trim();
-    if (typeof voice === 'string' && voice.trim()) patch.ttsVoice = voice.trim().slice(0, 80);
-    return updateConfig(patch);
-  });
+  ipcMain.handle('tts:setup', (_e, payload) => ttsSetup(payload));
   ipcMain.on('tts:keyPage', (_e, engine) => tts.KEY_PAGES[engine] && shell.openExternal(tts.KEY_PAGES[engine]));
   // Chatterbox: how it is doing, which folder it is, and starting it again
   ipcMain.handle('chatterbox:status', () => chatterbox.status());
@@ -1269,11 +1290,30 @@ function main() {
     prepare = createPrepare({
       BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, ollamaHost, chatterbox, piper,
       openAiTab: () => sendCommand('ring', { tab: 'ai' }),
+      isHubOpen: () => Boolean(hub?.isOpen()),
       lang: () => resolveLang(config.load().lang),
       protocolUrl: 'capri://app/src/renderer/prepare.html',
     });
-    // what she lives on: found, started, and made ready if something is missing (a window opens only if that takes long)
-    if (config.load().autoSetup !== false) setTimeout(() => provision.run(), 1200);
+    hub = createHub({
+      BrowserWindow, ipcMain, shell, clipboard, provision, config, updateConfig,
+      lang: () => resolveLang(config.load().lang),
+      connect: useProvider,
+      saveVoiceKey: ({ engine, key }) => {
+        if (!['openai', 'elevenlabs'].includes(engine) || !key) return { ok: false, error: 'no key' };
+        ttsSetup({ engine, key });
+        return { ok: true };
+      },
+      keyPages: setup.KEY_PAGES,
+      voiceKeyPages: tts.KEY_PAGES,
+      protocolUrl: 'capri://app/src/renderer/hub.html',
+      onClosed: () => rebuildTray(),
+    });
+    // The first time (nothing chosen yet), her main menu opens and nothing is fetched until you press its button.
+    // After that, what she lives on is found, started, and made ready if something is missing (a window opens only
+    // if that takes long).
+    const firstTime = !config.load().hubDone && !config.load().provisioned;
+    if (firstTime && config.load().autoSetup !== false && !process.argv.includes('--no-hub')) setTimeout(() => hub.show(), 1500);
+    else if (config.load().autoSetup !== false) setTimeout(() => provision.run(), 1200);
     else {
       // (not getting things ready for you, but the ones that are in place are still started)
       chatterbox.sync(config.load()).catch(() => {});

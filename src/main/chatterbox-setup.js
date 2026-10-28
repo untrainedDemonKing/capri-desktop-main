@@ -104,7 +104,7 @@ function pip(python, args, onLine, { spawn = cp.spawn, env = {} } = {}) {
 function pipActivity(line) {
   let m = /^Downloading\s+(\S+?)(?:\s+\(([^)]+)\))?$/i.exec(line);
   if (m) return { what: m[1].replace(/-\d.*$/, ''), size: m[2] || '' };
-  m = /^Collecting\s+([A-Za-z0-9_.\-]+)/.exec(line);
+  m = /^Collecting\s+([A-Za-z0-9_.-]+)/.exec(line);
   if (m) return { what: m[1], size: '' };
   m = /^Installing collected packages/.exec(line);
   if (m) return { what: 'install', size: '' };

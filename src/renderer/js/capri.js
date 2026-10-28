@@ -10,6 +10,7 @@ import { ACTS, NEUTRAL, Player } from './acting.js';
 import { sleep, rand, pick, clamp, lerp, ease, tween, reducedMotion, today } from './util.js';
 import * as marks from './fx-life.js';
 import { COLORS } from './fx.js';
+import * as ledges from './ledges.js';
 
 const COLORS_RED = () => COLORS.red; // her theme's main colour (themes.js changes it)
 
@@ -67,6 +68,7 @@ export class Capri {
     this.facing = 1; // 1: as drawn (reaching left), -1: mirrored
     this.mode = 'idle'; // idle | work | alert | sleep
     this.stance = 'stand';
+    this.leftLedge = null; // the window she is hopping off (it is not where she lands)
     this.perch = null;    // { id, dx }: the window she sits on, and where along it
     this.peekSide = null; // left | right | top
     this.windows = { fg: 0, wins: [] };
@@ -278,53 +280,48 @@ export class Capri {
 
   setWindows(data) {
     this.windows = data;
-    if (this.stance !== 'sit' || this.busy || this.dragging) return;
-    const win = this.perchWin(this.perch.id);
-    const dx = win ? clamp(this.perch.dx, 50, win.w - 60) : 0;
-    if (!win || !this.canSit(win) || this.covered(win, win.x + dx)) {
+    this.syncPerch();
+  }
+
+  // Her seat on her ledge, from where that ledge is now: she rides along with the window, and falls when it
+  // is gone (closed, minimized, maximized) or covered. The watcher only speaks when something changes, so what
+  // happened while she was busy (a teleport, an act) is not told again: the loop asks here every drawing.
+  syncPerch() {
+    if (this.stance !== 'sit' || this.busy || this.dragging || !this.perch) return;
+    const next = ledges.follow(this.perch, this.windows.wins, this.view, this.scale);
+    if (next.fall) {
       this.fall(); // the ledge is gone (closed, minimized, maximized or covered)
       return;
     }
-    const to = this.seat(win, dx);
-    if (to.x !== this.pos.x || to.y !== this.pos.y) {
-      this.pos = to; // ride along with the window
+    if (next.pos.x !== this.pos.x || next.pos.y !== this.pos.y) {
+      this.pos = next.pos; // ride along with the window
       this.place();
     }
   }
 
   // Where her feet go so that her hips rest on the window's top edge.
   seat(win, dx) {
-    return { x: win.x + dx, y: win.y + 3 + (SPRITE.feet.y - SPRITE.hip) * this.scale };
+    return ledges.seat(win, dx, this.scale);
   }
 
   canSit(win) {
-    if (win.id === 'taskbar') return true;
-    const roomAbove = SPRITE.hip * this.scale + 12;
-    return !win.max && win.w > 260 && win.y > roomAbove && win.y < this.view.floor - 80;
+    return ledges.canSit(win, this.view, this.scale);
   }
 
   // Is her spot on that ledge hidden under a window that's above it?
   covered(win, x) {
-    if (win.id === 'taskbar') return false; // nothing goes over the taskbar
-    const half = 34 * this.scale;
-    const { wins } = this.windows;
-    for (const o of wins) {
-      if (o === win || o.id === win.id) return false; // reached it: everything after is below
-      if (o.x < x + half && o.x + o.w > x - half && o.y <= win.y && o.y + o.h >= win.y) return true;
-    }
-    return false; // window not in the list any more
+    return ledges.covered(win, x, this.windows.wins, this.scale);
   }
 
-  // A window she could sit on, the one in front first. Returns { win, dx } or null.
   // The top of the taskbar (the bottom of her screen), as a ledge to sit on like a window's: her
-  // legs hang down behind it.
+  // legs hang down over it.
   ledge() {
-    return { id: 'taskbar', x: 0, y: this.view.floor, w: this.view.w, h: this.view.h - this.view.floor, max: false };
+    return ledges.taskbar(this.view);
   }
 
   // What she's perched on, from its id: a window, or the taskbar.
   perchWin(id) {
-    return id === 'taskbar' ? this.ledge() : this.windows.wins.find((w) => w.id === id);
+    return ledges.find(id, this.windows.wins, this.view);
   }
 
   // Back to where she rests: her corner, or sitting on the taskbar below it.
@@ -370,6 +367,7 @@ export class Capri {
     if (now - this.lastDraw >= this.interval() - 1) {
       this.drawFrame(now);
       this.behave(now);
+      this.syncPerch();
     }
     const smooth = this.busy || this.dragging || this.stance === 'fall' || this.act?.player.act.fps === 24;
     if (smooth) this.frame();
@@ -559,7 +557,7 @@ export class Capri {
       const r = Math.random();
       if (r < 0.3) this.flourish();
       else if (r < 0.5 && this.canPossess()) this.possess();
-      else if (r < 0.75) this.fall(); // just hops off the ledge
+      else if (r < 0.75) this.fall({ leave: true }); // just hops off the ledge
       else this.teleport(this.spot('random'));
       return;
     }
@@ -1663,27 +1661,18 @@ export class Capri {
     this.onTeleport?.('end');
   }
 
-  // Where she'd end up falling straight down from here: a free ledge under her, or the floor.
-  landing() {
-    const hip = this.pos.y - (SPRITE.feet.y - SPRITE.hip) * this.scale;
-    let best = null;
-    for (const win of this.windows.wins) {
-      if (!this.canSit(win) || win.y < hip - 4) continue;
-      if (this.pos.x < win.x + 40 || this.pos.x > win.x + win.w - 40) continue;
-      if (this.covered(win, this.pos.x)) continue;
-      if (!best || win.y < best.y) best = win;
-    }
-    if (best) {
-      const dx = this.pos.x - best.x;
-      return { y: this.seat(best, dx).y, stance: 'sit', perch: { id: best.id, dx } };
-    }
-    return { y: this.floor, stance: 'stand', perch: null };
+  // Where she'd end up falling straight down from here: a free ledge under her, or the floor. `except`: the
+  // ledge she just hopped off.
+  landing(except = null) {
+    return ledges.landing(this.pos, this.windows.wins, this.view, this.scale, except);
   }
 
-  fall() {
+  // `leave`: she hops off her ledge on purpose, so it is not where she lands.
+  fall({ leave = false } = {}) {
     if (this.stance === 'fall') return;
     if (this.sky) this.endAct(false);
-    this.landingSpot = this.landing();
+    this.leftLedge = leave && this.perch ? this.perch.id : null;
+    this.landingSpot = this.landing(this.leftLedge);
     this.setStance('fall');
     this.vy = 0;
     this.lastFall = performance.now();
@@ -1692,7 +1681,8 @@ export class Capri {
   }
 
   updateFall(now) {
-    const target = this.landingSpot;
+    // (the windows move while she falls: where she lands is looked at again every drawing)
+    const target = this.landingSpot = this.landing(this.leftLedge);
     const dt = Math.min(0.05, (now - this.lastFall) / 1000);
     this.lastFall = now;
     this.vy = Math.min(this.vy + GRAVITY * dt, 1900);
@@ -1702,6 +1692,7 @@ export class Capri {
       return;
     }
     this.pos.y = target.y;
+    this.leftLedge = null;
     this.setStance(target.stance, { perch: target.perch });
     const s = this.scale;
     if (target.stance === 'sit') {
@@ -1937,14 +1928,10 @@ export class Capri {
 
   // Let go of her: onto a ledge if her hips are right at one, otherwise she falls.
   drop() {
-    const s = this.scale;
-    const hip = this.pos.y - (SPRITE.feet.y - SPRITE.hip) * s;
-    for (const win of this.windows.wins) {
-      if (!this.canSit(win) || Math.abs(hip - win.y) > 26) continue;
-      if (this.pos.x < win.x + 40 || this.pos.x > win.x + win.w - 40 || this.covered(win, this.pos.x)) continue;
-      const dx = this.pos.x - win.x;
-      this.pos = this.seat(win, dx);
-      this.setStance('sit', { perch: { id: win.id, dx } });
+    const onto = ledges.dropOnto(this.pos, this.windows.wins, this.view, this.scale);
+    if (onto) {
+      this.pos = onto.pos;
+      this.setStance('sit', { perch: onto.perch });
       this.perform('plop');
       this.voice.play('land');
       return;

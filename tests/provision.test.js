@@ -565,3 +565,51 @@ test('Python\'s own installer next to her is found (the 3.11 one first, the righ
   touch(path.join(inner, 'installers', 'python-3.11.9-amd64.exe'));
   assert.equal(setup.findPythonInstaller([inner]), path.join(inner, 'installers', 'python-3.11.9-amd64.exe'), 'a folder called installers');
 });
+
+// ---- what you pick in her main menu ----
+
+test('a model picked in her main menu that is there is taken; one that is not is fetched, and then it is the one she talks with', async () => {
+  const there = world({ cfg: { provider: 'ollama', ttsEngine: 'openai', provisioned: true, wantModel: 'gemma3:12b', chatModel: 'gemma3:4b' }, state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, models: ['gemma3:4b', 'gemma3:12b-it-q4_K_M'] } });
+  await there.p.run();
+  assert.deepEqual(there.state.pulls, [], 'it is there');
+  assert.equal(there.cfg.chatModel, 'gemma3:12b-it-q4_K_M');
+  assert.equal(there.cfg.wantModel, '', 'asked once');
+  const fetch = world({ cfg: { provider: 'ollama', ttsEngine: 'openai', provisioned: true, wantModel: 'gemma3:1b', chatModel: 'gemma3:4b' }, state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, models: ['gemma3:4b'] } });
+  await fetch.p.run();
+  assert.deepEqual(fetch.state.pulls, ['gemma3:1b'], 'the one picked, though another is installed');
+  assert.equal(fetch.cfg.chatModel, 'gemma3:1b');
+  assert.equal(fetch.cfg.wantModel, '');
+  // on a PC that would have taken a cloud mind, a model that was asked for is still Ollama's
+  const weak = world({ cfg: { provider: 'ollama', ttsEngine: 'openai', provisioned: true, wantModel: 'gemma3:1b' }, state: { hw: pc({ ram: 3 * GB }), ollamaRunning: true, ollamaFound: true } });
+  await weak.p.run();
+  assert.equal(weak.p.step('ollama-model').state, 'done');
+  assert.deepEqual(weak.state.pulls, ['gemma3:1b']);
+});
+
+test('a failed fetch of the picked model keeps the wish, so that "try again" goes on with it', async () => {
+  const w = world({ cfg: { provider: 'ollama', ttsEngine: 'openai', provisioned: true, wantModel: 'gemma3:1b' }, state: { hw: pc({ ram: 15.9 * GB }), ollamaRunning: true, pullFails: 'dial tcp: no such host' } });
+  await w.p.run();
+  assert.equal(w.p.step('ollama-model').state, 'failed');
+  assert.equal(w.cfg.wantModel, 'gemma3:1b');
+  w.state.pullFails = '';
+  await w.p.retry();
+  assert.equal(w.p.ok, true);
+  assert.equal(w.cfg.chatModel, 'gemma3:1b');
+  assert.equal(w.cfg.wantModel, '');
+});
+
+test('the look at the PC for her main menu starts and fetches nothing', async () => {
+  const w = world({ state: { hw: pc({ ram: 15.9 * GB, gpus: [nvidia('RTX 3060', 12)] }), ollamaRunning: true, models: ['gemma3:4b'], piperFound: true, piperVoice: 'en_US-amy-medium' } });
+  const look = await w.p.preview();
+  assert.equal(look.profile.id, 'strong');
+  assert.equal(look.hw.gpu.vram, 12 * GB);
+  assert.deepEqual(look.have.models, ['gemma3:4b']);
+  assert.equal(look.have.piper, true);
+  assert.deepEqual([w.state.pulls, w.state.installed, w.state.piperInstalls, w.state.tuned], [[], [], 0, []], 'nothing was done');
+  assert.equal(w.p.running, false);
+  assert.deepEqual(w.state.hardwareCalls, [{ force: false }]);
+  await w.p.preview({ rescan: true });
+  assert.deepEqual(w.state.hardwareCalls[1], { force: true });
+  const broken = world({ state: { hardwareFails: true } });
+  assert.ok((await broken.p.preview()).profile.id, 'a look that fails still gives a usual PC');
+});

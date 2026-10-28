@@ -54,6 +54,8 @@ const DEFAULTS = {
   prepareWindow: true, // her preparation window opens by itself when an install or a download takes long, or fails
   provisioned: false, // she has taken her voice (Chatterbox or Piper, by this PC) the first time, if yours was still the system's
   profile: 'auto',   // what this PC gets: 'auto' (she looks at it), or 'cloud', 'light', 'standard', 'strong' (profiles.js)
+  wantModel: '',     // the model you picked in her main menu, to fetch if it is not there (then it becomes chatModel)
+  hubDone: false,    // her main menu (hub.js) has been shown and used once: it does not open by itself any more
   profileApplied: '', // the profile whose model has been fetched (so that what you pick in her menu afterwards stays)
   piperDir: '',      // Piper's folder ('' she looks for one with "piper" in its name next to her, then fetches it)
   hardwareCache: null, // the last look at this PC ({ at, key, hw }): it is looked at again after two weeks, or when asked

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Capri</title>
+  <link rel="stylesheet" href="styles/prepare.css">
+  <link rel="stylesheet" href="styles/hub.css">
+</head>
+<body>
+  <main class="hub">
+    <header class="prep__head">
+      <img class="prep__face" src="../../assets/capri/capri-face.png" alt="">
+      <div>
+        <h1 id="title"></h1>
+        <p id="subtitle" class="prep__sub"></p>
+      </div>
+    </header>
+
+    <section id="pc" class="card pc" hidden>
+      <h2 class="card__title"><span id="pcTitle"></span><button id="rescan" type="button" class="btn btn--small"></button></h2>
+      <p id="pcLine" class="pc__line"></p>
+      <p id="pcRec" class="pc__rec"></p>
+    </section>
+
+    <section id="mind" class="card" aria-labelledby="mindTitle">
+      <h2 id="mindTitle" class="card__title"></h2>
+      <p id="mindSub" class="card__sub"></p>
+      <div id="mindChoices" class="choices" role="radiogroup" aria-labelledby="mindTitle"></div>
+      <div id="mindOllama" class="panel" hidden>
+        <p id="ollamaLine" class="panel__line"></p>
+        <h3 id="modelTitle" class="panel__title"></h3>
+        <div id="models" class="models" role="radiogroup" aria-labelledby="modelTitle"></div>
+      </div>
+      <div id="mindCloud" class="panel" hidden>
+        <h3 id="cloudTitle" class="panel__title"></h3>
+        <div id="providers" class="providers"></div>
+        <div id="keyBox" class="keybox" hidden>
+          <div id="keyStep1" class="keybox__row"></div>
+          <div id="keyStep2" class="keybox__row"></div>
+          <p id="keyResult" class="keybox__result" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+
+    <section id="voice" class="card" aria-labelledby="voiceTitle">
+      <h2 id="voiceTitle" class="card__title"></h2>
+      <p id="voiceSub" class="card__sub"></p>
+      <div id="voiceChoices" class="choices" role="radiogroup" aria-labelledby="voiceTitle"></div>
+      <div id="voiceCloud" class="panel" hidden>
+        <div class="keybox__row">
+          <label id="voiceEngineLabel" for="voiceEngine"></label>
+          <select id="voiceEngine"><option value="openai">OpenAI</option><option value="elevenlabs">ElevenLabs</option></select>
+          <button id="voiceKeyPage" type="button" class="btn btn--small"></button>
+        </div>
+        <div class="keybox__row">
+          <input id="voiceKey" type="password" autocomplete="off" spellcheck="false">
+          <button id="voiceSave" type="button" class="btn btn--small"></button>
+        </div>
+        <p id="voiceKeyResult" class="keybox__result" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section id="install" class="card" aria-labelledby="installTitle">
+      <h2 id="installTitle" class="card__title"></h2>
+      <p id="installSub" class="card__sub"></p>
+      <table id="plan" class="plan"><tbody></tbody></table>
+      <p id="totals" class="totals"></p>
+      <ul id="warns" class="pc__notes"></ul>
+      <div class="install__go">
+        <button id="go" type="button" class="btn btn--main"></button>
+        <button id="stop" type="button" class="btn" hidden></button>
+        <button id="retry" type="button" class="btn" hidden></button>
+      </div>
+      <div id="groups" class="prep__groups"></div>
+      <p id="summary" class="prep__summary" role="status" aria-live="polite"></p>
+    </section>
+
+    <footer class="prep__foot">
+      <button id="skip" type="button" class="btn"></button>
+      <div class="prep__btns">
+        <button id="copy" type="button" class="btn"></button>
+        <button id="close" type="button" class="btn"></button>
+      </div>
+    </footer>
+  </main>
+  <script src="js/steps-view.js"></script>
+  <script src="js/hub.js"></script>
+</body>
+</html>

@@ -37,6 +37,9 @@
     "test:hardware": "node --test tests/hardware.test.js",
     "test:profiles": "node --test tests/profiles.test.js",
     "test:piper": "node --test tests/piper.test.js",
+    "test:hub": "node --test tests/hub.test.js",
+    "test:ledges": "node --test tests/ledges.test.js",
+    "test:stacking": "node --test tests/stacking.test.js",
     "test": "node --test tests/*.test.js"
   },
   "keywords": [

@@ -1,0 +1,213 @@
+'use strict';
+
+// Her main menu, the main-process side (src/main/hub.js): what it tells the page (the PC, the models with what is
+// there and what is heavy, the services and which are connected), what a choice would fetch, what pressing the
+// button writes to her config, trying a key, and what closing the window without choosing means.
+//   node --test tests/hub.test.js
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
+
+const { createHub, CLOUD } = require('../src/main/hub.js');
+const profiles = require('../src/main/profiles.js');
+const hardware = require('../src/main/hardware.js');
+
+const GB = 1024 ** 3;
+
+class FakeWindow extends EventEmitter {
+  constructor(opts) { super(); this.opts = opts; this.destroyed = false; this.sent = []; this.webContents = { send: (c, p) => this.sent.push([c, p]) }; FakeWindow.last = this; }
+  removeMenu() {}
+  loadURL(url) { this.url = url; }
+  show() { this.shown = true; }
+  focus() {}
+  isMinimized() { return false; }
+  isDestroyed() { return this.destroyed; }
+  close() { this.destroyed = true; this.emit('closed'); }
+}
+
+function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', threads: 8 }, disk: { path: '', free: 200 * GB, total: 500 * GB } }), have = { ollama: false, models: [], chatterbox: false, piper: false }, cfg = {}, connect } = {}) {
+  const handlers = new Map();
+  const listeners = new Map();
+  const ipcMain = { handle: (c, fn) => handlers.set(c, fn), on: (c, fn) => listeners.set(c, fn) };
+  const config = { value: { hubDone: false, provider: 'ollama', ttsEngine: 'system', voiceMode: 'off', apiKeys: {}, customUrl: '', ...cfg }, load() { return this.value; } };
+  const updates = [];
+  const updateConfig = (patch) => { updates.push(patch); Object.assign(config.value, patch); return config.value; };
+  const prov = new EventEmitter();
+  Object.assign(prov, {
+    running: false, job: null, runs: 0, cancels: 0, previews: 0,
+    preview: async () => { prov.previews++; return { hw, have, profile: profiles.plan(hw, { have }) }; },
+    snapshot: () => ({ running: prov.running, steps: [], plan: {} }),
+    run() { prov.runs++; return Promise.resolve(); },
+    cancel() { prov.cancels++; },
+    report: () => 'the report',
+  });
+  const opened = [];
+  const clipboard = { text: '', writeText(t) { this.text = t; } };
+  const hub = createHub({
+    BrowserWindow: FakeWindow, ipcMain, shell: { openExternal: (u) => opened.push(u) }, clipboard, provision: prov, config, updateConfig,
+    lang: () => 'ru',
+    connect: connect || (async ({ provider, key }) => (key === 'bad' ? { ok: false, error: 'invalid x-api-key' } : { ok: true, model: 'm1', provider })),
+    saveVoiceKey: ({ engine, key }) => { updateConfig({ ttsEngine: engine, apiKeys: { ...config.value.apiKeys, [engine]: `enc:${key}` } }); return { ok: true }; },
+    keyPages: { groq: 'https://console.groq.com/keys', gemini: 'https://aistudio.google.com/apikey' },
+    voiceKeyPages: { openai: 'https://platform.openai.com/api-keys' },
+    protocolUrl: 'capri://app/src/renderer/hub.html',
+  });
+  return { hub, handlers, listeners, config, updates, prov, opened, clipboard, call: (c, ...a) => handlers.get(c)({}, ...a), fire: (c, ...a) => listeners.get(c)({}, ...a) };
+}
+
+test('what the page is told: this PC, the models (what is there, what is heavy), the services, what is set now', async () => {
+  const w = world({ have: { ollama: true, models: ['gemma3:4b', 'qwen2.5:7b'], chatterbox: false, piper: false }, cfg: { provider: 'groq', apiKeys: { groq: 'enc:x' }, chatModel: 'gemma3:4b' } });
+  const s = await w.call('hub:state');
+  assert.equal(s.lang, 'ru');
+  assert.equal(s.first, true, 'nothing chosen yet');
+  assert.equal(s.pc.ram, 15.9 * GB);
+  assert.equal(s.recommended.id, 'standard');
+  assert.equal(s.recommended.mind.model, 'gemma3:4b');
+  assert.equal(s.recommended.voice.engine, 'piper');
+  const m = Object.fromEntries(s.models.map((x) => [x.model, x]));
+  assert.equal(m['gemma3:4b'].have, true);
+  assert.equal(m['gemma3:1b'].have, false);
+  assert.equal(m['gemma3:12b'].heavy, true, 'too big for a processor');
+  assert.equal(m['gemma3:4b'].heavy, false);
+  assert.equal(m['gemma3:1b'].vision, false);
+  assert.equal(m['gemma3:4b'].vision, true);
+  assert.deepEqual(s.cloud.map((c) => c.id), CLOUD.map((c) => c.id));
+  const groq = s.cloud.find((c) => c.id === 'groq');
+  assert.deepEqual([groq.connected, groq.keySaved, groq.keyPage], [true, true, true], 'the one that answers her now, with its key');
+  assert.equal(s.cloud.find((c) => c.id === 'gemini').connected, false);
+  assert.equal(s.cloud.find((c) => c.id === 'pollinations').connected, false, 'a service with no key is connected only when it is the one she uses');
+  assert.deepEqual(s.current, { provider: 'groq', chatModel: 'gemma3:4b', ttsEngine: 'system', customUrl: '' });
+  assert.match(s.ui.title, /Главное меню/);
+  assert.match(s.ui['profile-standard'], /Средний/, 'the page gets the preparation\'s lines too');
+  assert.deepEqual(s.have.models, ['gemma3:4b', 'qwen2.5:7b']);
+});
+
+test('what a choice would fetch: the pieces with their sizes, what is there already, the room on the disk', async () => {
+  const w = world();
+  const p = await w.hub.preview({ mind: 'ollama', model: 'gemma3:4b', voice: 'piper' });
+  assert.deepEqual(p.items.map((i) => [i.id, i.have]), [['ollama', false], ['model', false], ['piper', false]]);
+  assert.equal(p.items[1].name, 'gemma3:4b');
+  assert.ok(p.total > 5 * GB && p.ok);
+  assert.equal(p.free, 200 * GB);
+  const cloud = await w.hub.preview({ mind: 'cloud', voice: 'system' });
+  assert.deepEqual(cloud.items, [], 'nothing to fetch for a service and the system voice');
+  assert.equal(cloud.total, 0);
+  const have = world({ have: { ollama: true, models: ['gemma3:4b-it-q4_K_M'], chatterbox: false, piper: true } });
+  const done = await have.hub.preview({ mind: 'ollama', model: 'gemma3:4b', voice: 'piper' });
+  assert.equal(done.total, 0, 'all of it is there');
+  assert.ok(done.items.every((i) => i.have));
+  const nonsense = await w.hub.preview({ mind: 'who knows', voice: 'what' });
+  assert.deepEqual(nonsense.items, [], 'a choice she does not know is no choice');
+});
+
+test('warnings: Chatterbox on a plain PC is slow, a model too big for it is heavy, a disk without room', async () => {
+  const w = world();
+  assert.ok((await w.hub.preview({ mind: 'skip', voice: 'chatterbox' })).notes.includes('slowVoice'));
+  assert.ok((await w.hub.preview({ mind: 'ollama', model: 'gemma3:27b', voice: 'piper' })).notes.includes('heavy'));
+  assert.ok(!(await w.hub.preview({ mind: 'ollama', model: 'gemma3:4b', voice: 'piper' })).notes.includes('heavy'));
+  const tight = world({ hw: hardware.make({ ram: 15.9 * GB, disk: { path: '', free: 2 * GB, total: 100 * GB } }) });
+  const t = await tight.hub.preview({ mind: 'ollama', model: 'gemma3:4b', voice: 'piper' });
+  assert.ok(t.notes.includes('diskShort'));
+  assert.equal(t.ok, false);
+  const card = world({ hw: hardware.make({ ram: 15.9 * GB, gpus: [{ name: 'NVIDIA GeForce RTX 3060', vram: 12 * GB }], disk: { path: '', free: 200 * GB, total: 500 * GB } }) });
+  const c = await card.hub.preview({ mind: 'skip', voice: 'chatterbox' });
+  assert.equal(c.device, 'cuda');
+  assert.ok(!c.notes.includes('slowVoice'), 'on a card it is fine');
+  assert.equal(c.items[0].bytes, profiles.SIZE.chatterboxCuda);
+});
+
+test('the button writes the choice to her config: a model that is there is taken, one that is not is asked of the preparation', async () => {
+  const w = world({ have: { ollama: true, models: ['gemma3:4b-it-q4_K_M'], chatterbox: false, piper: false } });
+  await w.call('hub:apply', { mind: 'ollama', model: 'gemma3:4b', voice: 'piper' });
+  assert.deepEqual(w.updates[0], { hubDone: true, autoSetup: true, provider: 'ollama', chatModel: 'gemma3:4b-it-q4_K_M', wantModel: '', ttsEngine: 'piper', provisioned: true, voiceMode: 'chat' });
+  assert.equal(w.prov.runs, 1, 'and the preparation starts');
+  const fetch = world();
+  await fetch.call('hub:apply', { mind: 'ollama', model: 'gemma3:12b', voice: 'chatterbox' });
+  assert.equal(fetch.updates[0].wantModel, 'gemma3:12b');
+  assert.equal(fetch.updates[0].chatModel, undefined);
+  assert.equal(fetch.updates[0].ttsEngine, 'chatterbox');
+});
+
+test('the mind in the cloud or "not now" leaves who answers her as it is; the voice is set; a voice already chosen keeps its mode', async () => {
+  const w = world({ cfg: { provider: 'groq', voiceMode: 'all' } });
+  await w.call('hub:apply', { mind: 'cloud', voice: 'system' });
+  assert.deepEqual(w.updates[0], { hubDone: true, autoSetup: true, ttsEngine: 'system', provisioned: true });
+  const skip = world({ cfg: { provider: 'ollama', ttsEngine: 'elevenlabs' } });
+  await skip.call('hub:apply', { mind: 'skip' });
+  assert.deepEqual(skip.updates[0], { hubDone: true, autoSetup: true }, 'a choice not made is left alone');
+});
+
+test('pressing the button while something is being fetched stops that first, then goes on', async () => {
+  const w = world();
+  w.prov.running = true;
+  w.prov.job = Promise.resolve();
+  await w.call('hub:apply', { mind: 'skip', voice: 'system' });
+  assert.equal(w.prov.cancels, 1);
+  assert.equal(w.prov.runs, 1);
+});
+
+test('a service is tried with its key and the answer is told with the new state of the list; a key page opens only for a service she knows', async () => {
+  const w = world();
+  w.config.value.provider = 'groq';
+  const ok = await w.call('hub:connect', { provider: 'groq', key: 'gsk_x' });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.model, 'm1');
+  assert.ok(Array.isArray(ok.cloud));
+  const bad = await w.call('hub:connect', { provider: 'groq', key: 'bad' });
+  assert.deepEqual([bad.ok, bad.error], [false, 'invalid x-api-key']);
+  w.fire('hub:keyPage', 'groq');
+  w.fire('hub:keyPage', 'openai');
+  w.fire('hub:keyPage', 'file:///etc/passwd');
+  assert.deepEqual(w.opened, ['https://console.groq.com/keys', 'https://platform.openai.com/api-keys']);
+  const key = await w.call('hub:voiceKey', { engine: 'openai', key: '  sk-1  ' });
+  assert.equal(key.ok, true);
+  assert.equal(w.config.value.apiKeys.openai, 'enc:sk-1', 'the key is cleaned of spaces');
+});
+
+test('the window: opened once, brought forward when asked again; its progress is the preparation\'s; the report is copied', async () => {
+  const w = world();
+  w.hub.show();
+  const win = FakeWindow.last;
+  assert.equal(win.url, 'capri://app/src/renderer/hub.html');
+  assert.equal(w.hub.isOpen(), true);
+  w.hub.show();
+  assert.equal(FakeWindow.last, win, 'not a second window');
+  w.prov.emit('change', { running: true, steps: [] });
+  assert.deepEqual(win.sent.pop(), ['hub:change', { running: true, steps: [] }]);
+  assert.equal(await w.call('hub:report'), 'the report');
+  w.fire('hub:copy', 'text');
+  assert.equal(w.clipboard.text, 'text');
+  assert.equal((await w.call('hub:retry')), true);
+  assert.equal(w.prov.runs, 1);
+  await w.call('hub:stop');
+  assert.equal(w.prov.cancels, 1);
+});
+
+test('closing the main menu the first time without pressing anything is "not now": nothing is fetched behind your back from then on', () => {
+  const closed = world();
+  closed.hub.show();
+  FakeWindow.last.close();
+  assert.deepEqual(closed.updates, [{ hubDone: true, autoSetup: false }]);
+  assert.equal(closed.hub.isOpen(), false);
+  // the "skip" button is the same
+  const skip = world();
+  skip.hub.show();
+  skip.fire('hub:skip');
+  assert.deepEqual(skip.updates, [{ hubDone: true, autoSetup: false }]);
+  // opened later (it was used before), closed: nothing changes
+  const later = world({ cfg: { hubDone: true } });
+  later.hub.show();
+  FakeWindow.last.close();
+  assert.deepEqual(later.updates, []);
+});
+
+test('after the button the window may be closed without it counting as "not now"', async () => {
+  const w = world();
+  w.hub.show();
+  await w.call('hub:apply', { mind: 'skip', voice: 'system' });
+  w.updates.length = 0;
+  FakeWindow.last.close();
+  assert.deepEqual(w.updates, [], 'nothing more is written');
+  assert.equal(w.config.value.autoSetup, true);
+});

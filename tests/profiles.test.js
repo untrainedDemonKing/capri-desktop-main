@@ -149,3 +149,28 @@ test('the choices she offers are the four profiles', () => {
   assert.deepEqual(profiles.IDS, ['cloud', 'light', 'standard', 'strong']);
   assert.deepEqual(profiles.plan(pc()).choices, profiles.IDS);
 });
+
+test('the pieces of a set-up picked by hand, each with its size and whether it is there; only the missing ones count', () => {
+  const none = profiles.components({ mind: 'ollama', model: 'gemma3:4b', voice: 'piper', have: {} });
+  assert.deepEqual(none.items.map((i) => [i.id, i.have]), [['ollama', false], ['model', false], ['piper', false]]);
+  assert.equal(none.items[1].name, 'gemma3:4b');
+  assert.equal(none.total, profiles.SIZE.ollama + profiles.LADDER[1].bytes + profiles.SIZE.piper);
+  assert.ok(none.need > none.total, 'with room to spare');
+  const some = profiles.components({ mind: 'ollama', model: 'gemma3:4b', voice: 'piper', have: { ollama: true, models: ['gemma3:4b-it-q4_K_M'] } });
+  assert.deepEqual(some.items.map((i) => i.have), [true, true, false]);
+  assert.equal(some.total, profiles.SIZE.piper);
+  const cloud = profiles.components({ mind: 'cloud', voice: 'system', have: {} });
+  assert.deepEqual([cloud.items, cloud.total, cloud.need], [[], 0, 0]);
+  assert.equal(profiles.components({ mind: 'skip', voice: 'chatterbox', device: 'cuda', have: {} }).items[0].bytes, profiles.SIZE.chatterboxCuda);
+  assert.equal(profiles.components({ mind: 'skip', voice: 'chatterbox', device: 'cpu', have: {} }).items[0].bytes, profiles.SIZE.chatterboxCpu);
+  assert.equal(profiles.components({ mind: 'ollama', model: 'llama3.2', voice: 'system', have: { ollama: true, models: ['llama3.2:latest'] } }).items[1].have, true, '"llama3.2" is "llama3.2:latest"');
+});
+
+test('whether a model runs well here: whole on the card after the voice, or small enough for the processor', () => {
+  const plain = pc({ ram: 15.9 * GB });
+  assert.deepEqual(profiles.LADDER.map((m) => profiles.runsWell(plain, m.bytes)), [true, true, false, false]);
+  const card = pc({ ram: 63 * GB, gpus: [nvidia('RTX 4090', 24)] });
+  assert.deepEqual(profiles.LADDER.map((m) => profiles.runsWell(card, m.bytes, { voiceOnCard: true })), [true, true, true, false], 'the voice takes its part of the card');
+  assert.equal(profiles.runsWell(card, profiles.LADDER[3].bytes, { voiceOnCard: false }), true, 'without it all of the card is the model\'s');
+  assert.equal(profiles.runsWell(pc({ ram: 4 * GB }), profiles.LADDER[1].bytes), false, 'a 4B model on 4 GB of memory');
+});

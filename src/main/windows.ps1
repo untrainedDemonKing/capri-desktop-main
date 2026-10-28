@@ -48,9 +48,18 @@ public static class CapriWindows {
     bool taskbar = fgClass.ToString() == "Shell_TrayWnd" || fgClass.ToString() == "Shell_SecondaryTrayWnd";
     sb.Append("{\"fg\":").Append(fg.ToInt64()).Append(",\"taskbar\":").Append(taskbar ? "true" : "false").Append(",\"wins\":[");
     int count = 0;
+    bool seenSelf = false, over = false;
     EnumWindows((h, l) => {
-      if (count >= 40) return false;
-      if (h.ToInt64() == self || !IsWindowVisible(h) || IsIconic(h)) return true;
+      // (the windows come front first: the taskbar before her in the list is over her, and her legs vanish behind it)
+      if (h.ToInt64() == self) { seenSelf = true; return count < 40; }
+      if (!seenSelf && IsWindowVisible(h)) {
+        var tc = new StringBuilder(64);
+        GetClassName(h, tc, 64);
+        string t = tc.ToString();
+        if (t == "Shell_TrayWnd" || t == "Shell_SecondaryTrayWnd") over = true;
+      }
+      if (count >= 40) return seenSelf ? false : true;
+      if (!IsWindowVisible(h) || IsIconic(h)) return true;
       int ex = GetWindowLong(h, GWL_EXSTYLE);
       if ((ex & WS_EX_TOOLWINDOW) != 0 || (ex & WS_EX_NOACTIVATE) != 0) return true;
       int cloaked;
@@ -70,7 +79,7 @@ public static class CapriWindows {
         .Append(",\"max\":").Append(IsZoomed(h) ? "true" : "false").Append('}');
       return true;
     }, IntPtr.Zero);
-    sb.Append("]}");
+    sb.Append("],\"over\":").Append(over ? "true" : "false").Append("}");
     return sb.ToString();
   }
 }
@@ -93,8 +102,8 @@ while ($true) {
   # stop with Capri, even if she crashed without telling us
   $tick++
   if ($ParentPid -and ($tick % 20 -eq 0) -and -not (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) { break }
-  # nothing moving: look less often (a still desktop costs almost nothing); back to every 150 ms the
-  # moment anything moves, so she still rides along with a window you drag
-  $wait = if ($same -lt 8) { 150 } elseif ($same -lt 40) { 250 } else { 450 }
+  # nothing moving: look less often (a still desktop costs almost nothing); back to every 40 ms the
+  # moment anything moves, so she rides along with a window you drag instead of trailing behind it
+  $wait = if ($same -lt 10) { 40 } elseif ($same -lt 50) { 120 } else { 350 }
   Start-Sleep -Milliseconds $wait
 }

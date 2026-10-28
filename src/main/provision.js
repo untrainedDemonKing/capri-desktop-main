@@ -163,8 +163,23 @@ class Provision extends EventEmitter {
       if (engine !== 'chatterbox' && (cfg.profile || 'auto') === 'auto' && have.chatterbox) engine = 'chatterbox'; // (the folder you put next to her)
     }
     // (an Ollama that is already there stays her mind on a PC that would have taken a cloud one, unless you asked for the cloud)
-    const ollama = (cfg.provider || 'ollama') === 'ollama' && (prof.mind.kind === 'ollama' || (prof.auto && Boolean(have.ollama)));
+    // (and the model you picked in her main menu is Ollama's whatever the PC would have taken)
+    const ollama = (cfg.provider || 'ollama') === 'ollama' && (prof.mind.kind === 'ollama' || (prof.auto && Boolean(have.ollama)) || Boolean(cfg.wantModel));
     return { ollama, chatterbox: engine === 'chatterbox', piper: engine === 'piper', adopt, engine };
+  }
+
+  // The look at the PC and what is on it, with the plan for it, and nothing started or fetched (her main menu
+  // shows it before you choose). { rescan }: look again.
+  async preview({ rescan = false } = {}) {
+    const cfg = this.d.cfg();
+    let hw;
+    try {
+      hw = hardwareLib.normalize(await this.d.hardware({ force: rescan }));
+    } catch {
+      hw = hardwareLib.normalize({ ram: os.totalmem() });
+    }
+    const have = await this.inventory(cfg);
+    return { hw, have, profile: profiles.plan(hw, { choice: cfg.profile || 'auto', have }) };
   }
 
   // Starts, or says it is on already. Resolves when everything wanted is ready or has failed. { rescan }: look at
@@ -314,13 +329,24 @@ class Provision extends EventEmitter {
       this.fail('ollama-run', err.message, ['retry', 'choose-ollama'], ollamaHost.status().log);
     }
     this.done('ollama-run', this.t('olUp', { from: ollamaHost.status().modelsDir ? this.t('olFromFolder') : '' }));
-    // a model to talk with: the one you asked for with a profile, else one of those she has, else the profile's
+    // a model to talk with: the one you picked in her main menu, the one you asked for with a profile, else one
+    // of those she has, else the profile's
     this.begin('ollama-model');
     const models = await ollamaApi.models().catch(() => []);
+    const picked = String(cfg().wantModel || '').trim();
+    if (picked) {
+      const there = sameModel(models, picked);
+      if (there) {
+        this.d.save({ chatModel: there, wantModel: '', provider: 'ollama' });
+        await this.d.onModelsChanged();
+        this.done('ollama-model', this.t('olModelHave', { model: there }));
+        return;
+      }
+    }
     // (a profile you have just asked for brings its own model; after that your choice of model in her menu stands)
     const reselect = (cfg().profile || 'auto') !== 'auto' && cfg().profileApplied !== cfg().profile;
     const asked = reselect && this.profile.mind.model;
-    const have = asked ? sameModel(models, asked) : pickInstalled(models, cfg().chatModel);
+    const have = picked ? null : asked ? sameModel(models, asked) : pickInstalled(models, cfg().chatModel); // (what you picked is fetched, though another is there)
     if (have) {
       if (cfg().chatModel !== have && (asked || !models.includes(cfg().chatModel))) this.d.save({ chatModel: have });
       if (reselect) this.d.save({ profileApplied: cfg().profile });
@@ -328,7 +354,7 @@ class Provision extends EventEmitter {
       this.done('ollama-model', this.t('olModelHave', { model: have }));
       return;
     }
-    const target = this.d.chatModel || this.profile.mind.model || profiles.LADDER[1].model;
+    const target = picked || this.d.chatModel || this.profile.mind.model || profiles.LADDER[1].model;
     this.begin('ollama-model', { heavy: true, progress: 0, detail: this.t('olPulling', { model: target }) });
     try {
       await ollamaApi.pull(target, (p) => {
@@ -344,7 +370,7 @@ class Provision extends EventEmitter {
     }
     const after = await ollamaApi.models().catch(() => []);
     const name = sameModel(after, target) || target;
-    this.d.save({ chatModel: name, provider: 'ollama', ...(reselect ? { profileApplied: cfg().profile } : {}) });
+    this.d.save({ chatModel: name, provider: 'ollama', ...(picked ? { wantModel: '' } : {}), ...(reselect ? { profileApplied: cfg().profile } : {}) });
     await this.d.onModelsChanged();
     this.done('ollama-model', this.t('olModelHave', { model: name }));
   }

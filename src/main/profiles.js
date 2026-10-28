@@ -66,6 +66,15 @@ function mindFor(hw, { voiceOnCard = false, floor = 0 } = {}) {
   return LADDER[Math.max(LADDER.indexOf(pick), floor)];
 }
 
+// Whether a model of this many bytes runs well here: all of it on the card (what is left of it after the voice),
+// or small enough for the processor (4B at most: anything bigger is slow there).
+function runsWell(hw, bytes, { voiceOnCard = false } = {}) {
+  const need = bytes * 1.12 + 0.5 * GB;
+  const g = hw.gpu;
+  if (g && (g.vendor === 'nvidia' || g.unified) && g.vram >= 4 * GB && need <= g.vram - (voiceOnCard ? VOICE_VRAM : 0.5 * GB) - 0.5 * GB) return true;
+  return bytes <= LADDER[1].bytes && need <= hw.ram * 0.45;
+}
+
 // Her own settings for the profile, so a small PC is not choked: how much she remembers of the talk at once (the
 // memory it takes grows with it), how long a model stays loaded, and what Ollama is started with
 function tuningFor(id, hw) {
@@ -149,6 +158,21 @@ function plan(hw, { choice = 'auto', have = {}, voice = '' } = {}) {
   return { ...result, auto: !forced, wanted, choices: IDS };
 }
 
+// The pieces of a set-up, each with its size and whether it is there already (what you pick in her main menu:
+// a mind, a model, a voice): [{ id, name?, bytes, have }]. The total to fetch is that of the ones that are not.
+function components({ mind, model = '', voice, device = 'cpu', have = {} }) {
+  const out = [];
+  if (mind === 'ollama') {
+    out.push({ id: 'ollama', bytes: SIZE.ollama, have: Boolean(have.ollama) });
+    if (model) out.push({ id: 'model', name: model, bytes: modelInfo(model).bytes, have: (have.models || []).some((m) => m === model || m.startsWith(`${model}-`) || (!model.includes(':') && m === `${model}:latest`)) });
+  }
+  if (voice === 'chatterbox') out.push({ id: 'chatterbox', bytes: device === 'cuda' ? SIZE.chatterboxCuda : SIZE.chatterboxCpu, have: Boolean(have.chatterbox) });
+  if (voice === 'piper') out.push({ id: 'piper', bytes: SIZE.piper, have: Boolean(have.piper) });
+  const missing = out.filter((c) => !c.have);
+  const total = missing.reduce((n, c) => n + c.bytes, 0);
+  return { items: out, total, need: missing.length ? total * 1.1 + 1 * GB : 0 };
+}
+
 // The same plan with what it still has to fetch counted again, after the fetching (what was missing is there now)
 function refresh(planned, have) {
   const download = downloads({ mind: planned.mind, voice: planned.voice.engine, device: planned.voice.device, have });
@@ -169,4 +193,4 @@ function describe(hw) {
   };
 }
 
-module.exports = { plan, refresh, classify, build, mindFor, tuningFor, chatterboxDevice, piperWorks, describe, downloads, modelInfo, IDS, LADDER, SIZE, VOICE_VRAM };
+module.exports = { plan, refresh, components, runsWell, classify, build, mindFor, tuningFor, chatterboxDevice, piperWorks, describe, downloads, modelInfo, IDS, LADDER, SIZE, VOICE_VRAM };

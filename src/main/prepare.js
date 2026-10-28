@@ -11,7 +11,7 @@ const { table } = require('./prepare-lines');
 const SITES = /^https:\/\/(www\.)?(ollama\.com|python\.org)(\/|$)/;
 const AUTO_CLOSE = 6000;
 
-function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, lang, ollamaHost, chatterbox, piper, openAiTab, protocolUrl }) {
+function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, lang, ollamaHost, chatterbox, piper, openAiTab, isHubOpen, protocolUrl }) {
   let win = null;
   let userOpened = false; // opened from the menu: it stays until it is closed
   let dismissed = false; // closed on purpose during this run: not opened again by what happens next (a failure at the end is)
@@ -54,11 +54,11 @@ function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provi
   // what happens in the preparation shows on the window, and opens it when it matters
   provision.on('change', (snap) => {
     send('prepare:change', snap);
-    if (snap.attention && !win && !dismissed && config.load().prepareWindow !== false) show();
+    if (snap.attention && !win && !dismissed && config.load().prepareWindow !== false && !isHubOpen?.()) show(); // (her main menu shows it itself)
   });
   provision.on('finish', ({ ok, attention }) => {
     send('prepare:change', provision.snapshot());
-    if (!ok && attention && !win && config.load().prepareWindow !== false) show();
+    if (!ok && attention && !win && config.load().prepareWindow !== false && !isHubOpen?.()) show();
     if (ok && win && !userOpened) {
       clearTimeout(closeTimer);
       closeTimer = setTimeout(() => hide(), AUTO_CLOSE);
