@@ -56,6 +56,7 @@ const DEFAULTS = {
   provisioned: false, // she has taken her voice (Chatterbox or Piper, by this PC) the first time, if yours was still the system's
   profile: 'auto',   // what this PC gets: 'auto' (she looks at it), or 'cloud', 'light', 'standard', 'strong' (profiles.js)
   wantModel: '',     // the model you picked in her main menu, to fetch if it is not there (then it becomes chatModel)
+  autoMind: true,    // she gets Ollama and a model ready by herself (off after you took the models off the disk: her main menu turns it on again)
   autoNode: true,    // she looks for Node.js (the hooks of Codex and running from the sources need it) and fetches the portable one if it is missing
   hubDone: false,    // her main menu (hub.js) has been shown and used once: it does not open by itself any more
   profileApplied: '', // the profile whose model has been fetched (so that what you pick in her menu afterwards stays)

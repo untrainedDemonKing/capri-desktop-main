@@ -685,3 +685,60 @@ test('Node.js is left alone where she does not install it, and when you turned i
   await slow.p.run();
   assert.equal(slow.p.step('ollama-model').state, 'done', 'a Node that cannot be fetched does not hold up her mind');
 });
+
+// ---- what she puts on this PC is written down, so that she can take exactly that off again (installed.js, cleanup.js) ----
+
+test('what she installs is written down: Ollama and how, the model she pulled, Python, Node.js; what was there already is not', async () => {
+  const notes = [];
+  const fresh = world({
+    cfg: { ttsEngine: 'chatterbox', provisioned: true }, state: { ollamaFound: false, hasPackage: false, cbProgress: [1], nodeFound: false, systemPython: null, hw: pc({ ram: 32 * GB, vram: 8 * GB }) },
+    deps: { record: (kind, value) => notes.push([kind, value]) },
+  });
+  await fresh.p.run(); // (no Python yet: the installer brings one)
+  const kinds = notes.map(([k]) => k);
+  assert.ok(kinds.includes('node'), JSON.stringify(notes));
+  assert.deepEqual(notes.find(([k]) => k === 'ollama')[1].how, 'winget');
+  assert.deepEqual(notes.filter(([k]) => k === 'model').map(([, v]) => v), ['gemma3:4b']);
+  assert.ok(kinds.includes('python'));
+
+  // all of it there already: nothing is written down as hers
+  const had = world({ cfg: { chatModel: 'gemma3:4b' }, state: { models: ['gemma3:4b'], ollamaRunning: true, hw: pc({ ram: 15.9 * GB }) }, deps: { record: (...a) => notes.push(['had', ...a]) } });
+  await had.p.run();
+  assert.deepEqual(notes.filter(([k]) => k === 'had'), []);
+});
+
+test('Ollama from the zip is written down as a zip; one installed with its own installer as that', async () => {
+  const zipNotes = [];
+  const zip = world({
+    state: { ollamaFound: false, hw: pc({ ram: 15.9 * GB }) }, installOllama: async () => ({ ok: false }),
+    deps: { downloadOllamaZip: async () => { zip.state.ollamaFound = true; return { ok: true, dir: '/userdata/ollama' }; }, record: (kind, value) => zipNotes.push([kind, value]) },
+  });
+  await zip.p.run();
+  assert.deepEqual(zipNotes.find(([k]) => k === 'ollama')[1], { how: 'zip', dir: '/userdata/ollama' });
+  const setupNotes = [];
+  const inst = world({
+    state: { ollamaFound: false, hw: pc({ ram: 15.9 * GB }) }, installOllama: async () => ({ ok: false }),
+    deps: { downloadOllama: async () => { inst.state.ollamaFound = true; return { ok: true }; }, record: (kind, value) => setupNotes.push([kind, value]) },
+  });
+  await inst.p.run();
+  assert.equal(setupNotes.find(([k]) => k === 'ollama')[1].how, 'installer');
+});
+
+test('a mind taken off the disk is not fetched again: autoMind off means no Ollama and no model, until she is told to', async () => {
+  const w = world({ cfg: { autoMind: false, provider: 'ollama', ttsEngine: 'system', provisioned: true }, state: { hw: pc({ ram: 15.9 * GB }) } });
+  await w.p.run();
+  assert.equal(w.p.snapshot().plan.ollama, false);
+  assert.deepEqual(w.state.pulls, []);
+  assert.equal(w.p.step('ollama-model').state, 'skipped');
+  // on again: the way it was
+  const on = world({ cfg: { autoMind: true, provider: 'ollama', ttsEngine: 'system', provisioned: true }, state: { hw: pc({ ram: 15.9 * GB }) } });
+  await on.p.run();
+  assert.equal(on.p.snapshot().plan.ollama, true);
+});
+
+test('the Chatterbox folder she makes has its model\'s cache inside it, and pip is told not to keep a cache: all of it goes with the folder', async () => {
+  const w = world({ cfg: { ttsEngine: 'chatterbox', provisioned: true }, state: { hasPackage: false, cbProgress: [1], hw: pc({ ram: 32 * GB, vram: 8 * GB }) } });
+  await w.p.run();
+  assert.ok(fs.existsSync(path.join(w.cfg.chatterboxDir, 'huggingface')), 'the cache folder is made (so the model is kept there)');
+  assert.ok(w.state.pips.some((args) => args.includes('--no-cache-dir')), JSON.stringify(w.state.pips));
+});

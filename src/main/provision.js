@@ -67,10 +67,11 @@ class Provision extends EventEmitter {
   // deps: cfg() the config, save(patch) change it, lang(), ollamaHost, chatterbox, piper, ollamaApi { models, pull },
   //       installOllama(onLine), downloadOllama(onLine), installPython(onLine), roots(), defaultDir(), onModelsChanged(),
   //       hardware({ force }) a look at this PC, tune(tuning) what the profile says Ollama is told, tools,
-  //       nodeTools, nodeDir() where she fetches Node.js to, platform
+  //       nodeTools, nodeDir() where she fetches Node.js to, platform, record(kind, value) writes down what she put on
+  //       this PC (installed.js), so that she can take it off again (cleanup.js)
   constructor(deps) {
     super();
-    this.d = { hardware: () => hardwareLib.scan(), tools, nodeTools, nodeDir: () => '', platform: process.platform, installOllama: null, downloadOllama: null, installPython: null, tune: null, piper: null, onModelsChanged: async () => {}, ...deps };
+    this.d = { hardware: () => hardwareLib.scan(), tools, nodeTools, nodeDir: () => '', platform: process.platform, installOllama: null, downloadOllama: null, installPython: null, tune: null, piper: null, onModelsChanged: async () => {}, record: () => {}, ...deps };
     this.plan = { ollama: false, chatterbox: false, piper: false, node: false, adopt: false };
     this.hw = null; // the picture of this PC (hardware.js)
     this.have = {}; // what is on it already
@@ -171,7 +172,8 @@ class Provision extends EventEmitter {
     }
     // (an Ollama that is already there stays her mind on a PC that would have taken a cloud one, unless you asked for the cloud)
     // (and the model you picked in her main menu is Ollama's whatever the PC would have taken)
-    const ollama = (cfg.provider || 'ollama') === 'ollama' && (prof.mind.kind === 'ollama' || (prof.auto && Boolean(have.ollama)) || Boolean(cfg.wantModel));
+    // (and not a mind you have taken off the disk: it is not fetched again until you choose it in her main menu)
+    const ollama = cfg.autoMind !== false && (cfg.provider || 'ollama') === 'ollama' && (prof.mind.kind === 'ollama' || (prof.auto && Boolean(have.ollama)) || Boolean(cfg.wantModel));
     return { ollama, chatterbox: engine === 'chatterbox', piper: engine === 'piper', node: cfg.autoNode !== false, adopt, engine };
   }
 
@@ -333,6 +335,7 @@ class Provision extends EventEmitter {
       this.fail('node', this.t('nodeFailed', { error: this.cancelled ? 'cancelled' : err.message }), ['retry', 'open-node-site']);
     }
     const onPath = nodeTools.addToUserPath(got.dir);
+    this.d.record('node', { dir: got.dir, onPath: onPath.ok });
     this.done('node', this.t(onPath.ok ? 'nodeInstalled' : 'nodeInstalledNoPath', { version: got.version, dir: got.dir }));
   }
 
@@ -350,13 +353,16 @@ class Provision extends EventEmitter {
       let found = await ollamaHost.locate(cfg());
       if (!found && !String(cfg().ollamaDir || '').trim()) {
         // nowhere: get it (winget, else its own installer, else its zip)
-        const installs = [this.d.installOllama, this.d.downloadOllama, this.d.downloadOllamaZip].filter(Boolean);
-        for (const install of installs) {
+        const installs = [['winget', this.d.installOllama], ['installer', this.d.downloadOllama], ['zip', this.d.downloadOllamaZip]].filter(([, fn]) => fn);
+        for (const [how, install] of installs) {
           this.begin('ollama-find', { heavy: true, detail: this.t('olInstalling', { line: '' }) });
           const res = await install((line) => this.update('ollama-find', { detail: this.t('olInstalling', { line: String(line).slice(0, 80) }) }), this.abort.signal).catch((err) => ({ ok: false, error: err.message }));
           if (res.ok && res.dir) this.d.save({ ollamaDir: res.dir }); // (the zip is unpacked into a folder of hers)
           if (res.ok) found = await ollamaHost.locate(cfg());
-          if (found) break;
+          if (found) {
+            this.d.record('ollama', { how, dir: res.dir || '' }); // hers: she can take it off again
+            break;
+          }
         }
       }
       if (!found) this.fail('ollama-find', this.t('olMissing'), ['retry', 'choose-ollama', 'open-ollama-site']);
@@ -412,6 +418,7 @@ class Provision extends EventEmitter {
     }
     const after = await ollamaApi.models().catch(() => []);
     const name = sameModel(after, target) || target;
+    this.d.record('model', name); // hers: she can take it off again
     this.d.save({ chatModel: name, provider: 'ollama', ...(picked ? { wantModel: '' } : {}), ...(reselect ? { profileApplied: cfg().profile } : {}) });
     await this.d.onModelsChanged();
     this.done('ollama-model', this.t('olModelHave', { model: name }));
@@ -437,7 +444,7 @@ class Provision extends EventEmitter {
     if (!dir) {
       if (String(cfg().chatterboxDir || '').trim()) this.fail('cb-find', this.t('cbFolderGone', { path: cfg().chatterboxDir }), ['retry', 'choose-chatterbox']);
       dir = this.d.defaultDir();
-      fs.mkdirSync(dir, { recursive: true });
+      fs.mkdirSync(path.join(dir, 'huggingface'), { recursive: true }); // (the model is kept in there too: it goes with the folder)
       this.d.save({ chatterboxDir: dir });
       this.done('cb-find', this.t('cbFolderNew', { path: dir }));
     } else {
@@ -454,14 +461,17 @@ class Provision extends EventEmitter {
       } else {
         this.begin('cb-python', { heavy: true, detail: this.t('cbPythonMaking') });
         let sys = setup.findSystemPython();
+        let installedPython = false;
         if ((!sys || sys.tooNew) && this.d.installPython) {
           this.update('cb-python', { detail: this.t('cbPythonInstalling', { line: '' }) });
           await this.d.installPython((line) => this.update('cb-python', { detail: this.t('cbPythonInstalling', { line: String(line).slice(0, 80) }) })).catch(() => ({ ok: false }));
           sys = setup.findSystemPython();
+          installedPython = Boolean(sys && !sys.tooNew); // (hers: she put it on this PC)
         }
         if (!sys || sys.tooNew) {
           this.fail('cb-python', this.t('cbNoPython', { found: sys?.tooNew ? this.t('cbFoundWrong', { version: sys.tooNew }) : '' }), ['retry', 'open-python-site', 'choose-chatterbox']);
         }
+        if (installedPython) this.d.record('python');
         try {
           this.update('cb-python', { detail: this.t('cbPythonMaking') });
           python = setup.createVenv(sys, dir);
@@ -483,7 +493,7 @@ class Provision extends EventEmitter {
         if (a) this.update('cb-package', { detail: this.t('cbPackageInstalling', { what: `${a.what}${a.size ? ` (${a.size})` : ''}` }) });
       };
       const wheels = this.wheelhouse(dir);
-      const res = await setup.pip(python, ['install', ...(wheels ? ['--find-links', wheels] : []), ...target.args], onLine);
+      const res = await setup.pip(python, ['install', '--no-cache-dir', ...(wheels ? ['--find-links', wheels] : []), ...target.args], onLine); // (no cache: gigabytes of wheels would stay behind)
       if (!res.ok) this.fail('cb-package', this.t('cbPackageFailed', { error: res.tail.slice(-3).join(' ') }), ['retry'], res.tail);
     }
     if (python) await this.graphicsCard(python);

@@ -26,7 +26,7 @@ class FakeWindow extends EventEmitter {
   close() { this.destroyed = true; this.emit('closed'); }
 }
 
-function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', threads: 8 }, disk: { path: '', free: 200 * GB, total: 500 * GB } }), have = { ollama: false, models: [], chatterbox: false, piper: false }, cfg = {}, connect } = {}) {
+function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', threads: 8 }, disk: { path: '', free: 200 * GB, total: 500 * GB } }), have = { ollama: false, models: [], chatterbox: false, piper: false }, cfg = {}, connect, cleanup, uninstall } = {}) {
   const handlers = new Map();
   const listeners = new Map();
   const ipcMain = { handle: (c, fn) => handlers.set(c, fn), on: (c, fn) => listeners.set(c, fn) };
@@ -51,6 +51,7 @@ function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', t
     saveVoiceKey: ({ engine, key }) => { updateConfig({ ttsEngine: engine, apiKeys: { ...config.value.apiKeys, [engine]: `enc:${key}` } }); return { ok: true }; },
     keyPages: { groq: 'https://console.groq.com/keys', gemini: 'https://aistudio.google.com/apikey' },
     voiceKeyPages: { openai: 'https://platform.openai.com/api-keys' },
+    cleanup, uninstall,
     protocolUrl: 'capri://app/src/renderer/hub.html',
   });
   return { hub, handlers, listeners, config, updates, prov, opened, clipboard, call: (c, ...a) => handlers.get(c)({}, ...a), fire: (c, ...a) => listeners.get(c)({}, ...a) };
@@ -120,7 +121,7 @@ test('warnings: Chatterbox on a plain PC is slow, a model too big for it is heav
 test('the button writes the choice to her config: a model that is there is taken, one that is not is asked of the preparation', async () => {
   const w = world({ have: { ollama: true, models: ['gemma3:4b-it-q4_K_M'], chatterbox: false, piper: false } });
   await w.call('hub:apply', { mind: 'ollama', model: 'gemma3:4b', voice: 'piper' });
-  assert.deepEqual(w.updates[0], { hubDone: true, autoSetup: true, provider: 'ollama', chatModel: 'gemma3:4b-it-q4_K_M', wantModel: '', ttsEngine: 'piper', provisioned: true, voiceMode: 'chat' });
+  assert.deepEqual(w.updates[0], { hubDone: true, autoSetup: true, provider: 'ollama', autoMind: true, chatModel: 'gemma3:4b-it-q4_K_M', wantModel: '', ttsEngine: 'piper', provisioned: true, voiceMode: 'chat' });
   assert.equal(w.prov.runs, 1, 'and the preparation starts');
   const fetch = world();
   await fetch.call('hub:apply', { mind: 'ollama', model: 'gemma3:12b', voice: 'chatterbox' });
@@ -257,4 +258,59 @@ test('the recommendations the page shows: the best model and its reasons, an alt
   assert.equal(big.rec.mind.alt, 'qwen2.5:14b');
   assert.deepEqual([big.rec.voice.engine, big.rec.voice.device], ['chatterbox', 'cuda']);
   assert.equal(big.models.find((m) => m.model === 'qwen2.5:14b').rank, 'alt');
+});
+
+// ---- what is on this PC, and taking it off ----
+
+test('her menu\'s "More" tab opens the main menu at the part about what is on this PC: a place she knows, in a new window or the open one', () => {
+  const w = world();
+  w.fire('hub:show', 'manage');
+  const win = FakeWindow.last;
+  assert.equal(win.url, 'capri://app/src/renderer/hub.html#manage');
+  w.fire('hub:show', 'manage');
+  assert.equal(FakeWindow.last, win, 'the same window');
+  assert.deepEqual(win.sent.pop(), ['hub:focus', 'manage'], 'taken to that part');
+  const before = win.sent.length;
+  w.fire('hub:show', 'somewhere else');
+  assert.equal(win.sent.length, before, 'a place she does not know is ignored');
+  const plain = world();
+  plain.fire('hub:show');
+  assert.equal(FakeWindow.last.url, 'capri://app/src/renderer/hub.html');
+});
+
+test('the list of what she put here comes from the cleanup, and without one it is empty', async () => {
+  const inv = { items: [{ id: 'piper', kind: 'piper', bytes: 5, ours: true, removable: true }], ollamaUp: true, total: 5, count: 1 };
+  const w = world({ cleanup: { inventory: async () => inv } });
+  assert.deepEqual(await w.call('hub:inventory'), inv);
+  const none = world();
+  assert.deepEqual(await none.call('hub:inventory'), { items: [], ollamaUp: true, total: 0, count: 0 });
+  assert.equal((await none.call('hub:remove', 'piper')).ok, false);
+});
+
+test('taking one thing off, or all of it: what the cleanup says goes back with the new list, and the look at the PC is made again', async () => {
+  const calls = [];
+  const after = { items: [], ollamaUp: true, total: 0, count: 0 };
+  const cleanup = {
+    inventory: async () => after,
+    remove: async (id) => { calls.push(['remove', id]); return { ok: true, id, freed: 10 }; },
+    removeAll: async () => { calls.push(['all']); return { ok: true, freed: 99, removed: ['piper'], failed: [], left: [] }; },
+  };
+  const w = world({ cleanup });
+  await w.call('hub:state');
+  await w.call('hub:state');
+  assert.equal(w.prov.previews, 1, 'the look at the PC is kept for a moment');
+  const one = await w.call('hub:remove', 'model:gemma3:4b');
+  assert.deepEqual(calls, [['remove', 'model:gemma3:4b']]);
+  assert.deepEqual([one.ok, one.freed, one.inventory], [true, 10, after]);
+  await w.call('hub:state');
+  assert.equal(w.prov.previews, 2, 'a new look after something was taken off');
+  const all = await w.call('hub:removeAll');
+  assert.deepEqual(calls.at(-1), ['all']);
+  assert.deepEqual([all.ok, all.freed, all.removed, all.inventory], [true, 99, ['piper'], after]);
+});
+
+test('her own removal goes to the app\'s uninstall; without one there is none', async () => {
+  const w = world({ uninstall: async () => ({ ok: true, freed: 7 }) });
+  assert.deepEqual(await w.call('hub:uninstall'), { ok: true, freed: 7 });
+  assert.deepEqual(await world().call('hub:uninstall'), { ok: false, error: 'missing' });
 });

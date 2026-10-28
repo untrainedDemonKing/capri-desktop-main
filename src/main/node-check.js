@@ -127,6 +127,24 @@ function addToUserPath(folder, { platform = process.platform, spawnSync = cp.spa
   }
 }
 
+// Takes a folder out of the PATH of your account again (what addToUserPath put in), and out of hers.
+function removeFromUserPath(folder, { platform = process.platform, spawnSync = cp.spawnSync, env = process.env } = {}) {
+  env.PATH = String(env.PATH || '').split(path.delimiter).filter((p) => p && p !== folder).join(path.delimiter);
+  if (platform !== 'win32') return { ok: false, error: 'Windows only' };
+  const quoted = folder.replace(/'/g, "''");
+  const script = [
+    `$d = '${quoted}'`,
+    "$p = [Environment]::GetEnvironmentVariable('Path', 'User')",
+    "if ($p) { [Environment]::SetEnvironmentVariable('Path', (($p -split ';' | Where-Object { $_ -and $_ -ne $d }) -join ';'), 'User') }",
+  ].join('; ');
+  try {
+    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, timeout: 20000 });
+    return { ok: r.status === 0, error: r.status === 0 ? '' : String(r.stderr || r.stdout).slice(0, 200) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 // The command that runs a script with Node: `node` when it is on the PATH, else the path of the one she found
 // (quoted), else null. For the hooks of the assistants.
 function nodeCommand({ spawnSync = cp.spawnSync, env = process.env, platform = process.platform, exists = fs.existsSync } = {}) {
@@ -135,4 +153,4 @@ function nodeCommand({ spawnSync = cp.spawnSync, env = process.env, platform = p
   return null;
 }
 
-module.exports = { findNode, pickRelease, checksumOf, install, addToUserPath, nodeCommand, parseVersion, knownPlaces, versionOf, MIN_MAJOR };
+module.exports = { findNode, pickRelease, checksumOf, install, addToUserPath, removeFromUserPath, nodeCommand, parseVersion, knownPlaces, versionOf, MIN_MAJOR };

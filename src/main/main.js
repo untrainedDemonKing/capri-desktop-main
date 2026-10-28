@@ -3,6 +3,7 @@
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
+const { spawn: spawnProgram } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const {
   app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, net, shell, globalShortcut, nativeImage,
@@ -27,6 +28,9 @@ const { needsRaise } = require('./stacking');
 const { OllamaHost } = require('./ollama-host');
 const ollama = require('./ollama');
 const { Provision } = require('./provision');
+const { createInstalled } = require('./installed');
+const { Cleanup } = require('./cleanup');
+const nodeCheck = require('./node-check');
 const { createPrepare } = require('./prepare');
 const { createHub } = require('./hub');
 const stt = require('./stt');
@@ -80,7 +84,10 @@ async function lookAtPc({ force = false } = {}) {
   config.save({ hardwareCache: { at: Date.now(), key: fingerprint, hw: { ...hw, disk: undefined } } });
   return hw;
 }
+// what she put on this PC, written down as she does it, so that she can take exactly that off again (cleanup.js)
+const installed = createInstalled({ file: () => path.join(app.getPath('userData'), 'installed.json') });
 const provision = new Provision({
+  record: (kind, value) => installed.record(kind, value),
   cfg: () => config.load(),
   save: (patch) => updateConfig(patch),
   lang: () => resolveLang(config.load().lang),
@@ -103,6 +110,22 @@ const provision = new Provision({
   },
   onModelsChanged: () => refreshModels(),
 });
+// Taking off what she put on this PC (cleanup.js), made once the app is ready
+let cleanupTool = null;
+const theCleanup = () => (cleanupTool ||= new Cleanup({
+  userData: app.getPath('userData'),
+  home: app.getPath('home'),
+  cfg: () => config.load(),
+  save: (patch) => updateConfig(patch),
+  installed,
+  ollamaApi: { list: () => ollama.list(), remove: (name) => ollama.remove(name) },
+  ollamaHost,
+  chatterbox,
+  piper,
+  nodeTools: nodeCheck,
+  provision,
+  onModelsChanged: () => refreshModels(),
+}));
 let prepare = null; // her preparation window (prepare.js), made once the app is ready
 let hub = null; // her main menu (hub.js), the same
 provision.on('change', (snapshot) => toOverlay('provision:status', snapshot));
@@ -1276,7 +1299,45 @@ function applyRender() {
   if (DEV) app.whenReady().then(() => setTimeout(() => console.log('[capri] display:', render, JSON.stringify(app.getGPUFeatureStatus())), 4000));
 }
 
+// Her own removal: all of what she put on this PC comes off, then (if she came from the installer) the installer's
+// uninstaller is started for herself, her settings and her memory, and she quits. Resolves what the page says.
+async function uninstallCapri() {
+  const res = await theCleanup().removeAll();
+  if (!res.ok) return { ok: false, error: res.error || '', failed: res.failed };
+  const dir = path.dirname(process.execPath);
+  const uninstaller = path.join(dir, `Uninstall ${app.getName()}.exe`);
+  if (!app.isPackaged || process.platform !== 'win32' || !fs.existsSync(uninstaller)) return { ok: true, manual: true, dir: app.isPackaged ? dir : ROOT, freed: res.freed };
+  // (the uninstaller waits for her to quit, then removes the program and, with this flag, her data folder too)
+  const child = spawnProgram(uninstaller, ['/S', '--delete-app-data'], { detached: true, stdio: 'ignore', windowsHide: true });
+  child.on('error', () => {});
+  child.unref();
+  setTimeout(() => app.quit(), 600);
+  return { ok: true, freed: res.freed };
+}
+
+// `Capri.exe --remove-everything`, started by the uninstaller when you say yes to "delete what she downloaded too":
+// no window, she takes off all she put on this PC and quits.
+function removeEverythingAndQuit() {
+  app.whenReady().then(async () => {
+    const cap = setTimeout(() => app.exit(0), 5 * 60 * 1000); // (never left hanging)
+    try {
+      await theCleanup().removeAll();
+    } catch (err) {
+      console.error('[capri] taking off what she installed:', err.message);
+    }
+    clearTimeout(cap);
+    for (const stop of [() => ollamaHost.stop(false), () => chatterbox.stop(), () => piper.stop()]) {
+      try { stop(); } catch { /* not running */ }
+    }
+    app.exit(0);
+  });
+}
+
 function main() {
+  if (process.argv.includes('--remove-everything')) {
+    removeEverythingAndQuit();
+    return;
+  }
   applyRender();
   if (!app.requestSingleInstanceLock()) {
     app.quit();
@@ -1329,6 +1390,8 @@ function main() {
       },
       keyPages: setup.KEY_PAGES,
       voiceKeyPages: tts.KEY_PAGES,
+      cleanup: theCleanup(),
+      uninstall: uninstallCapri,
       protocolUrl: 'capri://app/src/renderer/hub.html',
       onClosed: () => rebuildTray(),
     });

@@ -41,6 +41,7 @@
     "test:ledges": "node --test tests/ledges.test.js",
     "test:heart": "node --test tests/heart.test.js",
     "test:acting": "node --test tests/acting.test.js",
+    "test:cleanup": "node --test tests/cleanup.test.js",
     "test:possession": "node --test tests/possession.test.js",
     "test:mover": "node --test tests/mover.test.js",
     "test:node": "node --test tests/node-check.test.js",
@@ -99,6 +100,7 @@
       "oneClick": true,
       "perMachine": false,
       "runAfterFinish": true,
+      "include": "build/installer.nsh",
       "createDesktopShortcut": true,
       "shortcutName": "Capri",
       "artifactName": "Capri-Setup-${version}-${arch}.${ext}"

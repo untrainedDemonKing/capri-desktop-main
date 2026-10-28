@@ -4,7 +4,7 @@
 // A stand-in for the `ollama` program, for the tests: `ollama serve` answers on OLLAMA_HOST the way the real
 // one does for what Capri asks (version, tags, pull with its progress, chat streamed, generate), and keeps
 // its models as folders under OLLAMA_MODELS/manifests/registry.ollama.ai/library/<name>/<tag>, like the real
-// one's manifests. No model, no download: the answers are canned. FAKE_OLLAMA_LOG: a file it appends every
+// one's manifests (and takes one off again on DELETE /api/delete). No model, no download: the answers are canned. FAKE_OLLAMA_LOG: a file it appends every
 // request to (one JSON per line, with the OLLAMA_MODELS it was started with).
 
 const http = require('node:http');
@@ -52,7 +52,7 @@ http.createServer(async (req, res) => {
   const json = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
   if (url === '/api/version') return json(200, { version: '0.0.0-fake' });
   if (url === '/api/tags') return json(200, { models: installed().map((name) => ({ name, size: 1e9 })) });
-  const b = req.method === 'POST' ? await body(req) : {};
+  const b = req.method === 'POST' || req.method === 'DELETE' ? await body(req) : {};
   record({ url, model: b.model, stream: b.stream, last: b.messages?.[b.messages.length - 1]?.content, options: b.options, keepAlive: b.keep_alive });
   if (url === '/api/pull') {
     res.writeHead(200, { 'content-type': 'application/x-ndjson' });
@@ -72,6 +72,13 @@ http.createServer(async (req, res) => {
     fs.writeFileSync(path.join(library, name, tag), '{}');
     line({ status: 'success' });
     return res.end();
+  }
+  if (url === '/api/delete' && req.method === 'DELETE') {
+    const [name, tag = 'latest'] = String(b.model || b.name).split(':');
+    const file = path.join(library, name, tag);
+    if (!fs.existsSync(file)) return json(404, { error: `model '${b.model || b.name}' not found` });
+    fs.rmSync(file);
+    return json(200, {});
   }
   if (url === '/api/chat') {
     if (!installed().some((m) => m === b.model || m.split(':')[0] === b.model)) return json(404, { error: `model '${b.model}' not found` });

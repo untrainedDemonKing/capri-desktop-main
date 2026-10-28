@@ -37,6 +37,25 @@ async function models() {
   return list.map((m) => m.name);
 }
 
+// The models installed with what each takes on the disk: [{ name, size }]
+async function list() {
+  const res = await fetch(`${base()}/api/tags`, { signal: AbortSignal.timeout(2500) });
+  if (!res.ok) throw await failure(res);
+  const { models: all = [] } = await res.json();
+  return all.map((m) => ({ name: m.name, size: Number(m.size) || 0 }));
+}
+
+// Takes a model off the disk (Ollama keeps the pieces other models share).
+async function remove(name) {
+  const res = await fetch(`${base()}/api/delete`, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: name, name }),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!res.ok) throw await failure(res);
+}
+
 // Whether an Ollama answers at this address, and which version it is ('' if none does).
 async function version(signal = AbortSignal.timeout(1500)) {
   try {
@@ -145,4 +164,4 @@ async function pull(name, onProgress, signal) {
   }
 }
 
-module.exports = { base, tune, version, models, warm, chat, once, pull };
+module.exports = { base, tune, version, models, list, remove, warm, chat, once, pull };

@@ -298,6 +298,158 @@
     $('go').disabled = running() || blocked;
   }
 
+  // ---- what is on this PC, and taking it off ----
+
+  let inv = null;      // what the main process told (hub:inventory)
+  let working = false; // something is being taken off
+  const armed = new Map(); // button -> its timer: pressed once, waiting for the second press
+
+  // a button that asks again before it does what it says: press, read, press
+  function twoStep(button, { label, sure, run }) {
+    button.textContent = label;
+    button.dataset.armed = 'false';
+    button.onclick = () => {
+      if (working) return;
+      if (armed.has(button)) {
+        clearTimeout(armed.get(button));
+        armed.delete(button);
+        button.dataset.armed = 'false';
+        button.textContent = label;
+        run();
+        return;
+      }
+      button.dataset.armed = 'true';
+      button.textContent = typeof sure === 'function' ? sure() : sure;
+      armed.set(button, setTimeout(() => {
+        armed.delete(button);
+        button.dataset.armed = 'false';
+        button.textContent = label;
+      }, 6000));
+    };
+  }
+
+  const sizeText = (item) => (item.bytes ? `${item.partial ? '~' : ''}${fmtBytes(item.bytes)}` : '—');
+  const hers = () => (inv ? inv.items.filter((i) => i.ours && i.removable) : []);
+  const nameOf = (item) => (item.kind === 'model' ? item.label : ui[`invKind-${item.kind}`] || item.label);
+
+  function setResult(text, kind = '') {
+    $('invResult').textContent = text;
+    $('invResult').dataset.kind = kind;
+  }
+
+  function renderInventory() {
+    if (!inv || !ui.invEmpty) return;
+    const box = $('inv');
+    const items = inv.items;
+    if (!items.length) {
+      box.replaceChildren(el('p', 'inv__empty', ui.invEmpty));
+    } else {
+      const nodes = [];
+      for (const group of ['mind', 'voice', 'tools']) {
+        const here = items.filter((i) => i.group === group);
+        if (!here.length) continue;
+        nodes.push(el('h3', 'inv__group', ui[`invGroup-${group}`]));
+        for (const item of here) {
+          const row = el('div', 'inv__row');
+          row.dataset.hers = String(Boolean(item.ours));
+          row.dataset.id = item.id;
+          row.append(el('span', 'inv__name', nameOf(item)));
+          const tag = item.kind === 'model' ? (item.ours ? ui.invOurs : ui.invYours) : item.ours ? (item.how && item.how !== 'zip' ? ui.invHowInstalled : item.how === 'zip' ? ui.invHow : ui.invOurs) : ui.invYours;
+          row.append(el('span', item.ours ? 'inv__tag' : 'inv__tag inv__tag--other', tag));
+          row.append(el('span', 'inv__size', sizeText(item)));
+          if (item.removable) {
+            const b = el('button', 'btn btn--small');
+            b.type = 'button';
+            b.disabled = running() || working;
+            twoStep(b, { label: ui.invDelete, sure: ui.invSure, run: () => removeOne(item) });
+            row.append(b);
+          } else {
+            row.append(el('p', 'inv__where', fill(ui.invWhere, { path: item.path || '' })));
+          }
+          nodes.push(row);
+        }
+      }
+      box.replaceChildren(...nodes);
+    }
+    const total = hers().reduce((n, i) => n + i.bytes, 0);
+    $('invTotal').textContent = hers().length ? fill(ui.invTotal, { size: fmtBytes(total) }) : ui.invTotalNone;
+    $('invNote').textContent = inv.ollamaUp ? '' : ui.invOllamaDown;
+    const all = $('removeAll');
+    const un = $('uninstall');
+    all.disabled = !hers().length || running() || working;
+    un.disabled = running() || working;
+    const list = () => hers().map(nameOf).join(', ');
+    twoStep(all, { label: ui.invAll, sure: () => fill(ui.invAllSure, { list: list(), size: fmtBytes(total) }), run: removeEverything });
+    twoStep(un, { label: ui.invUninstall, sure: () => fill(ui.invUninstallSure, { size: fmtBytes(total) }), run: uninstallCapri });
+  }
+
+  async function refreshInventory() {
+    $('invTotal').textContent = ui.invCounting;
+    inv = await window.hub.inventory().catch(() => ({ items: [], ollamaUp: true, total: 0, count: 0 }));
+    renderInventory();
+  }
+
+  // after something was taken off, the rest of the page (what is installed, the plan, the choices) follows
+  async function resync() {
+    const fresh = await window.hub.state();
+    data = fresh;
+    ui = fresh.ui;
+    await load(fresh, { keepInventory: true });
+  }
+
+  const reason = (error) => (error === 'preparing' ? ui.invBusyPreparing : error === 'missing' ? ui.invMissing : error === 'not hers' ? ui.invNotHers : error);
+
+  async function removeOne(item) {
+    working = true;
+    renderInventory();
+    setResult(ui.invWorking);
+    const res = await window.hub.remove(item.id).catch((err) => ({ ok: false, error: err.message }));
+    working = false;
+    if (res.inventory) inv = res.inventory;
+    if (res.ok) setResult(fill(ui.invDone, { what: nameOf(item), size: fmtBytes(res.freed || 0) }), 'ok');
+    else setResult(fill(ui.invFailed, { what: nameOf(item), error: reason(res.error) }), 'bad');
+    renderInventory();
+    await resync();
+  }
+
+  async function removeEverything() {
+    working = true;
+    renderInventory();
+    setResult(ui.invWorking);
+    const res = await window.hub.removeAll().catch((err) => ({ ok: false, failed: [{ id: '', error: err.message }], removed: [], freed: 0 }));
+    working = false;
+    if (res.inventory) inv = res.inventory;
+    const failed = (res.failed || []).map((f) => `${f.id || ''} ${reason(f.error)}`.trim());
+    if (res.error) setResult(reason(res.error), 'bad');
+    else if (failed.length) setResult(fill(ui.invFailed, { what: '', error: failed.join('; ') }), 'bad');
+    else {
+      const left = (res.left || []).map((id) => id.replace(/^model:/, ''));
+      setResult(`${fill(ui.invAllDone, { count: (res.removed || []).length, size: fmtBytes(res.freed || 0) })}${left.length ? ` ${fill(ui.invAllLeft, { list: left.join(', ') })}` : ''}`, 'ok');
+    }
+    renderInventory();
+    await resync();
+  }
+
+  async function uninstallCapri() {
+    working = true;
+    renderInventory();
+    setResult(ui.invWorking);
+    const res = await window.hub.uninstall().catch((err) => ({ ok: false, error: err.message }));
+    if (res.ok && res.manual) {
+      working = false;
+      setResult(fill(ui.invUninstallManual, { dir: res.dir || '' }), 'ok');
+      await refreshInventory();
+      await resync();
+    } else if (res.ok) {
+      setResult(ui.invUninstallDone, 'ok'); // (she quits: the window goes with her)
+    } else {
+      working = false;
+      const list = (res.failed || []).map((f) => `${f.id} ${reason(f.error)}`).join('; ') || reason(res.error);
+      setResult(fill(ui.invUninstallFailed, { list }), 'bad');
+      await refreshInventory();
+    }
+  }
+
   // ---- how it is going ----
 
   function renderProgress() {
@@ -328,6 +480,7 @@
     for (const id of ['mindChoices', 'voiceChoices', 'models']) for (const input of $(id).querySelectorAll('input')) input.disabled = running();
     $('nodeBox').disabled = running();
     for (const b of $('providers').children) b.disabled = running();
+    if (inv) renderInventory();
     if (preview) renderPlan();
   }
 
@@ -363,7 +516,7 @@
     $('nodeBox').checked = sel.node;
   }
 
-  async function load(fresh) {
+  async function load(fresh, { keepInventory = false } = {}) {
     data = fresh;
     ui = data.ui;
     renderPc();
@@ -379,7 +532,9 @@
     showPanels();
     snap = data.snapshot;
     renderProgress();
+    renderInventory();
     await refreshPlan();
+    if (!keepInventory) refreshInventory();
   }
 
   // "3. Set-up": the number in a font of its own (the heading's font draws a 3 that reads as a Cyrillic Э)
@@ -414,6 +569,8 @@
     $('voiceSave').textContent = ui.voiceSaveKey;
     numbered($('installTitle'), ui.installTitle);
     $('installSub').textContent = ui.installSub;
+    numbered($('manageTitle'), ui.manageTitle);
+    $('manageSub').textContent = ui.manageSub;
     $('nodeLabel').textContent = ui.nodeLabel;
     $('nodeWhat').textContent = ui.nodeWhat;
     $('nodeBox').addEventListener('change', (e) => { sel.node = e.target.checked; refreshPlan(); });
@@ -455,7 +612,16 @@
       // (a fetch finished: what is there now is what the next look says)
       if (was && !next.running) window.hub.state().then((fresh) => { data.have = fresh.have; data.models = fresh.models; data.cloud = fresh.cloud; buildModels(); renderOllamaLine(); refreshPlan(); });
     });
+    // a button elsewhere (her menu's "More" tab) opens the page at the part about what is on this PC
+    const goTo = (section) => {
+      if (section !== 'manage') return;
+      $('manage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('manage').dataset.flash = 'true';
+      setTimeout(() => { $('manage').dataset.flash = 'false'; }, 1800);
+    };
+    window.hub.onFocus(goTo);
     await load(first);
+    if (location.hash === '#manage') goTo('manage');
   }
   init();
 })();

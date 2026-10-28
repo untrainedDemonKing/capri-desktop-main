@@ -5,7 +5,8 @@
 // cloud: its key is asked for, tried, and kept only if it works), what she talks with (Piper, Chatterbox, the
 // system's voice, or a service with a key), see what that costs to fetch against the free room on the disk, and
 // press one button: she fetches, installs and starts it, with the steps and bars of the preparation (provision.js).
-// Nothing is fetched before you press it.
+// Nothing is fetched before you press it. And the other way: what is on this PC because of her, with what it takes,
+// one thing at a time or all of it, and her own removal (cleanup.js).
 
 const path = require('node:path');
 const { table } = require('./hub-lines');
@@ -30,7 +31,9 @@ const CLOUD = [
 const VOICES = ['piper', 'chatterbox', 'system', 'openai', 'elevenlabs'];
 const MINDS = ['ollama', 'cloud', 'skip'];
 
-function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config, updateConfig, lang, connect, saveVoiceKey, keyPages, voiceKeyPages = {}, protocolUrl, onClosed }) {
+const SECTIONS = new Set(['manage']); // the places of the page a button elsewhere can open it at
+
+function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config, updateConfig, lang, connect, saveVoiceKey, keyPages, voiceKeyPages = {}, cleanup = null, uninstall = null, protocolUrl, onClosed }) {
   let win = null;
   let applied = false; // the button was pressed in this window: closing it is not "skip"
   let last = null; // the last look at the PC, for the previews (a look takes a second or two)
@@ -93,6 +96,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
     if (typeof node === 'boolean') patch.autoNode = node;
     if (mind === 'ollama') {
       patch.provider = 'ollama';
+      patch.autoMind = true;
       const there = model ? sameModel(installed, model) : null;
       if (there) Object.assign(patch, { chatModel: there, wantModel: '' });
       else if (model) patch.wantModel = model;
@@ -124,11 +128,14 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
     if (!config.load().hubDone) updateConfig({ hubDone: true, autoSetup: false });
   }
 
-  function show() {
+  // `section`: a place on the page to go to ('manage': what is on this PC and taking it off)
+  function show(section = '') {
+    const at = SECTIONS.has(section) ? section : '';
     if (win && !win.isDestroyed()) {
       if (win.isMinimized()) win.restore();
       win.show();
       win.focus();
+      if (at) win.webContents.send('hub:focus', at);
       return win;
     }
     applied = false;
@@ -139,7 +146,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
       webPreferences: { preload: path.join(__dirname, '..', 'hub-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
     win.removeMenu?.();
-    win.loadURL(protocolUrl);
+    win.loadURL(at ? `${protocolUrl}#${at}` : protocolUrl);
     win.once('ready-to-show', () => win.show());
     win.on('closed', () => {
       win = null;
@@ -151,7 +158,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
 
   provision.on('change', (snapshot) => send('hub:change', snapshot));
 
-  ipcMain.on('hub:show', () => show()); // from the overlay: her "Connect" button
+  ipcMain.on('hub:show', (_e, section) => show(typeof section === 'string' ? section : '')); // from the overlay: her "Connect" button, her menu's "More" tab
   ipcMain.handle('hub:state', (_e, opts) => state(opts));
   ipcMain.handle('hub:rescan', () => state({ rescan: true }));
   ipcMain.handle('hub:preview', (_e, choice) => preview(choice));
@@ -174,6 +181,27 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
     return true;
   });
   ipcMain.handle('hub:report', () => provision.report());
+  // what is on this PC because of her, and taking it off (cleanup.js)
+  const inventory = async () => (cleanup ? cleanup.inventory() : { items: [], ollamaUp: true, total: 0, count: 0 });
+  ipcMain.handle('hub:inventory', () => inventory());
+  ipcMain.handle('hub:remove', async (_e, id) => {
+    if (!cleanup) return { ok: false, error: 'missing', inventory: await inventory() };
+    const res = await cleanup.remove(String(id || ''));
+    last = null; // (what is there has changed: the next look at the PC is a new one)
+    return { ...res, inventory: await inventory() };
+  });
+  ipcMain.handle('hub:removeAll', async () => {
+    if (!cleanup) return { ok: false, removed: [], failed: [], freed: 0, inventory: await inventory() };
+    const res = await cleanup.removeAll();
+    last = null;
+    return { ...res, inventory: await inventory() };
+  });
+  // her own removal: all of what she put here, then herself (the installer's uninstaller, if she came from it)
+  ipcMain.handle('hub:uninstall', async () => {
+    if (!uninstall) return { ok: false, error: 'missing' };
+    last = null;
+    return uninstall();
+  });
   ipcMain.on('hub:copy', (_e, text) => clipboard.writeText(String(text).slice(0, 20000)));
   ipcMain.on('hub:skip', () => {
     skip();

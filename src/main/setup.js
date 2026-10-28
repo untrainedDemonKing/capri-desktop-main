@@ -150,6 +150,8 @@ async function downloadOllamaZip(dir, onLine, signal) {
   } finally {
     fs.rmSync(file, { force: true });
   }
+  // (the models she fetches go in here, beside it: the folder is found by these two, and they go with it)
+  for (const sub of ['manifests', 'blobs']) fs.mkdirSync(path.join(dir, 'models', sub), { recursive: true });
   return { ok: fs.existsSync(path.join(dir, 'ollama.exe')), dir };
 }
 

@@ -47,3 +47,22 @@ test('no news, no heading; and no installers is an error, not an empty release',
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('the uninstaller asks whether what she downloaded goes too, and never on an update or a silent uninstall', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  assert.equal(pkg.build.nsis.include, 'build/installer.nsh', 'the installer script is part of the build');
+  const raw = fs.readFileSync(path.join(__dirname, '..', pkg.build.nsis.include));
+  assert.deepEqual([...raw.subarray(0, 3)], [0xef, 0xbb, 0xbf], 'a UTF-8 file with a byte-order mark (the question is in Russian too)');
+  const nsh = raw.toString('utf8');
+  assert.match(nsh, /!macro customUnInstall/);
+  assert.match(nsh, /\$\{ifNot\} \$\{isUpdated\}/i, 'an update asks nothing and removes nothing');
+  assert.match(nsh, /MessageBox MB_YESNO[^\n]*Удалить также[^\n]*Also delete/, 'the question, in both languages');
+  assert.match(nsh, /GetOptions\} \$R0 "\/S"/, 'a silent uninstall is told apart');
+  assert.equal((nsh.match(/--remove-everything/g) || []).length >= 3, true);
+  assert.match(nsh, /RMDir \/r "\$APPDATA\\\$\{APP_FILENAME\}"/, 'her data folder goes with a yes');
+  // the app's side of it: the flag is handled before anything else starts
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
+  assert.ok(main.indexOf("argv.includes('--remove-everything')") < main.indexOf('applyRender();\n  if (!app.requestSingleInstanceLock'), 'before she takes the one-instance lock');
+  assert.match(main, /Uninstall \$\{app\.getName\(\)\}\.exe/, 'the uninstaller the installer makes');
+  assert.match(main, /'\/S', '--delete-app-data'/);
+});

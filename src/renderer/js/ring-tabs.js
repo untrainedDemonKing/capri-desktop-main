@@ -678,6 +678,17 @@ const more = {
       go(c, m.help, 'welcome'),
       go(c, m.model, 'setupChat'),
     ));
+    // her main menu: change what she thinks and talks with at any moment, and take off what you do not need
+    root.append(buttons(
+      button(m.hub, () => {
+        c.hide();
+        host.hubShow?.();
+      }),
+      button(m.manage, () => {
+        c.hide();
+        host.hubShow?.('manage');
+      }),
+    ));
     root.append(buttons(
       button(m.hide, () => {
         c.hide();
