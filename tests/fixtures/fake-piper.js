@@ -2,7 +2,7 @@
 'use strict';
 
 // A stand-in for the `piper` program, for the tests. It takes the same arguments Capri gives the real one
-// (--model, --config, --output_dir, --quiet) and does what the real one does with them: for each line of text on
+// (--model, --config, --output_dir, --quiet, and the speech style: --length_scale --noise_scale --noise_w --sentence_silence) and does what the real one does with them: for each line of text on
 // its input it makes a wav in the output folder (a tone as long as the line, 22.05 kHz, 16-bit, mono) and prints
 // the path of the file. A model file that says BROKEN makes it stop with an error, as a bad model does.
 // FAKE_PIPER_LOG: a file it appends every line it was asked to say to (one JSON per line).
@@ -53,7 +53,7 @@ function wav(seconds, hz = 330) {
 let n = 0;
 readline.createInterface({ input: process.stdin }).on('line', (text) => {
   if (!text.trim()) return;
-  if (process.env.FAKE_PIPER_LOG) fs.appendFileSync(process.env.FAKE_PIPER_LOG, `${JSON.stringify({ text, model: path.basename(model), pid: process.pid })}\n`);
+  if (process.env.FAKE_PIPER_LOG) fs.appendFileSync(process.env.FAKE_PIPER_LOG, `${JSON.stringify({ text, model: path.basename(model), pid: process.pid, args })}\n`);
   if (/HANG/.test(text)) return; // never answers
   const file = path.join(outDir, `${Date.now()}_${n++}.wav`);
   fs.writeFileSync(file, wav(Math.min(3, 0.4 + text.length * 0.03)));

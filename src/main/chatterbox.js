@@ -154,9 +154,10 @@ function serverScript() {
 }
 
 class Chatterbox extends EventEmitter {
-  constructor({ spawn = cp.spawn, fetchFn = (...a) => fetch(...a), fsx = fs, platform = process.platform, script = serverScript(), port = freePort, roots = () => [], pollMs = 1000 } = {}) {
+  // `voices`: folders with recordings of voices that are hers (voice-sample.js), beside the ones found in the Chatterbox folder
+  constructor({ spawn = cp.spawn, fetchFn = (...a) => fetch(...a), fsx = fs, platform = process.platform, script = serverScript(), port = freePort, roots = () => [], voices = () => [], pollMs = 1000 } = {}) {
     super();
-    Object.assign(this, { spawn, fetchFn, fsx, platform, script, portFn: port, rootsFn: roots, pollMs });
+    Object.assign(this, { spawn, fetchFn, fsx, platform, script, portFn: port, rootsFn: roots, voicesFn: voices, pollMs });
     this.proc = null;
     this.phase = 'off'; // 'off', 'starting', 'ready', 'failed'
     this.error = '';
@@ -237,7 +238,7 @@ class Chatterbox extends EventEmitter {
       return this.fail(`no free port: ${err.message}`, 'noport');
     }
     this.url = `http://127.0.0.1:${port}/v1`;
-    const voices = findVoiceDirs(dir, { fsx: this.fsx });
+    const voices = [...this.voicesFn(), ...findVoiceDirs(dir, { fsx: this.fsx })]; // (hers first: a name found in both is hers)
     const args = [this.script, '--port', String(port), '--device', cfg.chatterboxDevice || 'auto', '--watch-stdin', ...voices.flatMap((v) => ['--voices', v])];
     const env = String(cfg.hfEndpoint || '').trim() ? { HF_ENDPOINT: String(cfg.hfEndpoint).trim() } : {}; // (a mirror of the model hub, where it is blocked)
     const cache = modelCache(dir, { fsx: this.fsx });

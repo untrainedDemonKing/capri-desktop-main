@@ -55,6 +55,16 @@
       <p id="voiceSub" class="card__sub"></p>
       <div id="voiceChoices" class="choices" role="radiogroup" aria-labelledby="voiceTitle"></div>
       <p id="recVoice" class="rec__line rec__line--voice"></p>
+      <div id="voiceSample" class="panel" hidden>
+        <h3 id="sampleTitle" class="panel__title"></h3>
+        <p id="sampleNote" class="panel__line"></p>
+        <p id="sampleState" class="panel__line"></p>
+        <div class="keybox__row">
+          <button id="sampleChoose" type="button" class="btn btn--small"></button>
+          <button id="sampleRemove" type="button" class="btn btn--small" hidden></button>
+        </div>
+        <p id="sampleResult" class="keybox__result" role="status" aria-live="polite"></p>
+      </div>
       <div id="voiceCloud" class="panel" hidden>
         <div class="keybox__row">
           <label id="voiceEngineLabel" for="voiceEngine"></label>
@@ -84,6 +94,16 @@
       </div>
       <div id="groups" class="prep__groups"></div>
       <p id="summary" class="prep__summary" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="tune" class="card" aria-labelledby="tuneTitle" hidden>
+      <h2 id="tuneTitle" class="card__title"></h2>
+      <p id="tuneSub" class="card__sub"></p>
+      <table id="tuneTable" class="plan"><tbody></tbody></table>
+      <p id="tuneState" class="rec__line" role="status" aria-live="polite"></p>
+      <div class="install__go">
+        <button id="retune" type="button" class="btn"></button>
+      </div>
     </section>
 
     <section id="manage" class="card" aria-labelledby="manageTitle">

@@ -120,6 +120,9 @@ test('tuning: a small PC remembers less of the talk and lets a model go sooner; 
   const light = profiles.tuningFor('light', pc({ ram: 4 * GB }));
   const strong = profiles.tuningFor('strong', pc({ ram: 32 * GB, gpus: [nvidia('RTX 4090', 24)] }));
   assert.ok(light.numCtx < strong.numCtx);
+  // her persona alone takes 1.5-2.5k tokens: the smallest memory must hold it with a few messages beside it, and may grow a step
+  assert.ok(light.numCtx >= 3072 && light.maxCtx > light.numCtx);
+  for (const t of [light, strong, profiles.tuningFor('standard', pc())]) assert.ok(t.maxCtx > t.numCtx, 'every profile may grow its memory');
   assert.equal(light.ollamaEnv.OLLAMA_MAX_LOADED_MODELS, '1');
   assert.equal(strong.ollamaEnv.OLLAMA_FLASH_ATTENTION, '1');
   assert.equal(profiles.tuningFor('strong', pc({ ram: 32 * GB })).ollamaEnv.OLLAMA_FLASH_ATTENTION, undefined, 'only on an NVIDIA card');

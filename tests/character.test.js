@@ -115,6 +115,18 @@ test('recolouring is understood in her chat', async () => {
   assert.equal(askedTheme('как дела?'), null);
 });
 
+test('Piper has no feelings to be told, so her mood moves its pace a little; the others are not touched', async () => {
+  const { paceFor } = await load('speech.js');
+  const moods = ['calm', 'happy', 'laugh', 'angry', 'annoyed', 'sad', 'shy', 'smug', 'surprised', 'dreamy', 'bored'];
+  for (const mood of moods) {
+    const pace = paceFor('piper', mood);
+    assert.ok(pace >= 0.9 && pace <= 1.1, `${mood}: ${pace} is a nudge, not a tape running wrong`);
+    for (const engine of ['chatterbox', 'openai', 'elevenlabs', 'custom', 'system']) assert.equal(paceFor(engine, mood), 1, `${engine} is told her mood instead`);
+  }
+  assert.ok(paceFor('piper', 'happy') > 1 && paceFor('piper', 'sad') < 1 && paceFor('piper', 'bored') < paceFor('piper', 'calm'));
+  assert.equal(paceFor('piper', 'a mood nobody has'), 1);
+});
+
 test('her voice reads plain words only', async () => {
   const { speakable } = await load('speech.js');
   assert.equal(speakable('[[mood: angry]] Хмф. Смотри **сюда** https://x.com 😡'), 'Хмф. Смотри сюда');

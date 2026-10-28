@@ -66,7 +66,7 @@ const bytes = (n, lang) => {
 class Provision extends EventEmitter {
   // deps: cfg() the config, save(patch) change it, lang(), ollamaHost, chatterbox, piper, ollamaApi { models, pull },
   //       installOllama(onLine), downloadOllama(onLine), installPython(onLine), roots(), defaultDir(), onModelsChanged(),
-  //       hardware({ force }) a look at this PC, tune(tuning) what the profile says Ollama is told, tools,
+  //       hardware({ force }) a look at this PC, tune(tuning, profileId) what the profile says Ollama is told, tools,
   //       nodeTools, nodeDir() where she fetches Node.js to, platform, record(kind, value) writes down what she put on
   //       this PC (installed.js), so that she can take it off again (cleanup.js)
   constructor(deps) {
@@ -274,7 +274,7 @@ class Provision extends EventEmitter {
     if (!cfg.provisioned && (cfg.ttsEngine || 'system') === 'system' && this.profile.auto && this.have.chatterbox && this.profile.voice.engine !== 'chatterbox') {
       this.profile = profiles.plan(hw, { choice: cfg.profile || 'auto', have: this.have, voice: 'chatterbox' });
     }
-    this.d.tune?.(this.profile.tuning);
+    this.d.tune?.(this.profile.tuning, this.profile.id);
     this.done('scan', this.t('scanLine', {
       cpu: hw.cpu.name ? hw.cpu.name.replace(/\((R|TM)\)|CPU|Processor/gi, '').replace(/\s+/g, ' ').trim() : '',
       ram: bytes(hw.ram, this.d.lang()),

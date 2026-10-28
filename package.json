@@ -48,6 +48,8 @@
     "test:mover": "node --test tests/mover.test.js",
     "test:node": "node --test tests/node-check.test.js",
     "test:stacking": "node --test tests/stacking.test.js",
+    "test:tune": "node --test tests/tune.test.js",
+    "test:voice-sample": "node --test tests/voice-sample.test.js",
     "test": "node --test tests/*.test.js"
   },
   "keywords": [

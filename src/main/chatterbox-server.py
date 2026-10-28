@@ -18,12 +18,14 @@ exit when our stdin closes, which is when Capri stops or crashes, so no server i
   python chatterbox-server.py --port 8620 [--device auto|cuda|cpu|mps] [--voices DIR ...] [--watch-stdin]
 """
 import argparse
+import hashlib
 import inspect
 import io
 import json
 import os
 import re
 import sys
+import tempfile
 import threading
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,6 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 LANGUAGES = set('ar da de el en es fi fr he hi it ja ko ms nl no pl pt ru sv sw tr zh'.split())
 CHUNK = 260       # characters: the model is at its best on a sentence or two at a time
 PAUSE = 0.14      # seconds of silence between two pieces
+REFERENCE = 20    # seconds of a recording the voice is taken from: more only makes every line slower
 
 state = {'ready': False, 'error': None, 'device': None, 'multilingual': True}
 model = None
@@ -75,6 +78,26 @@ def find_voice(name):
             if os.path.isfile(base + ext):
                 return base + ext
     return None
+
+
+def reference(path):
+    """The recording to take the voice from: itself, or its first REFERENCE seconds when it is longer (a copy in the
+    temp folder, made once). Whatever cannot be read here is left to the model, which says what is wrong with it."""
+    try:
+        import soundfile
+        info = soundfile.info(path)
+        if info.duration <= REFERENCE + 1:
+            return path
+        key = hashlib.md5(f'{path}|{os.path.getmtime(path)}|{os.path.getsize(path)}'.encode('utf-8')).hexdigest()[:16]
+        out = os.path.join(tempfile.gettempdir(), f'capri-voice-{key}.wav')
+        if not os.path.isfile(out):
+            data, rate = soundfile.read(path, frames=int(info.samplerate * REFERENCE))
+            soundfile.write(out + '.part', data, rate, format='WAV')
+            os.replace(out + '.part', out)
+        return out
+    except Exception as err:  # noqa: BLE001 - no soundfile, a format it cannot read: the model gets the file as it is
+        log('could not shorten the recording:', f'{type(err).__name__}: {err}')
+        return path
 
 
 def load_model(device):
@@ -131,6 +154,8 @@ def synthesize(request):
     if language not in LANGUAGES:
         language = 'en'
     prompt = find_voice(request.get('voice'))
+    if prompt:
+        prompt = reference(prompt)
     accepted = inspect.signature(model.generate).parameters
     kwargs = {k: float(v) for k, v in options.items() if v is not None and k in accepted}
     if state['multilingual'] and 'language_id' in accepted:

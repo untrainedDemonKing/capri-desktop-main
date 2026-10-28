@@ -62,6 +62,7 @@ const DEFAULTS = {
   profileApplied: '', // the profile whose model has been fetched (so that what you pick in her menu afterwards stays)
   piperDir: '',      // Piper's folder ('' she looks for one with "piper" in its name next to her, then fetches it)
   hardwareCache: null, // the last look at this PC ({ at, key, hw }): it is looked at again after two weeks, or when asked
+  mindTune: null,    // how she asks her model on this PC (tune.js): the profile's numbers and what a short run measured ({ profile, base, model, tps, speed, onCard, at })
   ttsRate: 1,        // how fast she talks (0.5..2)
   // her senses and her hands (all off by default: each one is a permission you turn on)
   vision: false,     // she can take a picture of your screen and react to it (screen.js, eyes.js)

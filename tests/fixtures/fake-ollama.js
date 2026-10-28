@@ -5,7 +5,9 @@
 // one does for what Capri asks (version, tags, pull with its progress, chat streamed, generate), and keeps
 // its models as folders under OLLAMA_MODELS/manifests/registry.ollama.ai/library/<name>/<tag>, like the real
 // one's manifests (and takes one off again on DELETE /api/delete). No model, no download: the answers are canned. FAKE_OLLAMA_LOG: a file it appends every
-// request to (one JSON per line, with the OLLAMA_MODELS it was started with).
+// request to (one JSON per line, with the OLLAMA_MODELS it was started with). It also reports how fast it "writes"
+// (FAKE_OLLAMA_TPS tokens a second, 24 by default) and how much of the model "sits on the card" (FAKE_OLLAMA_ONCARD,
+// 0..1, 1 by default) the way /api/chat's counters and /api/ps do, for the measurement of the model on this PC.
 
 const http = require('node:http');
 const fs = require('node:fs');
@@ -45,6 +47,7 @@ const body = (req) => new Promise((resolve) => {
     }
   });
 });
+const loaded = []; // the models "in memory" (what /api/ps lists)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 http.createServer(async (req, res) => {
@@ -52,8 +55,12 @@ http.createServer(async (req, res) => {
   const json = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
   if (url === '/api/version') return json(200, { version: '0.0.0-fake' });
   if (url === '/api/tags') return json(200, { models: installed().map((name) => ({ name, size: 1e9 })) });
+  if (url === '/api/ps') {
+    if (process.env.FAKE_OLLAMA_NO_PS) return json(404, { error: 'not found' });
+    return json(200, { models: loaded.map((name) => ({ name, model: name, size: 4e9, size_vram: Math.round(4e9 * Number(process.env.FAKE_OLLAMA_ONCARD ?? 1)) })) });
+  }
   const b = req.method === 'POST' || req.method === 'DELETE' ? await body(req) : {};
-  record({ url, model: b.model, stream: b.stream, last: b.messages?.[b.messages.length - 1]?.content, options: b.options, keepAlive: b.keep_alive });
+  record({ url, model: b.model, stream: b.stream, last: b.messages?.[b.messages.length - 1]?.content, options: b.options, keepAlive: b.keep_alive, format: b.format, messages: b.messages?.length });
   if (url === '/api/pull') {
     res.writeHead(200, { 'content-type': 'application/x-ndjson' });
     const line = (o) => res.write(`${JSON.stringify(o)}\n`);
@@ -84,7 +91,12 @@ http.createServer(async (req, res) => {
     if (!installed().some((m) => m === b.model || m.split(':')[0] === b.model)) return json(404, { error: `model '${b.model}' not found` });
     const question = String(b.messages?.[b.messages.length - 1]?.content || '');
     const answer = `Ты спросил: «${question.slice(0, 80)}». Я Капри, я здесь, и я отвечаю.`;
-    if (b.stream === false) return json(200, { message: { role: 'assistant', content: answer }, done: true });
+    if (!loaded.includes(b.model)) loaded.push(b.model);
+    if (b.stream === false) {
+      const tps = Number(process.env.FAKE_OLLAMA_TPS || 24);
+      const count = Math.min(48, Number(b.options?.num_predict) || 48);
+      return json(200, { message: { role: 'assistant', content: answer }, done: true, eval_count: count, eval_duration: Math.round((count / tps) * 1e9) });
+    }
     res.writeHead(200, { 'content-type': 'application/x-ndjson' });
     for (const piece of answer.split(/(?<= )/)) {
       res.write(`${JSON.stringify({ message: { role: 'assistant', content: piece }, done: false })}\n`);

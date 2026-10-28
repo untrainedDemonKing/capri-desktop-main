@@ -26,7 +26,7 @@ class FakeWindow extends EventEmitter {
   close() { this.destroyed = true; this.emit('closed'); }
 }
 
-function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', threads: 8 }, disk: { path: '', free: 200 * GB, total: 500 * GB } }), have = { ollama: false, models: [], chatterbox: false, piper: false }, cfg = {}, connect, cleanup, uninstall } = {}) {
+function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', threads: 8 }, disk: { path: '', free: 200 * GB, total: 500 * GB } }), have = { ollama: false, models: [], chatterbox: false, piper: false }, cfg = {}, connect, cleanup, uninstall, mind } = {}) {
   const handlers = new Map();
   const listeners = new Map();
   const ipcMain = { handle: (c, fn) => handlers.set(c, fn), on: (c, fn) => listeners.set(c, fn) };
@@ -51,7 +51,7 @@ function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', t
     saveVoiceKey: ({ engine, key }) => { updateConfig({ ttsEngine: engine, apiKeys: { ...config.value.apiKeys, [engine]: `enc:${key}` } }); return { ok: true }; },
     keyPages: { groq: 'https://console.groq.com/keys', gemini: 'https://aistudio.google.com/apikey' },
     voiceKeyPages: { openai: 'https://platform.openai.com/api-keys' },
-    cleanup, uninstall,
+    cleanup, uninstall, mind,
     protocolUrl: 'capri://app/src/renderer/hub.html',
   });
   return { hub, handlers, listeners, config, updates, prov, opened, clipboard, call: (c, ...a) => handlers.get(c)({}, ...a), fire: (c, ...a) => listeners.get(c)({}, ...a) };
@@ -313,6 +313,30 @@ test('her own removal goes to the app\'s uninstall; without one there is none', 
   const w = world({ uninstall: async () => ({ ok: true, freed: 7 }) });
   assert.deepEqual(await w.call('hub:uninstall'), { ok: true, freed: 7 });
   assert.deepEqual(await world().call('hub:uninstall'), { ok: false, error: 'missing' });
+});
+
+test('how her mind was fitted to this PC: told with the state, measured again on the button, and pushed to the page when it changes', async () => {
+  const status = { provider: 'ollama', model: 'gemma3:4b', running: false, measured: true, tps: 18, speed: 'ok', onCard: 1, numCtx: 4096, maxCtx: 8192, chat: { temperature: 0.8, num_predict: 240 }, note: { temperature: 0.2, num_predict: 768 } };
+  let measured = 0;
+  const mind = { status: () => ({ ...status }), measure: async () => { measured++; status.tps = 30; status.speed = 'fast'; } };
+  const w = world({ mind, cfg: { hubDone: true } });
+  assert.equal((await w.call('hub:state')).tune.model, 'gemma3:4b', 'the page is told with the state');
+  assert.equal((await w.call('hub:tune')).tps, 18);
+  const again = await w.call('hub:retune');
+  assert.equal(measured, 1);
+  assert.deepEqual([again.tps, again.speed], [30, 'fast'], 'and the answer is the new one');
+  // a window open: a change is pushed to it
+  w.hub.show();
+  const win = FakeWindow.last;
+  w.hub.tuneChanged();
+  assert.deepEqual(win.sent.filter(([c]) => c === 'hub:tune').map(([, p]) => p.speed), ['fast']);
+  win.close();
+  // no mind to ask (a hub made without one): nothing to show, nothing to break
+  const bare = world({});
+  assert.equal((await bare.call('hub:state')).tune, null);
+  assert.equal(await bare.call('hub:tune'), null);
+  assert.equal(await bare.call('hub:retune'), null);
+  assert.doesNotThrow(() => bare.hub.tuneChanged());
 });
 
 test('the words of her main menu and of her preparation: Russian and English have the same lines, with the same blanks to fill', () => {

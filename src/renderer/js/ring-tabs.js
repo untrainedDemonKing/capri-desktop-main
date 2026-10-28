@@ -613,6 +613,47 @@ const voice = {
       c.host.piperStatus().then(paint).catch(() => {});
       c.onLeave(c.host.onPiper(paint));
     }
+    // Chatterbox: the recording she was given as her voice (she speaks like it), and its length and faults
+    if (cfg.ttsEngine === 'chatterbox' && c.host.voiceSample) {
+      const box = el('div');
+      root.append(heading(v.sampleH), box);
+      let alive = true;
+      c.onLeave(() => { alive = false; });
+      const paint = (st, said = '', bad = false) => {
+        if (!alive) return;
+        const length = st.seconds != null ? fmt(v.sampleSeconds, { n: st.seconds }) : '';
+        box.replaceChildren(
+          note(st.has ? fmt(v.sampleHave, { file: `${st.name}${st.ext}`, length }) : v.sampleNone, !st.has || bad),
+          ...(said ? [note(said, !bad)] : []),
+          ...(st.has ? (st.warn || []).map((w) => note(v.sampleWarn[w] || '', true)) : []),
+          note(v.sampleNote, true),
+          buttons(
+            button(v.sampleChoose, async () => {
+              const res = await c.host.voiceSampleChoose().catch(() => null);
+              if (!res || res.error === 'canceled') return;
+              paint(res, res.ok ? v.sampleOk : v.sampleErr[res.error] || v.sampleErr.copy, !res.ok);
+            }),
+            ...(st.has ? [button(v.sampleRemove, async () => paint(await c.host.voiceSampleRemove()))] : []),
+          ),
+        );
+      };
+      c.host.voiceSample().then((st) => paint(st)).catch(() => {});
+    }
+    // Piper: which of its voices (in her language) she speaks with
+    if (cfg.ttsEngine === 'piper' && c.host.piperVoices) {
+      const box = el('div');
+      root.append(box);
+      let alive = true;
+      c.onLeave(() => { alive = false; });
+      c.host.piperVoices().then(({ voices = [], current = '' }) => {
+        if (!alive || !voices.length) return;
+        box.replaceChildren(
+          heading(v.ppVoiceH),
+          ...(voices.length > 1 ? [pick(voices.map((id) => ({ id, label: id })), cfg.ttsVoice && voices.includes(cfg.ttsVoice) ? cfg.ttsVoice : current, (id) => c.set({ ttsVoice: id }))] : []),
+          note(v.ppVoiceNote, true),
+        );
+      }).catch(() => {});
+    }
     root.append(buttons(go(c, v.setup, 'setupVoice'), go(c, v.test, 'testVoice')));
 
     // where it comes out: speakers, headphones... (and your own mic there, to check)

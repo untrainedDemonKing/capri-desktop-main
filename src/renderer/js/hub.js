@@ -262,6 +262,7 @@
     $('mindOllama').hidden = sel.mind !== 'ollama';
     $('mindCloud').hidden = sel.mind !== 'cloud';
     $('voiceCloud').hidden = sel.voice !== 'cloud';
+    $('voiceSample').hidden = sel.voice !== 'chatterbox';
     mark($('mindChoices'), sel.mind);
     mark($('voiceChoices'), sel.voice);
   }
@@ -490,7 +491,64 @@
     $('nodeBox').disabled = running();
     for (const b of $('providers').children) b.disabled = running();
     if (inv && was !== running()) renderInventory(); // (the delete buttons wait while something is fetched; not redrawn at every step)
+    if (data?.tune && was !== running()) renderTune(); // (the button that checks again waits too)
     if (preview) renderPlan();
+  }
+
+  // ---- how her mind was fitted to this PC (tune.js) ----
+
+  function renderTune() {
+    const t = data.tune;
+    const card = $('tune');
+    // only a model on this PC is fitted (a cloud service has its own settings)
+    card.hidden = !t || t.provider !== 'ollama' || !t.model;
+    if (card.hidden) return;
+    const row = (name, value) => {
+      const tr = el('tr');
+      tr.append(el('td', '', name), el('td', '', value));
+      return tr;
+    };
+    const rows = [row(ui.tuneModel, t.model)];
+    if (t.measured) {
+      rows.push(row(ui.tuneSpeed, fill(ui.tuneSpeedLine, { tps: t.tps, grade: ui[`tuneGrade-${t.speed}`] || '' })));
+      const where = t.onCard === null ? ui['tuneWhere-unknown'] : t.onCard >= 0.95 ? ui['tuneWhere-card'] : t.onCard > 0.05 ? fill(ui['tuneWhere-part'], { pct: Math.round(t.onCard * 100) }) : ui['tuneWhere-cpu'];
+      rows.push(row(ui.tuneWhere, where));
+    }
+    if (t.numCtx) rows.push(row(ui.tuneMemory, fill(ui.tuneMemoryLine, { n: t.numCtx, max: t.maxCtx || t.numCtx })));
+    rows.push(row(ui.tuneChat, fill(ui.tuneChatLine, { t: t.chat.temperature, n: t.chat.num_predict })));
+    rows.push(row(ui.tuneNote, fill(ui.tuneNoteLine, { t: t.note.temperature, n: t.note.num_predict })));
+    $('tuneTable').tBodies[0].replaceChildren(...rows);
+    $('tuneState').textContent = t.running ? ui.tuneMeasuring : t.measured ? '' : ui.tuneNone;
+    $('retune').disabled = t.running || running();
+  }
+
+  async function retune() {
+    $('retune').disabled = true;
+    data.tune = { ...data.tune, running: true };
+    renderTune();
+    data.tune = (await window.hub.retune().catch(() => null)) || data.tune;
+    renderTune();
+  }
+
+  // ---- the recording she has as her voice (voice-sample.js) ----
+
+  function renderSample(st, said = '', bad = false) {
+    // only when Chatterbox is the voice that is picked (the other voices cannot copy one)
+    $('voiceSample').hidden = sel.voice !== 'chatterbox';
+    if (!st) return;
+    const length = st.seconds != null ? fill(ui.sampleSeconds, { n: st.seconds }) : '';
+    $('sampleState').textContent = st.has ? fill(ui.sampleHave, { file: `${st.name}${st.ext}`, length }) : ui.sampleNone;
+    $('sampleRemove').hidden = !st.has;
+    const out = $('sampleResult');
+    const warns = st.has ? (st.warn || []).map((w) => ui[`sampleWarn-${w}`]).filter(Boolean) : [];
+    out.textContent = [said, ...warns].filter(Boolean).join(' ');
+    out.dataset.kind = bad ? 'bad' : said ? 'ok' : '';
+  }
+
+  async function chooseSample() {
+    const res = await window.hub.sampleChoose().catch(() => null);
+    if (!res || res.error === 'canceled') return;
+    renderSample(res, res.ok ? ui.sampleOk : ui[`sampleErr-${res.error}`] || ui['sampleErr-copy'], !res.ok);
   }
 
   // ---- the start ----
@@ -539,6 +597,8 @@
     renderKeyBox();
     renderVoiceKey();
     showPanels();
+    renderTune();
+    window.hub.sample().then((st) => renderSample(st)).catch(() => {});
     snap = data.snapshot;
     renderProgress();
     renderInventory();
@@ -578,6 +638,13 @@
     $('voiceSave').textContent = ui.voiceSaveKey;
     numbered($('installTitle'), ui.installTitle);
     $('installSub').textContent = ui.installSub;
+    numbered($('tuneTitle'), ui.tuneTitle);
+    $('tuneSub').textContent = ui.tuneSub;
+    $('retune').textContent = ui.tuneAgain;
+    $('sampleTitle').textContent = ui.sampleTitle;
+    $('sampleNote').textContent = ui.sampleNote;
+    $('sampleChoose').textContent = ui.sampleChoose;
+    $('sampleRemove').textContent = ui.sampleRemove;
     numbered($('manageTitle'), ui.manageTitle);
     $('manageSub').textContent = ui.manageSub;
     $('nodeLabel').textContent = ui.nodeLabel;
@@ -600,6 +667,14 @@
       $('go').disabled = true;
       await window.hub.apply({ mind: sel.mind, model: sel.mind === 'ollama' ? sel.model : '', voice: voiceValue(), node: sel.node });
       renderProgress();
+    });
+    $('retune').addEventListener('click', retune);
+    $('sampleChoose').addEventListener('click', chooseSample);
+    $('sampleRemove').addEventListener('click', async () => renderSample(await window.hub.sampleRemove()));
+    window.hub.onTune((next) => {
+      if (!data || !next) return;
+      data.tune = next;
+      renderTune();
     });
     $('stop').addEventListener('click', () => window.hub.stop());
     $('retry').addEventListener('click', () => window.hub.retry());

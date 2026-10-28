@@ -27,6 +27,8 @@ const hardware = require('./hardware');
 const { needsRaise } = require('./stacking');
 const { OllamaHost } = require('./ollama-host');
 const ollama = require('./ollama');
+const tuner = require('./tune');
+const { createSample } = require('./voice-sample');
 const { Provision } = require('./provision');
 const { createInstalled } = require('./installed');
 const { Cleanup } = require('./cleanup');
@@ -62,7 +64,9 @@ const placesNextToHer = () => {
 };
 // (a message to the overlay once its window is gone, while she is quitting, would throw)
 const toOverlay = (channel, payload) => { if (overlay && !overlay.isDestroyed()) overlay.webContents.send(channel, payload); };
-const chatterbox = new Chatterbox({ roots: placesNextToHer });
+// the recording she was given as her voice, if any (voice-sample.js): in her own data folder
+const voiceSample = createSample({ dir: () => path.join(app.getPath('userData'), 'voices') });
+const chatterbox = new Chatterbox({ roots: placesNextToHer, voices: () => [voiceSample.dir()] });
 chatterbox.on('change', (status) => toOverlay('chatterbox:status', status));
 const ollamaHost = new OllamaHost({ roots: placesNextToHer });
 ollamaHost.on('change', (status) => toOverlay('ollama:status', status));
@@ -104,10 +108,7 @@ const provision = new Provision({
   nodeDir: () => path.join(app.getPath('userData'), 'node'),
   hardware: lookAtPc,
   // what the profile of this PC says about how she asks Ollama, and how Ollama is started
-  tune: (tuning) => {
-    ollama.tune(tuning);
-    ollamaHost.setEnv(tuning.ollamaEnv);
-  },
+  tune: (tuning, profileId) => setProfileTuning(tuning, profileId),
   onModelsChanged: () => refreshModels(),
 });
 // Taking off what she put on this PC (cleanup.js), made once the app is ready
@@ -132,6 +133,7 @@ provision.on('change', (snapshot) => toOverlay('provision:status', snapshot));
 provision.on('finish', async ({ ok, plan, attention, profile }) => {
   await refreshModels();
   rebuildTray();
+  if (ok) tuneSoon(); // the set-up is done: how the model really does here is measured, once
   // a PC that cannot carry a local mind: the first time, she opens the tab where a cloud one is picked
   if (ok && plan.adopt && profile === 'cloud' && (config.load().provider || 'ollama') === 'ollama') sendCommand('ring', { tab: 'ai' });
   // she says so, the first time and after anything long: a line in her own voice is the proof it all works
@@ -400,6 +402,7 @@ function updateConfig(patch) {
   if (did('musicAware')) watchMedia();
   if (did('ears', 'pushToTalk')) registerPushToTalk();
   if (did('ttsEngine', 'chatterboxDir', 'chatterboxUrl', 'chatterboxAuto', 'chatterboxDevice', 'hfEndpoint')) chatterbox.sync(config.load()).catch(() => {});
+  if (did('chatModel', 'provider')) { applyTuning(); tuneSoon(); } // (another model: another measurement)
   if (did('ollamaDir')) ollamaHost.stop(false);
   if (did('piperDir')) piper.stop(false);
   // picking Ollama, Chatterbox or Piper (here, in her menu or in her ring), or a language that needs another Piper voice,
@@ -719,6 +722,84 @@ function pickModel(cfg = config.load()) {
   return chatModels.includes(cfg.chatModel) ? cfg.chatModel : chatModels[0];
 }
 
+// ---- her mind, fitted to this PC (tune.js) ----
+// The profile of the PC gives the start (the memory of the talk, how long the model stays loaded); a short run after the
+// set-up says how fast the model really is here and whether it sits on the card, and she asks accordingly. Both are kept
+// in the config (mindTune), so the next start asks the same way from the first message.
+let tuneJob = null; // the measurement under way
+let tuneTimer = null;
+
+function setProfileTuning(tuning, profileId) {
+  const base = { numCtx: tuning.numCtx, maxCtx: tuning.maxCtx, keepAlive: tuning.keepAlive };
+  const old = config.load().mindTune || {};
+  // (a measurement made for another kind of PC says nothing about this one)
+  updateConfig({ mindTune: { ...(old.profile === profileId ? old : {}), profile: profileId, base } });
+  ollamaHost.setEnv(tuning.ollamaEnv);
+  applyTuning();
+}
+
+function applyTuning() {
+  const t = config.load().mindTune;
+  if (!t?.base) return;
+  ollama.tune(tuner.settle(t.base, tuner.stillGood(t, { model: pickModel(), profile: t.profile }) ? t : null));
+}
+
+// Measures the model she talks with (once per model and kind of PC; `force`: again, as asked in her menu).
+// Returns the record, or null when it could not be done now (nothing to measure, a chat is going on, it failed).
+async function tuneMind({ force = false } = {}) {
+  const cfg = config.load();
+  const t = cfg.mindTune;
+  const model = pickModel(cfg);
+  if (cfg.provider !== 'ollama' || !model || !t?.base || tuneJob) return null;
+  if (!force && tuner.stillGood(t, { model, profile: t.profile })) return t;
+  if (!force && t.failedAt && Date.now() - t.failedAt < 86400000) return null; // (it failed lately: not on every start)
+  if (chats.size || !(await ollama.version())) return null;
+  const job = { abort: new AbortController() };
+  tuneJob = job;
+  hub?.tuneChanged();
+  try {
+    const sample = await ollama.measure(model, AbortSignal.any([job.abort.signal, AbortSignal.timeout(120000)]));
+    const verdict = tuner.judge(sample);
+    // (her look at the PC may have changed the profile meanwhile: what was measured is then for another kind of PC)
+    const now = config.load().mindTune;
+    if (now?.profile === t.profile) {
+      const keep = { profile: now.profile, base: now.base };
+      updateConfig({ mindTune: verdict ? { ...keep, model, ...verdict, at: Date.now() } : { ...keep, failedAt: Date.now() } });
+      applyTuning();
+    }
+  } catch {
+    // stopped for a chat that began, or too slow to tell: tried again on another day
+    if (!job.abort.signal.aborted) updateConfig({ mindTune: { ...config.load().mindTune, failedAt: Date.now() } });
+  } finally {
+    if (tuneJob === job) tuneJob = null;
+    hub?.tuneChanged();
+  }
+  return config.load().mindTune;
+}
+
+// How her mind stands, for her main menu: the model, what was measured, the memory she asks with, and what she asks for in each task
+function tuneStatus() {
+  const cfg = config.load();
+  const t = cfg.mindTune || {};
+  const model = pickModel(cfg);
+  const now = ollama.current();
+  const measured = Boolean(model) && tuner.stillGood(t, { model, profile: t.profile });
+  const asks = (task) => tuner.ask(task, { model: model || '', lang: resolveLang(cfg.lang), answerCap: now.answerCap }).options;
+  return {
+    provider: cfg.provider, model: model || '', running: Boolean(tuneJob), measured,
+    tps: measured ? t.tps : null, speed: measured ? t.speed : '', onCard: measured ? t.onCard ?? null : null, at: measured ? t.at : 0,
+    numCtx: now.numCtx, maxCtx: now.maxCtx, keepAlive: now.keepAlive, size: tuner.sizeClass(model),
+    chat: asks('chat'), note: asks('note'),
+  };
+}
+
+// a moment after something changed (the chat or her menus use the model first)
+function tuneSoon(ms = 6000) {
+  clearTimeout(tuneTimer);
+  tuneTimer = setTimeout(() => tuneMind().catch(() => {}), ms);
+  tuneTimer.unref?.();
+}
+
 // The models of whoever answers her, asked of them. `cached`: a list from the last minute is good
 // enough (opening her chat asks every time; for a service on the internet, or Claude Code's version
 // check, that's a round trip each). Anything that changes who answers, or their key, asks again.
@@ -737,6 +818,7 @@ async function refreshModels({ cached = false } = {}) {
     return null;
   });
   modelsSeen = { who: chatModels ? who : '', at: Date.now() };
+  applyTuning(); // (the measurement is for a model: which one is picked is known now)
   rebuildTray();
   return chatModels;
 }
@@ -750,7 +832,7 @@ async function chatWithFallback(cfg, messages, send, signal, streamed) {
   let busy = 0;
   for (;;) {
     try {
-      const text = await llm.chat(cfg.provider, llmConfig(cfg), { model, messages }, send, signal);
+      const text = await llm.chat(cfg.provider, llmConfig(cfg), { model, messages, task: 'chat', lang: resolveLang(cfg.lang) }, send, signal);
       if (model !== pickModel(cfg)) updateConfig({ chatModel: model });
       return text;
     } catch (err) {
@@ -967,6 +1049,7 @@ function registerIpc() {
   ipcMain.handle('chat:send', async (_e, { id, messages }) => {
     const abort = new AbortController();
     chats.set(id, abort);
+    tuneJob?.abort.abort(); // (the measurement waits: your message is first)
     // the pieces of her answer go over in groups of a frame or two, not one message per token
     let streamed = false;
     let queued = '';
@@ -1020,7 +1103,7 @@ function registerIpc() {
     if (cfg.provider === 'claude') return { ok: false, code: 'agent' };
     if (!Array.isArray(messages) || !messages.length) return { ok: false, code: 'empty' };
     try {
-      const text = await llm.chat(cfg.provider, llmConfig(cfg), { model: pickModel(cfg), messages }, () => {}, AbortSignal.timeout(90000));
+      const text = await llm.chat(cfg.provider, llmConfig(cfg), { model: pickModel(cfg), messages, task: 'note', lang: resolveLang(cfg.lang) }, () => {}, AbortSignal.timeout(90000));
       return { ok: true, text };
     } catch (err) {
       return { ok: false, error: err.message, code: err.code || null };
@@ -1112,7 +1195,7 @@ function registerIpc() {
     const cfg = config.load();
     try {
       const base = cfg.ttsEngine === 'chatterbox' ? await chatterbox.ready(cfg) : '';
-      const audio = await tts.speak(cfg, setup.openKeys(cfg.apiKeys), { text, mood, lang, base, piper });
+      const audio = await tts.speak(cfg, setup.openKeys(cfg.apiKeys), { text, mood, lang, base, piper, sample: voiceSample.current() });
       return { ok: true, audio };
     } catch (err) {
       return { ok: false, error: err.message, code: err.code || null };
@@ -1124,6 +1207,12 @@ function registerIpc() {
   // Chatterbox: how it is doing, which folder it is, and starting it again
   ipcMain.handle('chatterbox:status', () => chatterbox.status());
   ipcMain.handle('piper:status', () => piper.status());
+  // the Piper voices she has on this PC (her Voice tab picks between them)
+  ipcMain.handle('piper:voices', () => {
+    const cfg = config.load();
+    const lang = resolveLang(cfg.lang);
+    return { voices: piper.voices(cfg).map((v) => v.key).filter((key) => key.toLowerCase().startsWith(`${lang}_`)).sort(), current: piper.voiceFor(cfg, lang)?.key || '' };
+  });
   ipcMain.handle('ollama:status', async () => ({ ...ollamaHost.status(), model: pickModel(), models: chatModels || [] }));
   ipcMain.handle('provision:status', () => provision.snapshot());
   ipcMain.handle('chatterbox:choose', async () => {
@@ -1132,6 +1221,18 @@ function registerIpc() {
     updateConfig({ chatterboxDir: filePaths[0], ttsEngine: 'chatterbox' });
     return filePaths[0];
   });
+  // the recording she was given as her voice: how it stands, taking one (a file you pick), taking it away
+  ipcMain.handle('voice:sample', () => voiceSample.status());
+  ipcMain.handle('voice:sampleChoose', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Capri', properties: ['openFile'], defaultPath: app.getPath('music'),
+      filters: [{ name: 'Audio', extensions: ['wav', 'mp3', 'flac', 'ogg'] }],
+    });
+    if (canceled || !filePaths[0]) return { ok: false, error: 'canceled', ...voiceSample.status() };
+    const res = voiceSample.use(filePaths[0]);
+    return res.ok ? res : { ...res, ...voiceSample.status() };
+  });
+  ipcMain.handle('voice:sampleRemove', () => voiceSample.remove());
   ipcMain.handle('chatterbox:restart', async () => {
     await chatterbox.restart(config.load());
     return chatterbox.status();
@@ -1393,6 +1494,7 @@ function main() {
       voiceKeyPages: tts.KEY_PAGES,
       cleanup: theCleanup(),
       uninstall: uninstallCapri,
+      mind: { status: tuneStatus, measure: () => tuneMind({ force: true }) },
       protocolUrl: 'capri://app/src/renderer/hub.html',
       onClosed: () => rebuildTray(),
     });

@@ -367,3 +367,93 @@ test('a copy of the model hub\'s cache in the Chatterbox folder is what the mode
     cb.stop();
   });
 });
+
+test('the folder of the recording she was given is passed to the server first, before the ones found in the Chatterbox folder', async () => {
+  const dir = mk('with-sample', 'Chatterbox');
+  fs.mkdirSync(path.join(dir, 'voices'), { recursive: true });
+  const hers = path.join(tmp, 'her-data', 'voices');
+  let args = null;
+  const { EventEmitter } = require('node:events');
+  const cb = new Chatterbox({
+    roots: () => [path.dirname(dir)], port: async () => 1, pollMs: 100000, voices: () => [hers],
+    spawn: (_cmd, a) => { args = a; const p = new EventEmitter(); p.stdout = new EventEmitter(); p.stderr = new EventEmitter(); p.stdin = { end() {}, on() {} }; p.kill = () => {}; return p; },
+  });
+  await cb.start({ ttsEngine: 'chatterbox', chatterboxDir: dir });
+  const folders = args.flatMap((a, i) => (args[i - 1] === '--voices' ? [a] : []));
+  assert.deepEqual(folders, [hers, path.join(dir, 'voices')], 'a name found in both is hers');
+  cb.stop();
+});
+
+test('end to end: the recording she was given reaches the model as the voice to copy, and no recording is the model\'s own', { skip: !python && 'no python3 with numpy here' }, async () => {
+  const { createSample } = require('../src/main/voice-sample.js');
+  const { root, dir, calls } = fakeFolder('Chatterbox-Sample');
+  const data = mk('her-sample-data');
+  const sample = createSample({ dir: path.join(data, 'voices') });
+  const box = new Chatterbox({ roots: () => [root], pollMs: 100, voices: () => [sample.dir()] });
+  // (named: the other fake folders in the same root sort first)
+  const cfg = { ttsEngine: 'chatterbox', chatterboxAuto: true, chatterboxDevice: 'cpu', chatterboxDir: dir };
+  try {
+    await box.sync(cfg);
+    assert.ok(await waitFor(() => box.status().phase === 'ready'), JSON.stringify(box.status()));
+    const base = await box.ready(cfg);
+    const say = (extra) => tts.speak(cfg, {}, { text: 'Привет', mood: 'calm', lang: 'ru', base, ...extra });
+    const last = () => JSON.parse(fs.readFileSync(calls, 'utf8').trim().split('\n').pop());
+    await say({ sample: sample.current() });
+    assert.equal(last().audio_prompt_path, null, 'no recording yet: the model\'s own voice');
+
+    // she is given one while the server is already running: the next line is in that voice, no restart
+    const src = path.join(data, 'mine.wav');
+    const tone = Buffer.alloc(44 + 16000 * 2 * 6);
+    tone.write('RIFF', 0); tone.writeUInt32LE(tone.length - 8, 4); tone.write('WAVEfmt ', 8); tone.writeUInt32LE(16, 16);
+    tone.writeUInt16LE(1, 20); tone.writeUInt16LE(1, 22); tone.writeUInt32LE(16000, 24); tone.writeUInt32LE(32000, 28);
+    tone.writeUInt16LE(2, 32); tone.writeUInt16LE(16, 34); tone.write('data', 36); tone.writeUInt32LE(16000 * 2 * 6, 40);
+    for (let i = 0; i < 16000 * 6; i++) tone.writeInt16LE(Math.round(Math.sin(i / 9) * 12000), 44 + i * 2);
+    fs.writeFileSync(src, tone);
+    assert.equal(sample.use(src).ok, true);
+    await say({ sample: sample.current() });
+    assert.equal(last().audio_prompt_path, path.join(data, 'voices', 'capri.wav'));
+
+    // and taken away again: the model's own
+    sample.remove();
+    await say({ sample: sample.current() });
+    assert.equal(last().audio_prompt_path, null);
+  } finally {
+    box.stop();
+  }
+});
+
+// the server cuts a long recording to the part the voice is taken from (needs the `soundfile` package, which
+// Chatterbox brings with it; CAPRI_TEST_PYTHON names a Python that has it)
+const pythonWithSoundfile = (() => {
+  for (const py of [process.env.CAPRI_TEST_PYTHON, python].filter(Boolean)) {
+    try {
+      if (cp.spawnSync(py, ['-c', 'import soundfile, numpy'], { encoding: 'utf8' }).status === 0) return py;
+    } catch {
+      // not this one
+    }
+  }
+  return null;
+})();
+
+test('the server uses the first 20 seconds of a long recording, and a short one as it is', { skip: !pythonWithSoundfile && 'no Python with soundfile here' }, () => {
+  const script = `
+import importlib.util, os, sys, tempfile
+import numpy as np, soundfile
+spec = importlib.util.spec_from_file_location('server', ${JSON.stringify(path.join(__dirname, '..', 'src', 'main', 'chatterbox-server.py'))})
+server = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(server)
+tmp = tempfile.mkdtemp()
+short = os.path.join(tmp, 'short.wav'); long = os.path.join(tmp, 'long.wav')
+soundfile.write(short, (np.sin(np.arange(16000 * 8) / 9) * 0.3).astype('float32'), 16000)
+soundfile.write(long, (np.sin(np.arange(16000 * 45) / 9) * 0.3).astype('float32'), 16000)
+assert server.reference(short) == short, 'a short one is used as it is'
+cut = server.reference(long)
+assert cut != long and soundfile.info(cut).duration <= 20.01 and soundfile.info(cut).duration > 19.9, soundfile.info(cut).duration
+assert server.reference(long) == cut, 'cut once'
+assert server.reference(os.path.join(tmp, 'nothing.wav')) == os.path.join(tmp, 'nothing.wav'), 'what cannot be read is left to the model'
+print('ok')
+`;
+  const r = cp.spawnSync(pythonWithSoundfile, ['-c', script], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /ok/);
+});

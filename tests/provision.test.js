@@ -173,7 +173,7 @@ function world(overrides = {}) {
       if (state.hardwareFails) throw new Error('powershell is not there');
       return state.hw;
     },
-    tune: (tuning) => state.tuned.push(tuning),
+    tune: (tuning, id) => state.tuned.push({ ...tuning, id }),
     onModelsChanged: async () => {},
     ...(overrides.deps || {}),
   });
@@ -377,6 +377,7 @@ test('she looks at the PC first, and says what it is and what profile it got, wi
   assert.ok(seen.some((s) => s.steps.find((x) => x.id === 'scan').state === 'running' && !s.pc), 'the window hears of the look before its result');
   assert.deepEqual(state.hardwareCalls, [{ force: false }]);
   assert.deepEqual(state.tuned.map((t) => t.numCtx), [8192], 'how she asks Ollama is set by the profile');
+  assert.deepEqual(state.tuned.map((t) => t.id), ['strong'], 'and she is told which profile it is, to know what a measurement was made for');
   await p.run({ rescan: true });
   assert.deepEqual(state.hardwareCalls[1], { force: true }, 'asked to look again, she does not take the last look');
   assert.match(p.report(), /pc: .* ram 16 GB, gpu NVIDIA GeForce RTX 3060 12 GB, driver 552\.22/);
@@ -430,7 +431,7 @@ test('a small PC (4 GB): the 1B model, which cannot see the screen, and the Pipe
   assert.equal(cfg.ttsEngine, 'piper');
   assert.equal(p.snapshot().profile.id, 'light');
   assert.ok(p.snapshot().profile.notes.includes('noEyes'));
-  assert.deepEqual(state.tuned.map((t) => t.numCtx), [2048]);
+  assert.deepEqual(state.tuned.map((t) => t.numCtx), [3072]);
 });
 
 test('a PC that cannot carry local models: no Ollama, no download of a model; the mind is left for a cloud one, the voice is the lightest', async () => {

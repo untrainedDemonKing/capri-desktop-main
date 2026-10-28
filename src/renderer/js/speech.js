@@ -22,6 +22,15 @@ const PROSODY = {
   sad: [1.0, 0.88], shy: [1.4, 0.96], smug: [1.15, 0.98], surprised: [1.35, 1.12], dreamy: [1.15, 0.9], bored: [1.0, 0.9],
 };
 
+// Piper has no dials for feeling (Chatterbox and the services are told her mood as a style), so her mood moves its pace
+// a little instead: quicker when she is up, slower and lower when she is down. Small, so it never sounds like a tape.
+const PIPER_PACE = {
+  calm: 1, happy: 1.05, laugh: 1.07, angry: 0.97, annoyed: 1, sad: 0.93, shy: 1.03, smug: 0.97, surprised: 1.06, dreamy: 0.94, bored: 0.92,
+};
+
+// How fast to play the audio of this engine in this mood, on top of the speed she is set to
+export const paceFor = (engine, mood) => (engine === 'piper' ? PIPER_PACE[mood] || 1 : 1);
+
 // What gets read out: no tags, no emoji, no links, no markdown, not too long.
 export function speakable(text, max = 600) {
   let out = String(text || '')
@@ -177,7 +186,7 @@ export class Speech {
       return false;
     }
     if (this.current !== token) return true;
-    await this.play(ctx, buffer, mood, token);
+    await this.play(ctx, buffer, mood, token, { rate: this.rate * paceFor(this.engine, mood) });
     return true;
   }
 

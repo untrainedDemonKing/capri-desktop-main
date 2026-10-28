@@ -77,8 +77,9 @@ async function failure(res) {
 
 // The audio of `text` said by the engine picked in her config, as a Buffer (mp3, or wav from Chatterbox and
 // Piper). keys: the opened API keys ({ openai, elevenlabs, tts }); lang: what she speaks; base: where
-// Chatterbox is listening (chatterbox.js knows); piper: her Piper (piper.js).
-async function speak(cfg, keys, { text, mood = 'calm', lang = 'en', base: chatterboxBase = '', piper = null }) {
+// Chatterbox is listening (chatterbox.js knows); piper: her Piper (piper.js); sample: the name of the recording she was
+// given as her voice ('' none; voice-sample.js), which Chatterbox speaks with; without one, the voice named in her settings.
+async function speak(cfg, keys, { text, mood = 'calm', lang = 'en', base: chatterboxBase = '', piper = null, sample = '' }) {
   const input = String(text || '').trim().slice(0, 1500);
   if (!input) throw new Error('nothing to say');
   const engine = ENGINES[cfg.ttsEngine] ? cfg.ttsEngine : 'system';
@@ -98,7 +99,8 @@ async function speak(cfg, keys, { text, mood = 'calm', lang = 'en', base: chatte
     if (!base) throw withCode(new Error('Chatterbox is not running'), 'nourl');
     // (the extras are for her own server around Chatterbox; any other one ignores what it does not know)
     const body = { model: 'chatterbox', input, response_format: 'wav', language: String(lang || 'en').slice(0, 2), ...moodDials(mood), mood };
-    if (cfg.ttsVoice) body.voice = cfg.ttsVoice;
+    const named = sample || cfg.ttsVoice; // (the recording she was given is her voice; a name in her settings is for when she has none)
+    if (named) body.voice = named;
     res = await fetch(`${base}/audio/speech`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

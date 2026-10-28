@@ -37,6 +37,11 @@ const PREFERRED = {
   pt: ['pt_BR-faber-medium'],
 };
 const QUALITY = ['medium', 'high', 'low', 'x_low'];
+// How the voice is asked to speak. Piper's defaults are made for reading aloud; she is quick, lively and a little teasing:
+// a bit faster (length_scale under 1), more varied in tone and rhythm (noise_scale, noise_w over their defaults of 0.667
+// and 0.8), and a shorter rest between sentences (0.2). The numbers come from what each knob does, not from listening to
+// the result; her speed is also yours to set (ttsRate), and her mood moves it in the overlay (speech.js).
+const STYLE = ['--length_scale', '0.94', '--noise_scale', '0.75', '--noise_w', '0.88', '--sentence_silence', '0.12'];
 const LOG_LINES = 30;
 const REQUEST_TIMEOUT = 45000;
 
@@ -232,14 +237,14 @@ class Piper extends EventEmitter {
     return wav;
   }
 
-  // (re)starts the program for this voice, if it is not the one running (the speed is the overlay's: it plays the wav at her rate)
+  // (re)starts the program for this voice, if it is not the one running (her speed is the overlay's: it plays the wav at her rate)
   run(loc, voice) {
     const key = voice.onnx;
     if (this.proc && this.procKey === key) return;
     this.stopProc();
     if (this.phase !== 'ready') this.set('starting');
     this.outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-piper-'));
-    const args = ['--model', voice.onnx, '--config', voice.config, '--output_dir', this.outDir, '--quiet'];
+    const args = ['--model', voice.onnx, '--config', voice.config, '--output_dir', this.outDir, ...STYLE, '--quiet'];
     let proc;
     try {
       proc = this.spawn(loc.exe, args, { cwd: loc.dir, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
@@ -364,4 +369,4 @@ class Piper extends EventEmitter {
   }
 }
 
-module.exports = { Piper, assetFor, pickVoice, voicesIn, ASSETS, PREFERRED, RELEASE, VOICES };
+module.exports = { Piper, assetFor, pickVoice, voicesIn, ASSETS, PREFERRED, RELEASE, VOICES, STYLE };

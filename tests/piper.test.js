@@ -13,7 +13,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const cp = require('node:child_process');
 
-const { Piper, assetFor, pickVoice, voicesIn, RELEASE, VOICES } = require('../src/main/piper.js');
+const { Piper, assetFor, pickVoice, voicesIn, RELEASE, VOICES, STYLE } = require('../src/main/piper.js');
 const files = require('../src/main/fetch-files.js');
 
 const posix = process.platform !== 'win32';
@@ -303,6 +303,12 @@ test('speaking: the line goes to the running program and its wav comes back; one
     assert.deepEqual(asked.map((r) => r.text.slice(0, 3)), ['При', 'a', 'a m', 'bb']);
     assert.equal(new Set(asked.map((r) => r.pid)).size, 1, 'one program for all of them');
     assert.equal(asked[0].model, 'ru_RU-irina-medium.onnx');
+    // she is quick, lively and a little teasing: the program is asked for a livelier delivery than its reading-aloud default
+    const flag = (name) => asked[0].args[asked[0].args.indexOf(name) + 1];
+    assert.ok(Number(flag('--length_scale')) < 1, 'a bit faster');
+    assert.ok(Number(flag('--noise_scale')) > 0.667 && Number(flag('--noise_w')) > 0.8, 'more varied in tone and rhythm');
+    assert.ok(Number(flag('--sentence_silence')) < 0.2, 'less rest between sentences');
+    assert.deepEqual(STYLE.filter((a) => a.startsWith('--')), ['--length_scale', '--noise_scale', '--noise_w', '--sentence_silence']);
     assert.deepEqual([...new Set(changes)], ['starting', 'ready']);
     assert.equal(piper.status().voice, 'ru_RU-irina-medium');
     // the wav files the program made are cleared away

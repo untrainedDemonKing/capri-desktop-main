@@ -33,7 +33,7 @@ const MINDS = ['ollama', 'cloud', 'skip'];
 
 const SECTIONS = new Set(['manage']); // the places of the page a button elsewhere can open it at
 
-function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config, updateConfig, lang, connect, saveVoiceKey, keyPages, voiceKeyPages = {}, cleanup = null, uninstall = null, protocolUrl, onClosed }) {
+function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config, updateConfig, lang, connect, saveVoiceKey, keyPages, voiceKeyPages = {}, cleanup = null, uninstall = null, mind = null, protocolUrl, onClosed }) {
   let win = null;
   let applied = false; // the button was pressed in this window: closing it is not "skip"
   let last = null; // the last look at the PC, for the previews (a look takes a second or two)
@@ -70,6 +70,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
       cloud: cloudState(cfg),
       voiceKeys: { openai: Boolean(cfg.apiKeys?.openai), elevenlabs: Boolean(cfg.apiKeys?.elevenlabs) },
       node: { auto: cfg.autoNode !== false },
+      tune: mind ? mind.status() : null,
       current: { provider: cfg.provider, chatModel: cfg.chatModel, ttsEngine: cfg.ttsEngine || 'system', customUrl: cfg.customUrl || '' },
       snapshot: provision.snapshot(),
     };
@@ -158,6 +159,12 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
   }
 
   provision.on('change', (snapshot) => send('hub:change', snapshot));
+  // how her mind was fitted to this PC (tune.js), and fitting it again
+  ipcMain.handle('hub:tune', () => (mind ? mind.status() : null));
+  ipcMain.handle('hub:retune', async () => {
+    await mind?.measure();
+    return mind ? mind.status() : null;
+  });
 
   ipcMain.on('hub:show', (_e, section) => show(typeof section === 'string' ? section : '')); // from the overlay: her "Connect" button, her menu's "More" tab
   ipcMain.handle('hub:state', (_e, opts) => state(opts));
@@ -212,7 +219,11 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
     if (win && !win.isDestroyed()) win.close();
   });
 
-  return { show, isOpen: () => Boolean(win && !win.isDestroyed()), window: () => win, state, preview, apply, patchFor };
+  return {
+    show, isOpen: () => Boolean(win && !win.isDestroyed()), window: () => win, state, preview, apply, patchFor,
+    // (the measurement began or ended)
+    tuneChanged: () => { if (mind) send('hub:tune', mind.status()); },
+  };
 }
 
 module.exports = { createHub, CLOUD, VOICES, MINDS, GB };

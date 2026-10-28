@@ -4,14 +4,29 @@
 // the overlay's page, which can't reach other local ports. Everything stays on this machine
 // unless OLLAMA_HOST points somewhere else.
 
-// How she asks for her answers, set from the profile of this PC (profiles.js): how much of the talk the model
-// holds at once (the memory it takes grows with it) and how long it stays loaded after the last question.
-let tuning = { numCtx: 0, keepAlive: '15m' };
+const tuner = require('./tune');
+
+// How she asks for her answers, set from the profile of this PC (profiles.js) and what was measured on it (tune.js):
+// how much of the talk the model holds at once (the memory it takes grows with it) and how far that may grow when a
+// request needs more, how long the model stays loaded after the last question, and the longest answer she wants.
+let tuning = { numCtx: 0, base: 0, maxCtx: 0, keepAlive: '15m', answerCap: 0 };
 function tune(t = {}) {
-  tuning = { numCtx: Number(t.numCtx) || 0, keepAlive: t.keepAlive || '15m' };
+  const base = Number(t.numCtx) || 0;
+  const maxCtx = Number(t.maxCtx) || 0;
+  // what the memory has grown to (plan() below) is kept while the profile's own memory is the same one: this is called again
+  // at every look at the models, and starting over would load the model again each time
+  const kept = base && tuning.base === base && tuning.numCtx > base ? Math.min(tuning.numCtx, maxCtx || tuning.numCtx) : base;
+  tuning = { numCtx: Math.max(kept, base), base, maxCtx, keepAlive: t.keepAlive || '15m', answerCap: Number(t.answerCap) || 0 };
 }
-// (the same context in every call: a different one makes Ollama load the model again)
+// (the same context in every call: a different one makes Ollama load the model again, so it only ever grows, and only
+// when a request would not fit in the one she has)
 const withContext = (options = {}) => (tuning.numCtx ? { ...options, num_ctx: tuning.numCtx } : options);
+// what to ask for in this task, with the memory made to hold the request
+function plan(task, { model, lang, messages }) {
+  const { options, format } = tuner.ask(task, { model, lang, answerCap: tuning.answerCap });
+  tuning.numCtx = tuner.grow(tuning.numCtx, tuner.needed(messages, options.num_predict), tuning.maxCtx);
+  return { options: withContext(options), format };
+}
 
 function base() {
   let host = process.env.OLLAMA_HOST || '127.0.0.1:11434';
@@ -68,11 +83,12 @@ async function version(signal = AbortSignal.timeout(1500)) {
 }
 
 // One answer in one go (not streamed): her eyes ask this about a picture (llm.js see).
-async function once({ model, messages }, signal) {
+async function once({ model, messages, task = 'look' }, signal) {
+  const { options, format } = plan(task, { model, messages });
   const res = await fetch(`${base()}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model, messages, stream: false, keep_alive: tuning.keepAlive, options: withContext({ temperature: 0.4, num_predict: 300 }) }),
+    body: JSON.stringify({ model, messages, stream: false, keep_alive: tuning.keepAlive, ...(format && { format }), options }),
     signal,
   });
   if (!res.ok) throw await failure(res);
@@ -91,8 +107,10 @@ function warm(model) {
   }).catch(() => {});
 }
 
-// Her answer, streamed: onDelta(piece) as it comes, resolves with all of it.
-async function chat({ model, messages }, onDelta, signal) {
+// Her answer, streamed: onDelta(piece) as it comes, resolves with all of it. `task`: 'chat' (her talk) or 'note'
+// (her notebook about you: JSON), what the options are chosen for (tune.js); `lang`: what she speaks.
+async function chat({ model, messages, task = 'chat', lang = 'en' }, onDelta, signal) {
+  const { options, format } = plan(task, { model, lang, messages });
   const res = await fetch(`${base()}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -101,7 +119,8 @@ async function chat({ model, messages }, onDelta, signal) {
       messages,
       stream: true,
       keep_alive: tuning.keepAlive, // she stays loaded while you chat
-      options: withContext({ temperature: 0.85, num_predict: 240 }),
+      ...(format && { format }),
+      options,
     }),
     signal,
   });
@@ -127,6 +146,37 @@ async function chat({ model, messages }, onDelta, signal) {
     }
   }
   return text;
+}
+
+// A short run to find out how the model does on this PC: how fast it writes, and how much of it sits in the memory of
+// the card. Resolves what tune.js judge() reads, or null when there is nothing to read.
+async function measure(model, signal) {
+  const res = await fetch(`${base()}/api/chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: 'Write three short sentences about a satellite crossing the night sky.' }],
+      stream: false,
+      keep_alive: tuning.keepAlive,
+      options: withContext({ temperature: 0, num_predict: 48 }),
+    }),
+    signal,
+  });
+  if (!res.ok) throw await failure(res);
+  const body = await res.json();
+  if (body.error) throw new Error(body.error);
+  const sample = { evalCount: body.eval_count, evalNs: body.eval_duration, size: 0, vram: NaN };
+  try {
+    const ps = await fetch(`${base()}/api/ps`, { signal: AbortSignal.timeout(2500) });
+    if (ps.ok) {
+      const loaded = ((await ps.json()).models || []).find((m) => m.name === model || m.model === model);
+      if (loaded) Object.assign(sample, { size: Number(loaded.size) || 0, vram: Number(loaded.size_vram) });
+    }
+  } catch {
+    // an older Ollama has no /api/ps: the speed is still known
+  }
+  return sample;
 }
 
 // Fetches a model. Ollama sends its pieces one after the other: onProgress({ completed, total })
@@ -164,4 +214,7 @@ async function pull(name, onProgress, signal) {
   }
 }
 
-module.exports = { base, tune, version, models, list, remove, warm, chat, once, pull };
+// what she asks with now (a copy)
+const current = () => ({ ...tuning });
+
+module.exports = { base, tune, current, version, models, list, remove, warm, chat, once, measure, pull };

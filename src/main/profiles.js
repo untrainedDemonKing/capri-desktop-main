@@ -126,12 +126,14 @@ function recommendVoice(hw) {
 }
 
 // Her own settings for the profile, so a small PC is not choked: how much she remembers of the talk at once (the
-// memory it takes grows with it), how long a model stays loaded, and what Ollama is started with
+// memory it takes grows with it; her persona alone is 1.5-2.5k tokens, so even the smallest holds a few messages beside
+// it), the most that memory may grow to when a request needs more (tune.js), how long a model stays loaded, and what
+// Ollama is started with
 function tuningFor(id, hw) {
   const nvidia = hw.gpu?.vendor === 'nvidia';
-  if (id === 'light') return { numCtx: 2048, keepAlive: '10m', ollamaEnv: { OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_NUM_PARALLEL: '1' } };
-  if (id === 'strong') return { numCtx: 8192, keepAlive: '30m', ollamaEnv: { OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_NUM_PARALLEL: '1', ...(nvidia ? { OLLAMA_FLASH_ATTENTION: '1' } : {}) } };
-  return { numCtx: 4096, keepAlive: '15m', ollamaEnv: { OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_NUM_PARALLEL: '1' } };
+  if (id === 'light') return { numCtx: 3072, maxCtx: 4096, keepAlive: '10m', ollamaEnv: { OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_NUM_PARALLEL: '1' } };
+  if (id === 'strong') return { numCtx: 8192, maxCtx: 16384, keepAlive: '30m', ollamaEnv: { OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_NUM_PARALLEL: '1', ...(nvidia ? { OLLAMA_FLASH_ATTENTION: '1' } : {}) } };
+  return { numCtx: 4096, maxCtx: 8192, keepAlive: '15m', ollamaEnv: { OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_NUM_PARALLEL: '1' } };
 }
 
 // what a set-up of this profile fetches, in pieces (`have` says which she has already)
