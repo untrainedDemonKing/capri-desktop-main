@@ -60,6 +60,7 @@ const TTS_KEYS = { openai: 'openai', elevenlabs: 'elevenlabs', custom: 'tts' };
 // her voice (Chatterbox) and her mind (Ollama), models on this PC: she finds their folders next to her, starts
 // them, keeps them, and gets them ready when something is missing (provision.js, shown by prepare.js)
 // where everything she fetches goes (downloads.js): the Capri folder you picked in her main menu, else her data folder
+let moving = () => false; // (a move of what she fetched is going on: said below too)
 let somethingRunning = () => false; // (said below, where what fetches and what takes off are made: the place is not changed meanwhile)
 const folder = createFolder({
   cfg: () => config.load(),
@@ -125,7 +126,15 @@ const provision = new Provision({
   ollamaHost,
   chatterbox,
   piper,
-  ollamaApi: { models: () => ollama.models(), pull: (name, onProgress, signal) => ollama.pull(name, onProgress, signal) },
+  ollamaApi: { models: () => ollama.models(), pull: (name, onProgress, signal) => ollama.pull(name, onProgress, signal), probe: (name, signal) => ollama.probe(name, signal) },
+  // the tray program of Ollama and its server, ended before it is put in again over itself (a repair)
+  killOllama: async () => {
+    if (process.platform !== 'win32') return;
+    for (const image of ['ollama app.exe', 'ollama.exe']) {
+      await new Promise((resolve) => { spawnProgram('taskkill', ['/F', '/T', '/IM', image], { windowsHide: true, stdio: 'ignore' }).on('close', resolve).on('error', resolve); });
+    }
+  },
+  blocked: () => moving(),
   installOllama: process.platform === 'win32' ? setup.installOllama : null,
   downloadOllama: process.platform === 'win32' ? (onLine, signal) => setup.downloadOllama(onLine, signal, { tmp: folder.temp() || os.tmpdir() }) : null,
   downloadOllamaZip: process.platform === 'win32' ? (onLine, signal) => setup.downloadOllamaZip(folder.sub('ollama'), onLine, signal, { tmp: folder.temp() || os.tmpdir() }) : null,
@@ -145,6 +154,7 @@ const provision = new Provision({
 // Taking off what she put on this PC (cleanup.js), made once the app is ready
 let cleanupTool = null;
 let relocateTool = null; // moving what she fetched to another folder (relocate.js), made with the main menu
+moving = () => Boolean(relocateTool?.busy);
 somethingRunning = () => Boolean(provision.running || cleanupTool?.busy || relocateTool?.busy);
 const theCleanup = () => (cleanupTool ||= new Cleanup({
   userData: app.getPath('userData'),
@@ -1303,6 +1313,11 @@ function registerIpc() {
   ipcMain.handle('chatterbox:restart', async () => {
     await chatterbox.restart(config.load());
     return chatterbox.status();
+  });
+  // her chat's "Repair Ollama": its engine is not whole; it is put in again, and the main menu shows how it goes
+  ipcMain.on('ollama:repair', () => {
+    hub?.show();
+    provision.run({ repairOllama: true });
   });
   // ---- her senses and her hands ----
   // her eyes: a picture of your screen (screen.js), read by the vision model (llm.js)

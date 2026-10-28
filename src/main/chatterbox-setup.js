@@ -70,6 +70,8 @@ function installTarget(dir, { fsx = fs } = {}) {
   return { args: ['chatterbox-tts'], label: 'chatterbox-tts' };
 }
 
+const RAW_PROGRESS = /^Progress \d+ of \d+$/; // (what `pip --progress-bar raw` prints)
+
 // pip, with what it prints passed on line by line: onLine(text). Resolves { ok, code, tail }, and cancelled: true
 // when `signal` stopped it (pip and everything it started are ended at once: a download of gigabytes does not go on
 // behind her "Stop"). env: more for its environment (a TEMP in the folder she was given, for one).
@@ -79,8 +81,10 @@ async function pip(python, args, onLine, { spawn = cp.spawn, env = {}, signal } 
     for (const line of String(chunk).split(/[\r\n]+/)) {
       const text = line.trim();
       if (!text) continue;
-      tail.push(text.slice(0, 300));
-      if (tail.length > 30) tail.shift();
+      if (!RAW_PROGRESS.test(text)) {
+        tail.push(text.slice(0, 300));
+        if (tail.length > 30) tail.shift(); // (the raw progress lines are hundreds a second: they would push the lines that say what went wrong out)
+      }
       onLine?.(text);
     }
   };
@@ -90,6 +94,119 @@ async function pip(python, args, onLine, { spawn = cp.spawn, env = {}, signal } 
   });
   if (res.error) tail.push(res.error);
   return { ok: res.ok, code: res.code ?? -1, ...(res.cancelled && { cancelled: true }), tail };
+}
+
+// Whether this pip can print its progress in lines (`--progress-bar raw`, from pip 25.1: the pip that comes with Python 3.11
+// has only the bar that needs a terminal, so there she would see no progress at all)
+function supportsRawProgress(python, { run = runPython } = {}) {
+  const r = run(python, ['-m', 'pip', 'install', '--help'], { timeout: 30000 });
+  return r.ok && /--progress-bar[\s\S]{0,400}?\braw\b/.test(r.out);
+}
+
+// Makes pip fit for showing how far it is: a newer one if this one cannot print its progress (a failure of that is
+// not a reason to stop: the install goes on with what there is). Resolves { raw } (the lines can be had).
+async function preparePip(python, { signal, env, onLine, run = runPython, pipFn = pip } = {}) {
+  if (!supportsRawProgress(python, { run })) {
+    // (quick to give up: a PC with no internet, with a folder of wheels, has no use for a newer pip, and must not wait for it)
+    await pipFn(python, ['install', '--upgrade', '--no-cache-dir', '--retries', '1', '--timeout', '15', 'pip'], onLine, { signal, env });
+  }
+  return { raw: supportsRawProgress(python, { run }) };
+}
+
+// pip shows sizes in decimal units: "57.2 MB", "2.5 GB", "204.2 kB"
+function parseSize(text) {
+  const m = /^\s*([\d.]+)\s*(B|kB|MB|GB)\s*$/i.exec(String(text));
+  return m ? Math.round(Number(m[1]) * { B: 1, KB: 1e3, MB: 1e6, GB: 1e9 }[m[2].toUpperCase()]) : 0;
+}
+
+// How far everything pip does in a step is, from its lines. It is told each line (feed), and says what it is getting and how
+// much of all (view). A stretch of work is a phase (one pip run) with the bytes it is expected to fetch, when that is known
+// beforehand: pip tells the size of a file only when it comes to it, and the bar must not run to its end and wait there. So
+// the total is the larger of what is expected and what is seen, the bar never goes back, and it stays short of the end
+// until pip says it is done (unpacking a few GB has no lines of its own).
+function createPipProgress({ now = Date.now } = {}) {
+  const phases = [];
+  let cur = null;
+  let stage = 'getting'; // 'getting' | 'installing' | 'done'
+  let top = 0;
+  let samples = []; // [{ at, bytes }]: for the speed
+  const finish = () => {
+    if (cur?.file) Object.assign(cur, { done: cur.done + cur.size, file: '', size: 0, got: 0 });
+  };
+  let reserved = 0;
+  // a phase that is over is what it fetched, not what was expected of it
+  const settle = () => {
+    finish();
+    if (cur) cur.expected = cur.known;
+  };
+  const total = () => reserved + phases.reduce((n, p) => n + Math.max(p.expected, p.known), 0);
+  const done = () => phases.reduce((n, p) => n + p.done + p.got, 0);
+  const api = {
+    // reserve: what a later phase is expected to fetch, counted in the total until that phase begins (so the bar does not
+    // run to its end at the first and start again at the second)
+    phase(expected = 0, reserve = 0) {
+      settle();
+      reserved = reserve;
+      cur = { expected, known: 0, done: 0, file: '', size: 0, got: 0 };
+      phases.push(cur);
+      stage = 'getting';
+    },
+    // true when what is shown has changed
+    feed(line) {
+      if (!cur) api.phase(0);
+      let m = /^Downloading\s+(\S+)\s+\(([^)]+)\)/.exec(line);
+      if (m) {
+        finish();
+        Object.assign(cur, { file: m[1], size: parseSize(m[2]), got: 0 });
+        cur.known += cur.size;
+        stage = 'getting';
+        return true;
+      }
+      m = /^Progress (\d+) of (\d+)$/.exec(line);
+      if (m) {
+        const total_ = Number(m[2]);
+        if (cur.file && total_ && total_ !== cur.size) {
+          cur.known += total_ - cur.size;
+          cur.size = total_;
+        }
+        cur.got = Math.min(Number(m[1]), cur.size || Number(m[1]));
+        const at = now();
+        if (!samples.length || at - samples[samples.length - 1].at >= 250) {
+          samples.push({ at, bytes: done() });
+          samples = samples.filter((x) => at - x.at <= 5000);
+        }
+        return true;
+      }
+      if (/^(Collecting|Using cached|Requirement already satisfied)\b/.test(line)) {
+        finish();
+        return false;
+      }
+      if (/^Installing collected packages/.test(line)) {
+        finish();
+        stage = 'installing';
+        return true;
+      }
+      if (/^Successfully installed/.test(line)) {
+        settle();
+        stage = 'done';
+        return true;
+      }
+      return false;
+    },
+    view() {
+      const t = total();
+      const d = done();
+      const cap = stage === 'done' ? 1 : stage === 'installing' ? 0.96 : 0.92;
+      top = Math.max(top, t ? Math.min(d / t, cap) : 0);
+      const first = samples[0];
+      const last = samples[samples.length - 1];
+      const rate = first && last && last.at > first.at ? Math.max(0, ((last.bytes - first.bytes) / (last.at - first.at)) * 1000) : 0;
+      // (the file's name without its version: "torch-2.6.0-cp311-cp311-win_amd64.whl" is "torch")
+      const what = cur?.file ? cur.file.replace(/-\d.*$/, '').replace(/\.(whl|tar\.gz)$/, '') : '';
+      return { what, done: d, total: t, fraction: top, stage, rate };
+    },
+  };
+  return api;
 }
 
 // How far pip is, from a line of its output: what it is getting, in words
@@ -111,6 +228,16 @@ function torchStatus(python, { run = runPython } = {}) {
   const [version, audio, cuda] = r.out.split(/\s+/).slice(-3);
   return { version, audio: audio === '-' ? '' : audio, cuda: cuda === '1' };
 }
+
+// What pip finds wrong with the versions installed together ("a has requirement b==1, but you have b 2"): [] when they all fit
+function pipCheck(python, { run = runPython } = {}) {
+  const r = run(python, ['-m', 'pip', 'check'], { timeout: 60000 });
+  if (r.ok) return [];
+  return r.out.split(/\r?\n/).map((l) => l.trim()).filter((l) => /has requirement|requires|is not supported/i.test(l)).slice(0, 8);
+}
+
+// torch and torchaudio of one version (a torchaudio of another one does not even load)
+const sameTorch = (torch) => !torch?.audio || String(torch.version).split('.').slice(0, 2).join('.') === String(torch.audio).split('.').slice(0, 2).join('.');
 
 // Whether there is an NVIDIA card to use (nvidia-smi answers)
 async function hasNvidia({ platform = process.platform, whichFn = which } = {}) {
@@ -141,4 +268,4 @@ function cudaTorchArgs(torch, gpu = {}) {
   return ['install', '--force-reinstall', '--no-deps', ...pins, '--index-url', build.index];
 }
 
-module.exports = { candidates, parseVersion, findSystemPython, venvPython, createVenv, hasChatterbox, installTarget, pip, pipActivity, torchStatus, hasNvidia, cudaBuild, cudaTorchArgs, MIN, MAX };
+module.exports = { candidates, parseVersion, findSystemPython, venvPython, createVenv, hasChatterbox, installTarget, pip, pipActivity, supportsRawProgress, preparePip, createPipProgress, parseSize, pipCheck, sameTorch, torchStatus, hasNvidia, cudaBuild, cudaTorchArgs, MIN, MAX };

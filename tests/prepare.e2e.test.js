@@ -137,9 +137,11 @@ test('a fresh PC with a good card: she gets her mind and her voice (Chatterbox) 
     assert.equal(wav.subarray(0, 4).toString(), 'RIFF');
     assert.ok(wav.length > 20000, `${wav.length} bytes of her voice`);
     const calls = fs.readFileSync(cbLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    assert.equal(calls[0].language_id, 'ru');
-    assert.ok(calls.map((c) => c.text).join(' ').includes('Ты спросил'), 'what she said is what the mind answered');
-    assert.equal(calls[0].exaggeration, 0.7, 'a happy line');
+    assert.equal(calls[0].text, 'Привет.', 'the first line the voice was asked for is the trial one of the preparation: it speaks');
+    const line = calls.find((c) => c.text.includes('Ты спросил'));
+    assert.ok(line, 'what she said is what the mind answered');
+    assert.equal(line.language_id, 'ru');
+    assert.equal(line.exaggeration, 0.7, 'a happy line');
 
     // the second start-up: everything is there, nothing is fetched or installed, no window is called for
     chatterbox.stop();

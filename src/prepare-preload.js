@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('prepare', {
   open: (url) => ipcRenderer.send('prepare:open', String(url)),
   profile: (id) => ipcRenderer.invoke('prepare:profile', String(id)),
   rescan: () => ipcRenderer.invoke('prepare:rescan'),
+  repairOllama: () => ipcRenderer.invoke('prepare:repairOllama'),
   openAi: () => ipcRenderer.send('prepare:openAi'),
   report: () => ipcRenderer.invoke('prepare:report'),
   copy: (text) => ipcRenderer.send('prepare:copy', String(text)),

@@ -19,6 +19,7 @@
     'choose-ollama': () => ({ label: ui.chooseOllama, run: () => window.hub.choose('ollama') }),
     'choose-chatterbox': () => ({ label: ui.chooseChatterbox, run: () => window.hub.choose('chatterbox') }),
     'choose-piper': () => ({ label: ui.choosePiper, run: () => window.hub.choose('piper') }),
+    'repair-ollama': () => ({ label: ui.repairOllama, run: () => window.hub.repairOllama() }),
     'open-ollama-site': () => ({ label: ui.openOllamaSite, run: () => window.hub.open('https://ollama.com/download') }),
     'open-node-site': () => ({ label: ui.openNodeSite, run: () => window.hub.open('https://nodejs.org/en/download') }),
     'open-python-site': () => ({ label: ui.openPythonSite, run: () => window.hub.open('https://www.python.org/downloads/') }),
@@ -143,6 +144,10 @@
     const parts = [fill(ui.ollamaIs, { state: ui[`ollamaState-${have.ollama ? 'found' : 'missing'}`] })];
     if ((have.models || []).length) parts.push(fill(ui.ollamaModels, { list: have.models.join(', ') }));
     $('ollamaLine').textContent = parts.join(' · ');
+    // (Ollama that is there but will not answer, or whose engine is gone: it is put in again over itself, the models stay)
+    $('ollamaRepair').hidden = !have.ollama;
+    twoStep($('ollamaRepair'), { label: ui.repairOllama, sure: ui.repairSure, run: () => window.hub.repairOllama() });
+    $('ollamaRepair').disabled = running() || moving();
   }
 
   // ---- the services in the cloud ----

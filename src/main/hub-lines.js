@@ -132,6 +132,7 @@ const LINES = {
     close: 'Закрыть',
     stop: 'Остановить',
     // ----- the folder everything is fetched into (downloads.js) -----
+    repairSure: 'Точно? Скачаю установщик Ollama и поставлю поверх; модели останутся.',
     folderTitle: 'Куда всё скачивается',
     folderNote: 'Всё, что я скачиваю, лежит в одной отдельной папке «Capri»: Ollama и модели, голос (Piper, Chatterbox с окружением и моделью), Node.js и временные файлы загрузок. Выбери диск, где есть место: я сама создам там папку «Capri».',
     folderNow: 'Сейчас: {dir}',
@@ -390,6 +391,7 @@ const LINES = {
     close: 'Close',
     stop: 'Stop',
     // ----- the folder everything is fetched into (downloads.js) -----
+    repairSure: 'Really? I download the installer of Ollama and put it in over the old one; the models stay.',
     folderTitle: 'Where everything is downloaded',
     folderNote: 'Everything I download lies in one folder of its own, “Capri”: Ollama and its models, the voice (Piper, Chatterbox with its environment and model), Node.js, and the files in the middle of a download. Pick a disk that has room: I make the “Capri” folder there myself.',
     folderNow: 'Now: {dir}',

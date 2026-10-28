@@ -8,6 +8,8 @@
 // request to (one JSON per line, with the OLLAMA_MODELS it was started with). It also reports how fast it "writes"
 // (FAKE_OLLAMA_TPS tokens a second, 24 by default) and how much of the model "sits on the card" (FAKE_OLLAMA_ONCARD,
 // 0..1, 1 by default) the way /api/chat's counters and /api/ps do, for the measurement of the model on this PC.
+// FAKE_OLLAMA_BROKEN: a file; while it is there the engine is "not whole": chat and generate fail the way an Ollama
+// without its llama-server does (delete the file to "repair" it).
 
 const http = require('node:http');
 const fs = require('node:fs');
@@ -86,6 +88,10 @@ http.createServer(async (req, res) => {
     if (!fs.existsSync(file)) return json(404, { error: `model '${b.model || b.name}' not found` });
     fs.rmSync(file);
     return json(200, {});
+  }
+  const broken = process.env.FAKE_OLLAMA_BROKEN && fs.existsSync(process.env.FAKE_OLLAMA_BROKEN);
+  if (broken && (url === '/api/chat' || url === '/api/generate')) {
+    return json(500, { error: "error starting llama-server: llama-server binary not found (checked: C:\\Users\\Test\\AppData\\Local\\Programs\\Ollama\\lib\\ollama\\llama-server.exe). Run 'cmake -S llama/server --preset cpu && cmake --build --preset cpu' first" });
   }
   if (url === '/api/chat') {
     if (!installed().some((m) => m === b.model || m.split(':')[0] === b.model)) return json(404, { error: `model '${b.model}' not found` });

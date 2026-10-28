@@ -37,6 +37,7 @@
     "test:stop": "node --test tests/stop.test.js",
     "test:downloads": "node --test tests/downloads.test.js",
     "test:relocate": "node --test tests/relocate.test.js",
+    "test:progress": "node --test tests/progress.test.js",
     "test:prepare": "node --test tests/prepare.e2e.test.js",
     "test:hardware": "node --test tests/hardware.test.js",
     "test:profiles": "node --test tests/profiles.test.js",

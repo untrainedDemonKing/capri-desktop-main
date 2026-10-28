@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('host', {
   onProvision: on('provision:status'),
   prepareShow: () => ipcRenderer.send('prepare:show'),
   hubShow: (section) => ipcRenderer.send('hub:show', section),
+  ollamaRepair: () => ipcRenderer.send('ollama:repair'),
   onMedia: on('media:now'),
   onPresence: on('presence'),
   moodState: (state) => ipcRenderer.send('mood:state', state),

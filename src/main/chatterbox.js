@@ -17,12 +17,41 @@ const cp = require('node:child_process');
 const { EventEmitter } = require('node:events');
 
 const LOG_LINES = 40;
+// what the model comes to on the disk (its English and its multilingual weights are each about this much: t3 2.1 GB, s3gen 1.1 GB, the rest
+// small): the bar of its download is how much of it is in the cache of the model hub, and the real size is taken
+// when a download bar of the hub says a file is larger
+const MODEL_BYTES = 3.2e9;
 const START_TIMEOUT = 15 * 60 * 1000; // the first start downloads the model (a few GB)
 // folders that are never worth looking into when searching for the Python
 const SKIP = new Set(['node_modules', '.git', 'site-packages', '__pycache__', 'lib', 'lib64', 'include', 'share', 'models', 'weights', 'outputs', 'cache', '.cache', 'dist', 'build', 'docs']);
 const PREFER = ['venv', '.venv', 'env', '.env', 'python_embeded', 'python_embedded', 'python', 'runtime'];
 
 const withCode = (err, code) => Object.assign(err, { code });
+
+// The bytes of the model that are in the cache of the model hub (what is downloaded, and what is being downloaded), and
+// whether a file is being downloaded now. `cache` is the HF_HOME she gave the server; without one, the usual place.
+function modelCacheBytes(cache, { fsx = fs, env = process.env, home = require('node:os').homedir() } = {}) {
+  const hub = cache ? path.join(cache, 'hub') : env.HUGGINGFACE_HUB_CACHE || path.join(env.HF_HOME || path.join(home, '.cache', 'huggingface'), 'hub');
+  let bytes = 0;
+  let incomplete = false;
+  try {
+    for (const entry of fsx.readdirSync(hub)) {
+      if (!/^models--.*chatterbox/i.test(entry)) continue;
+      const blobs = path.join(hub, entry, 'blobs');
+      for (const name of fsx.readdirSync(blobs)) {
+        try {
+          bytes += fsx.statSync(path.join(blobs, name)).size;
+        } catch {
+          // gone meanwhile
+        }
+        if (name.endsWith('.incomplete')) incomplete = true;
+      }
+    }
+  } catch {
+    // no cache (yet)
+  }
+  return { bytes, incomplete };
+}
 // a copy of the model hub's cache that you put in the Chatterbox folder (the `huggingface` folder of another PC's
 // ~/.cache): the model is read from it and not downloaded
 const CACHE_NAMES = ['hf_home', 'hf-home', 'huggingface', 'hf_cache', 'hf-cache'];
@@ -168,13 +197,33 @@ class Chatterbox extends EventEmitter {
     this.log = [];
     this.timer = null;
     this.started = 0;
-    this.progress = null; // how far a download of the model is (0..1), when the log says
+    this.progress = null; // how far a download of the model is (0..1), when it is being downloaded
+    this.bytes = 0; // how much of the model is in the cache, and how much it is expected to come to
+    this.expect = MODEL_BYTES;
+    this.cache = ''; // the HF_HOME given to the server ('': the usual place)
     this.activity = '';
     this.device = '';
   }
 
   status() {
-    return { phase: this.phase, error: this.error, url: this.url, dir: this.dir, python: this.python, device: this.device, progress: this.progress, activity: this.activity, log: this.log.slice(-8) };
+    return { phase: this.phase, error: this.error, url: this.url, dir: this.dir, python: this.python, device: this.device, progress: this.progress, bytes: this.bytes, expect: this.expect, activity: this.activity, log: this.log.slice(-8) };
+  }
+
+  // How far the download of the model is, from the cache of the model hub: the hub's own bars are one per file (they start
+  // again at every file), the cache grows over all of them. Nothing growing is not a download: the model is only loading.
+  watchModel() {
+    const { bytes, incomplete } = modelCacheBytes(this.cache, { fsx: this.fsx });
+    const growing = bytes > this.bytes;
+    const was = this.progress;
+    this.bytes = bytes;
+    if (bytes > this.expect) this.expect = bytes * 1.05; // (larger than thought: the bar does not run over)
+    if (bytes > 0 && (incomplete || growing)) {
+      this.progress = Math.min(0.99, bytes / this.expect);
+      this.activity = '';
+    } else if (bytes > 0 && was !== null) {
+      this.progress = null; // (it all came: the model is being put into memory)
+    }
+    if (this.progress !== was || growing) this.emit('change', this.status());
   }
 
   set(phase, error = '') {
@@ -221,6 +270,8 @@ class Chatterbox extends EventEmitter {
     this.key = key;
     this.log = [];
     this.progress = null;
+    this.bytes = 0;
+    this.expect = MODEL_BYTES;
     this.activity = '';
     this.device = '';
     this.started = Date.now();
@@ -242,6 +293,7 @@ class Chatterbox extends EventEmitter {
     const args = [this.script, '--port', String(port), '--device', cfg.chatterboxDevice || 'auto', '--watch-stdin', ...voices.flatMap((v) => ['--voices', v])];
     const env = String(cfg.hfEndpoint || '').trim() ? { HF_ENDPOINT: String(cfg.hfEndpoint).trim() } : {}; // (a mirror of the model hub, where it is blocked)
     const cache = modelCache(dir, { fsx: this.fsx });
+    this.cache = cache;
     if (cache) {
       env.HF_HOME = cache;
       this.log.push(`the model is read from ${cache}`);
@@ -270,7 +322,7 @@ class Chatterbox extends EventEmitter {
         if (this.log.length > LOG_LINES) this.log.shift();
         // the model hub's download bars: "model.safetensors:  45%|████ | 1.2G/3.0G"
         const bar = /(\d{1,3})%\|/.exec(text);
-        if (bar) {
+        if (bar && this.bytes === 0) { // (when the cache cannot be seen: the bars of the hub, file by file)
           const progress = Math.min(1, Number(bar[1]) / 100);
           if (this.progress === null || Math.abs(progress - this.progress) >= 0.01) {
             this.progress = progress;
@@ -310,6 +362,7 @@ class Chatterbox extends EventEmitter {
   async poll(proc) {
     if (this.proc !== proc) return;
     if (Date.now() - this.started > START_TIMEOUT) return this.fail('the model did not load in 15 minutes', 'timeout');
+    this.watchModel();
     try {
       const res = await this.fetchFn(`${this.url.replace(/\/v1$/, '')}/health`, { signal: AbortSignal.timeout(1500) });
       const body = await res.json();
@@ -358,6 +411,32 @@ class Chatterbox extends EventEmitter {
     this.killProc(proc);
     if (report) this.set('off');
     else this.phase = 'off';
+  }
+
+  // Whether it speaks: a short line made by the model that was loaded (the card works, the packages fit). Resolves
+  // { ok, ms }; rejects with what went wrong.
+  async check(cfg, lang = 'en') {
+    const base = String(await this.ready(cfg, 10000)).replace(/\/+$/, '');
+    const started = Date.now();
+    const res = await this.fetchFn(`${base}/audio/speech`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'chatterbox', input: lang === 'ru' ? 'Привет.' : 'Hello.', language: lang, response_format: 'wav' }),
+      signal: AbortSignal.timeout(240000), // (a model on the processor takes its time)
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      let message = text.slice(0, 200);
+      try {
+        message = JSON.parse(text).error?.message || JSON.parse(text).error || message;
+      } catch {
+        // not JSON
+      }
+      throw new Error(String(message || `the voice answered ${res.status}`).slice(0, 300));
+    }
+    const wav = Buffer.from(await res.arrayBuffer());
+    if (wav.length < 2000 || wav.toString('latin1', 0, 4) !== 'RIFF') throw new Error('what it made is not speech');
+    return { ok: true, ms: Date.now() - started };
   }
 
   // The address to speak to, once the model is ready (waits up to `waitMs` for it; she says the line with

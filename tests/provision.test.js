@@ -181,6 +181,11 @@ function world(overrides = {}) {
 }
 const states = (p) => Object.fromEntries(p.steps.map((s) => [s.id, s.state]));
 
+// (a test that fails must not leave its folder next to her for the next one to find)
+test.afterEach(() => {
+  for (const name of ['Chatterbox-Bar', 'Chatterbox-Old', 'Chatterbox-Model', 'Chatterbox-Stop', 'Chatterbox-Load', 'Chatterbox-Picked', 'Chatterbox-Card']) fs.rmSync(path.join(tmp, 'roots', name), { recursive: true, force: true });
+});
+
 // a Chatterbox folder next to her with an environment that has the package
 function readyFolder(name) {
   const dir = mk('roots', name);
@@ -464,6 +469,232 @@ test('with a folder picked for everything: Ollama comes first as the zip into it
   await plain.p.run();
   assert.deepEqual(o2, ['winget', 'installer', 'zip']);
   fs.rmSync(path.join(tmp, 'roots', 'Chatterbox-Picked'), { recursive: true, force: true });
+});
+
+test('the package of the voice has a bar over everything pip fetches: the packages, then the torch for the card, never going back, and words that say what it is on', async () => {
+  const w = world({
+    cfg: { ttsEngine: 'chatterbox', chatterboxDir: readyFolder('Chatterbox-Bar') },
+    state: { hasPackage: false, ollamaRunning: true, torchHasCuda: false },
+    deps: { hardware: async () => ({ ram: 32 * GB, vram: 12 * GB, gpu: { name: 'NVIDIA GeForce RTX 4070', vram: 12 * GB, driver: '560.94' } }) },
+  });
+  const seen = [];
+  w.p.on('change', () => { const s = w.p.step('cb-package'); if (s.state === 'running') seen.push({ progress: s.progress, detail: s.detail }); });
+  const lines = async (onLine, list) => { for (const l of list) { onLine(l); await new Promise((r) => setTimeout(r, 1)); } };
+  w.p.d.tools.preparePip = async () => ({ raw: true });
+  w.p.d.tools.pip = async (_py, args, onLine) => {
+    w.state.pips.push(args);
+    if (args.includes('--force-reinstall')) {
+      await lines(onLine, ['Downloading torch-2.6.0+cu124-cp311-cp311-win_amd64.whl (2.5 GB)', 'Progress 0 of 2500000000', 'Progress 1250000000 of 2500000000', 'Progress 2500000000 of 2500000000', 'Installing collected packages: torch', 'Successfully installed torch-2.6.0+cu124']);
+      w.state.torchHasCuda = true;
+      return { ok: true, tail: [] };
+    }
+    await lines(onLine, ['Collecting chatterbox-tts', 'Downloading chatterbox_tts-0.1.4-py3-none-any.whl (1.3 MB)', 'Progress 0 of 1300000', 'Progress 1300000 of 1300000', 'Collecting torch==2.6.0', 'Downloading torch-2.6.0-cp311-cp311-win_amd64.whl (204.2 MB)', 'Progress 0 of 204200000', 'Progress 102100000 of 204200000', 'Progress 204200000 of 204200000', 'Installing collected packages: torch, chatterbox-tts', 'Successfully installed chatterbox-tts-0.1.4']);
+    w.state.hasPackage = true;
+    return { ok: true, tail: [] };
+  };
+  await w.p.run();
+  assert.equal(w.p.step('cb-package').state, 'done');
+  const bars = seen.map((s) => s.progress).filter((p) => p !== null);
+  assert.ok(bars.length >= 4, `the bar moved (${bars.length} steps)`);
+  for (let i = 1; i < bars.length; i++) assert.ok(bars[i] >= bars[i - 1] - 1e-9, `never back: ${bars[i - 1]} then ${bars[i]}`);
+  assert.ok(bars.some((p) => p > 0.3 && p < 0.6), 'the packages are only a part: the torch for the card is still to come');
+  assert.ok(bars.some((p) => p > 0.8), 'and it goes on to the end over both');
+  assert.ok(Math.max(...bars) <= 1);
+  const words = seen.map((s) => s.detail);
+  assert.ok(words.some((d) => /Downloading torch: .* of .*\(\d+%\)/.test(d)), `it says what it is on: ${words.find((d) => /torch/.test(d))}`);
+  assert.ok(words.some((d) => /Installing what was downloaded/.test(d)), 'and that it is unpacking');
+  assert.ok(w.state.pips[0].includes('--progress-bar') && w.state.pips[0].includes('raw'), 'pip is asked for its progress in lines');
+  assert.ok(w.state.pips[1].includes('--progress-bar') && w.state.pips[1].includes('--force-reinstall'), 'also the one for the card');
+});
+
+test('a pip that cannot say how far it is still gets a bar by the files it has got, and the words it always had', async () => {
+  const w = world({ cfg: { ttsEngine: 'chatterbox', chatterboxDir: readyFolder('Chatterbox-Old') }, state: { hasPackage: false, ollamaRunning: true } });
+  const seen = [];
+  w.p.on('change', () => { const s = w.p.step('cb-package'); if (s.state === 'running') seen.push({ progress: s.progress, detail: s.detail }); });
+  w.p.d.tools.preparePip = async () => ({ raw: false });
+  w.p.d.tools.pip = async (_py, args, onLine) => {
+    w.state.pips.push(args);
+    for (const l of ['Collecting chatterbox-tts', 'Downloading chatterbox_tts-0.1.4-py3-none-any.whl (1.3 MB)', 'Downloading torch-2.6.0-cp311-cp311-win_amd64.whl (204.2 MB)', 'Installing collected packages: torch']) { onLine(l); await new Promise((r) => setTimeout(r, 1)); }
+    w.state.hasPackage = true;
+    return { ok: true, tail: [] };
+  };
+  await w.p.run();
+  assert.equal(w.p.step('cb-package').state, 'done');
+  assert.ok(!w.state.pips[0].includes('--progress-bar'), 'an old pip is not given an option it does not know');
+  assert.ok(seen.some((s) => /Installing Chatterbox: torch \(204.2 MB\)/.test(s.detail)));
+});
+
+test('the model of the voice has a bar over its whole download (not file by file), and when it is all there it says it is loading', async () => {
+  const w = world({ cfg: { ttsEngine: 'chatterbox', chatterboxDir: readyFolder('Chatterbox-Model') }, state: { ollamaRunning: true } });
+  const seen = [];
+  w.p.on('change', () => { const s = w.p.step('cb-model'); if (s.state === 'running') seen.push({ progress: s.progress, detail: s.detail, bar: s.heavy || s.bar }); });
+  let tick = 0;
+  const walk = [[0.1, 0.32e9], [0.4, 1.3e9], [0.7, 2.2e9], [null, 3.3e9]];
+  w.p.d.chatterbox.status = () => {
+    const [progress, bytes_] = walk[Math.min(tick++ >> 3, walk.length - 1)];
+    const ready = tick > 40;
+    return { phase: ready ? 'ready' : 'starting', error: '', progress, bytes: bytes_, expect: 3.2e9, device: 'cuda', log: ['loading'] };
+  };
+  w.p.d.chatterbox.sync = async () => {};
+  await w.p.run();
+  assert.equal(w.p.step('cb-model').state, 'done');
+  assert.ok(seen.every((s) => s.bar), 'a bar is shown the whole time');
+  assert.equal(w.p.attention, true, 'a download of the model is long: the window is worth showing');
+  assert.ok(seen.some((s) => s.progress === 0.4 && /Fetching the voice model: 1.2 GB of ~3.0 GB \(40%\)/.test(s.detail)), `bytes and percent: ${seen.find((s) => s.progress === 0.4)?.detail}`);
+  assert.ok(seen.some((s) => s.progress === null && /Loading the voice model/.test(s.detail)), 'then it is loading into memory');
+});
+
+test('a model is made to answer one word once: the engine of Ollama that is not whole is told as that, with the way out; the check is written down and not made at every start', async () => {
+  const broken = world({ cfg: { ttsEngine: 'openai' }, state: { ollamaRunning: true, models: ['gemma3:4b'] } });
+  broken.p.d.ollamaApi.probe = async () => ({ ok: false, engine: true, error: "error starting llama-server: llama-server binary not found (checked: C:\\Users\\x\\AppData\\Local\\Programs\\Ollama\\lib\\ollama\\llama-server.exe)" });
+  await broken.p.run();
+  const step = broken.p.step('ollama-model');
+  assert.equal(step.state, 'failed');
+  assert.match(step.error, /not installed whole/);
+  assert.match(step.error, /llama-server/);
+  assert.deepEqual(step.actions, ['repair-ollama', 'retry']);
+  assert.ok(step.log[0].includes('llama-server binary not found'), 'what Ollama said is in the details');
+  assert.equal(broken.cfg.mindChecked, undefined, 'a failed check is not written down');
+  assert.equal(broken.p.ok, false);
+
+  let probes = 0;
+  const good = world({ cfg: { ttsEngine: 'openai' }, state: { ollamaRunning: true, models: ['gemma3:4b'] } });
+  good.p.d.ollamaApi.probe = async () => { probes++; return { ok: true }; };
+  await good.p.run();
+  assert.equal(good.p.step('ollama-model').state, 'done');
+  assert.equal(probes, 1);
+  assert.match(good.cfg.mindChecked, /\|gemma3:4b$/);
+  await good.p.run();
+  assert.equal(probes, 1, 'the second start does not ask the model again');
+  good.cfg.chatModel = 'gemma3:4b';
+  good.cfg.wantModel = '';
+  // another model: it is checked
+  good.state.models.push('qwen2.5:7b');
+  good.cfg.chatModel = 'qwen2.5:7b';
+  await good.p.run();
+  assert.equal(probes, 2);
+
+  const slow = world({ cfg: { ttsEngine: 'openai' }, state: { ollamaRunning: true, models: ['gemma3:4b'] } });
+  slow.p.d.ollamaApi.probe = async () => ({ ok: false, slow: true, error: 'timeout' });
+  await slow.p.run();
+  assert.equal(slow.p.step('ollama-model').state, 'done', 'a slow load is no failure');
+  assert.equal(slow.cfg.mindChecked, undefined, 'but is not written down either');
+
+  const other = world({ cfg: { ttsEngine: 'openai' }, state: { ollamaRunning: true, models: ['gemma3:27b'] } });
+  other.p.d.ollamaApi.probe = async () => ({ ok: false, error: 'model requires more system memory (20.1 GiB) than is available (12.0 GiB)' });
+  await other.p.run();
+  assert.equal(other.p.step('ollama-model').state, 'failed');
+  assert.match(other.p.step('ollama-model').error, /gemma3:27b does not answer: model requires more system memory/);
+  assert.deepEqual(other.p.step('ollama-model').actions, ['retry']);
+});
+
+test('repairing Ollama: it is put in again over the old one (the installer first, her own zip first when it is hers), its programs are ended first, and the check is made again', async () => {
+  const order = [];
+  const killed = [];
+  const mkw = (cfg = {}) => {
+    const w = world({
+      cfg: { ttsEngine: 'openai', mindChecked: 'x|gemma3:4b', ...cfg }, state: { ollamaRunning: true, models: ['gemma3:4b'] },
+      installOllama: async () => { order.push('winget'); return { ok: false }; },
+      deps: {
+        downloadOllama: async () => { order.push('installer'); return { ok: true }; },
+        downloadOllamaZip: async () => { order.push('zip'); return { ok: true, dir: '/capri/ollama' }; },
+        killOllama: async () => { killed.push(true); },
+      },
+    });
+    w.p.d.ollamaApi.probe = async () => { order.push('probe'); return { ok: true }; };
+    return w;
+  };
+  const w = mkw();
+  await w.p.run({ repairOllama: true });
+  assert.deepEqual(order, ['installer', 'probe'], 'the installer, over the one there; then the model is asked again');
+  assert.equal(killed.length, 1);
+  assert.equal(w.p.step('ollama-find').state, 'done');
+  assert.equal(w.p.step('ollama-model').state, 'done');
+  assert.match(w.cfg.mindChecked, /gemma3:4b$/);
+  assert.notEqual(w.cfg.mindChecked, 'x|gemma3:4b', 'written anew');
+  assert.equal(w.p.repair, false, 'and it is over');
+
+  order.length = 0;
+  const hers = mkw({ ollamaDir: '/capri/ollama' });
+  await hers.p.run({ repairOllama: true });
+  assert.deepEqual(order, ['zip', 'probe'], 'hers is a zip in her folder: fetched again there');
+  assert.equal(hers.cfg.ollamaDir, '/capri/ollama');
+
+  // a mind that is a service of the cloud: a repair is asked for, so it is done all the same
+  order.length = 0;
+  const cloud = mkw({ provider: 'openai', chatModel: 'gpt-4o' });
+  await cloud.p.run({ repairOllama: true });
+  assert.ok(order.includes('installer'));
+  assert.equal(cloud.cfg.chatModel, 'gpt-4o', 'her settings are left as they are');
+  assert.equal(cloud.cfg.provider, 'openai');
+
+  // still without its engine after it: said, and no second "repair"
+  const still = mkw();
+  still.p.d.ollamaApi.probe = async () => ({ ok: false, engine: true, error: 'llama-server binary not found' });
+  await still.p.run({ repairOllama: true });
+  assert.equal(still.p.step('ollama-model').state, 'failed');
+  assert.match(still.p.step('ollama-model').error, /still without its engine/);
+  assert.ok(!still.p.step('ollama-model').actions.includes('repair-ollama'));
+});
+
+// a PC with an NVIDIA card and a Chatterbox folder whose environment has no package yet: the package, then the torch for the card
+function cardWorld(extra = {}) {
+  const w = world({
+    cfg: { ttsEngine: 'chatterbox', chatterboxDir: readyFolder('Chatterbox-Card') },
+    state: { hasPackage: false, ollamaRunning: true, torchHasCuda: false },
+    deps: { hardware: async () => ({ ram: 32 * GB, vram: 12 * GB, gpu: { name: 'NVIDIA GeForce RTX 4070', vram: 12 * GB, driver: '560.94' } }) },
+    ...extra,
+  });
+  w.p.d.tools.pip = async (_py, args) => {
+    w.state.pips.push(args);
+    if (args.includes('--force-reinstall')) w.state.torchHasCuda = true;
+    else w.state.hasPackage = true;
+    return { ok: true, tail: [] };
+  };
+  return w;
+}
+
+test('after the torch for the card the versions are looked at: torch and torchaudio of one version, the card seen, what pip finds wrong kept for the report', async () => {
+  const bad = cardWorld();
+  bad.p.d.tools.torchStatus = () => ({ version: '2.7.1', audio: '2.6.0', cuda: bad.state.torchHasCuda });
+  await bad.p.run();
+  assert.equal(bad.p.step('cb-package').state, 'failed');
+  assert.match(bad.p.step('cb-package').error, /torch \(2\.7\.1\) and torchaudio \(2\.6\.0\) of different versions/);
+  assert.equal(bad.p.step('cb-model').state, 'pending', 'the voice is not started on it');
+
+  const blind = cardWorld();
+  blind.p.d.tools.torchStatus = () => ({ version: '2.6.0', audio: '2.6.0', cuda: false });
+  blind.p.d.tools.pipCheck = () => ['chatterbox-tts 0.1.4 has requirement torch==2.6.0, but you have torch 2.7.1+cu128.'];
+  await blind.p.run();
+  assert.equal(blind.p.step('cb-package').state, 'done', 'a card that is not seen is no failure: the voice is slow');
+  assert.deepEqual(blind.p.step('cb-package').log, ['chatterbox-tts 0.1.4 has requirement torch==2.6.0, but you have torch 2.7.1+cu128.'], 'what pip found is in the report');
+  assert.match(blind.p.report(), /has requirement torch==2\.6\.0/);
+});
+
+test('the voice is made to say a line once; a voice that loads and does not speak is told as that; the next start does not do it again', async () => {
+  let spoken = 0;
+  let torchLooks = 0;
+  const w = cardWorld();
+  w.p.d.tools.torchStatus = () => { torchLooks++; return { version: '2.6.0', audio: '2.6.0', cuda: w.state.torchHasCuda }; };
+  w.p.d.chatterbox.check = async () => { spoken++; };
+  await w.p.run();
+  assert.equal(w.p.step('cb-model').state, 'done');
+  assert.equal(spoken, 1);
+  assert.ok(w.cfg.voiceChecked, 'written down');
+  const looks = torchLooks;
+  assert.ok(looks >= 2, 'the torch was looked at (before and after the build for the card)');
+  w.state.cbPhase = 'off';
+  await w.p.run();
+  assert.equal(spoken, 1, 'not again');
+  assert.equal(torchLooks, looks, 'and the torch is not looked at (it takes a while to load) at every start');
+
+  const mute = cardWorld();
+  mute.p.d.chatterbox.check = async () => { throw new Error('CUDA error: no kernel image is available for execution on the device'); };
+  await mute.p.run();
+  assert.equal(mute.p.step('cb-model').state, 'failed');
+  assert.match(mute.p.step('cb-model').error, /did not speak: CUDA error: no kernel image/);
+  assert.deepEqual(mute.p.step('cb-model').actions, ['retry', 'choose-chatterbox']);
+  assert.ok(!mute.cfg.voiceChecked, 'a failure is not written down');
 });
 
 test('pip given a signal ends the program and everything it started, and answers cancelled at once', async () => {

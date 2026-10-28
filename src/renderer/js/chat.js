@@ -283,6 +283,24 @@ export class Chat {
     if (!res.ok) {
       this.history.pop();
       this.panel.setFace('wide');
+      // Ollama's engine is not whole: said plainly, with a button that puts it right (and not the names of the files it looked for)
+      if (res.code === 'engine') {
+        this.panel.say({
+          kind: 'info',
+          face: 'aside',
+          guide: true,
+          line: this.t.engine,
+          actions: [{ id: 'repair', label: this.t.repairOllama, primary: true }, { id: 'ok', label: this.t.ok }],
+          onAction: (id) => {
+            if (id === 'repair') this.host.ollamaRepair?.();
+            this.panel.hide();
+          },
+          hold: null,
+        });
+        this.panel.setChatBusy(false);
+        this.later = '';
+        return;
+      }
       // too busy or gone even after trying other models (main.js): said plainly, not the server's JSON
       const known = { busy: 'swamped', gone: 'gone', credit: 'credit', badkey: 'badkey', refused: 'refused' }[res.code];
       this.panel.stream(known ? this.t[known] : `${this.t.failed} ${res.error}`, { done: true });

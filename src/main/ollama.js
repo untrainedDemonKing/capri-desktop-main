@@ -34,13 +34,20 @@ function base() {
   return host.replace('://0.0.0.0', '://127.0.0.1').replace(/\/+$/, '');
 }
 
+// An error of Ollama that says its engine is not whole: a file of it is not there (an install that was cut short, a file
+// taken away by the virus protection, which does that to programs that run models). Putting Ollama in again puts that right.
+const BROKEN_ENGINE = /llama-server|binary not found|0xc0000135|0xc000007b|cannot find the (file|path) specified/i;
+const engineBroken = (message) => BROKEN_ENGINE.test(String(message));
+// (code 'engine': her chat says that plainly, with the way out, and not the file names Ollama searched in)
+const asError = (message) => Object.assign(new Error(message), engineBroken(message) ? { code: 'engine' } : {});
+
 // Ollama's errors come as {"error": "..."}
 async function failure(res) {
   const body = await res.text().catch(() => '');
   try {
-    return new Error(JSON.parse(body).error);
+    return asError(JSON.parse(body).error);
   } catch {
-    return new Error(body || `Ollama answered ${res.status}`);
+    return asError(body || `Ollama answered ${res.status}`);
   }
 }
 
@@ -93,7 +100,7 @@ async function once({ model, messages, task = 'look' }, signal) {
   });
   if (!res.ok) throw await failure(res);
   const body = await res.json();
-  if (body.error) throw new Error(body.error);
+  if (body.error) throw asError(body.error);
   return body.message?.content || '';
 }
 
@@ -136,7 +143,7 @@ async function chat({ model, messages, task = 'chat', lang = 'en' }, onDelta, si
       buffer = buffer.slice(nl + 1);
       if (!line) continue;
       const msg = JSON.parse(line);
-      if (msg.error) throw new Error(msg.error);
+      if (msg.error) throw asError(msg.error);
       const piece = msg.message?.content || ''; // a thinking model's reasoning comes apart, and is left out
       if (piece) {
         text += piece;
@@ -165,7 +172,7 @@ async function measure(model, signal) {
   });
   if (!res.ok) throw await failure(res);
   const body = await res.json();
-  if (body.error) throw new Error(body.error);
+  if (body.error) throw asError(body.error);
   const sample = { evalCount: body.eval_count, evalNs: body.eval_duration, size: 0, vram: NaN };
   try {
     const ps = await fetch(`${base()}/api/ps`, { signal: AbortSignal.timeout(2500) });
@@ -177,6 +184,25 @@ async function measure(model, signal) {
     // an older Ollama has no /api/ps: the speed is still known
   }
   return sample;
+}
+
+// One word of an answer, to know that the model can really be run here (its engine is whole, the memory is enough):
+// resolves { ok: true }, or { ok: false, error, engine (its engine is not whole), slow (it did not answer in time) }.
+async function probe(model, signal = AbortSignal.timeout(240000)) {
+  try {
+    const res = await fetch(`${base()}/api/generate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model, prompt: 'Hi', stream: false, keep_alive: tuning.keepAlive, options: withContext({ num_predict: 1, temperature: 0 }) }),
+      signal,
+    });
+    if (!res.ok) throw await failure(res);
+    const body = await res.json();
+    if (body.error) throw asError(body.error);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err).slice(0, 400), engine: err.code === 'engine', slow: err.name === 'TimeoutError' || err.name === 'AbortError' };
+  }
 }
 
 // Fetches a model. Ollama sends its pieces one after the other: onProgress({ completed, total })
@@ -217,4 +243,4 @@ async function pull(name, onProgress, signal) {
 // what she asks with now (a copy)
 const current = () => ({ ...tuning });
 
-module.exports = { base, tune, current, version, models, list, remove, warm, chat, once, measure, pull };
+module.exports = { base, tune, current, version, models, list, remove, warm, chat, once, measure, pull, probe, engineBroken };

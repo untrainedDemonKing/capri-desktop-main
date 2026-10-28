@@ -187,6 +187,13 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
   });
   ipcMain.handle('hub:voiceKey', (_e, { engine, key } = {}) => saveVoiceKey({ engine, key: String(key || '').trim() }));
   ipcMain.handle('hub:apply', (_e, choice) => apply(choice));
+  // Ollama's engine is not whole: it is put in again over the one that is there
+  ipcMain.handle('hub:repairOllama', async () => {
+    if (provision.running || cleanup?.busy || relocate?.busy) return { ok: false, error: 'busy' };
+    last = null;
+    provision.run({ repairOllama: true });
+    return { ok: true };
+  });
   ipcMain.handle('hub:retry', () => {
     provision.run();
     return true;

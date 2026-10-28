@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('hub', {
   retry: () => ipcRenderer.invoke('hub:retry'),
   stop: () => ipcRenderer.invoke('hub:stop'),
   report: () => ipcRenderer.invoke('hub:report'),
+  repairOllama: () => ipcRenderer.invoke('hub:repairOllama'),
   folderChoose: () => ipcRenderer.invoke('hub:folderChoose'),
   folderReset: () => ipcRenderer.invoke('hub:folderReset'),
   folderOpen: () => ipcRenderer.invoke('hub:folderOpen'),

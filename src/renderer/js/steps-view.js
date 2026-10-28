@@ -31,7 +31,7 @@
     body.append(el('div', 'step__name', ui[s.id] || s.id));
     if (s.state === 'pending') body.append(el('div', 'step__detail', ui.pending));
     else if (s.detail) body.append(el('div', 'step__detail', s.detail));
-    if (s.state === 'running' && (s.heavy || s.progress !== null)) {
+    if (s.state === 'running' && (s.heavy || s.bar || s.progress !== null)) {
       const bar = el('div', 'bar');
       const fillBar = el('i');
       if (s.progress === null) bar.dataset.unknown = 'true';

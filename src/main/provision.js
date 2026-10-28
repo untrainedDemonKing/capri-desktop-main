@@ -34,6 +34,9 @@ const STEPS = [
   ['pp-find', 'voice'], ['pp-voice', 'voice'], ['pp-run', 'voice'],
 ];
 const CB_MODEL_WAIT = 20 * 60 * 1000;
+// about how much pip fetches for the voice, to show how far it is before it says (the packages of chatterbox-tts; then the torch for a graphics card)
+const PIP_PACKAGES_BYTES = 0.7e9;
+const PIP_CARD_BYTES = 2.7e9;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- which model to talk with ----
@@ -96,7 +99,7 @@ class Provision extends EventEmitter {
   }
 
   reset() {
-    this.steps = STEPS.map(([id, group]) => ({ id, group, state: 'pending', progress: null, detail: '', error: '', heavy: false, actions: [], log: [] }));
+    this.steps = STEPS.map(([id, group]) => ({ id, group, state: 'pending', progress: null, detail: '', error: '', heavy: false, bar: false, actions: [], log: [] }));
   }
 
   step(id) {
@@ -127,16 +130,16 @@ class Provision extends EventEmitter {
 
   begin(id, patch = {}) {
     this.checkStop();
-    this.update(id, { state: 'running', progress: null, error: '', actions: [], detail: '', heavy: false, ...patch });
+    this.update(id, { state: 'running', progress: null, error: '', actions: [], detail: '', heavy: false, bar: false, ...patch });
   }
 
   done(id, detail = '') {
-    this.update(id, { state: 'done', progress: null, detail, error: '', actions: [], heavy: false });
+    this.update(id, { state: 'done', progress: null, detail, error: '', actions: [], heavy: false, bar: false });
   }
 
   fail(id, error, actions = ['retry'], log = []) {
     this.checkStop(); // (what ends because she was stopped did not fail)
-    this.update(id, { state: 'failed', progress: null, detail: '', error: String(error).slice(0, 400), actions, heavy: false, log });
+    this.update(id, { state: 'failed', progress: null, detail: '', error: String(error).slice(0, 400), actions, heavy: false, bar: false, log });
     throw Object.assign(new Error(error), { step: id, handled: true });
   }
 
@@ -165,12 +168,12 @@ class Provision extends EventEmitter {
   // the steps that were going on when she was stopped say so (they are not failures; the ones not begun wait)
   settleStopped() {
     for (const s of this.steps) {
-      if (s.state === 'running') Object.assign(s, { state: 'stopped', progress: null, detail: this.t('stoppedStep'), error: '', actions: [], heavy: false });
+      if (s.state === 'running') Object.assign(s, { state: 'stopped', progress: null, detail: this.t('stoppedStep'), error: '', actions: [], heavy: false, bar: false });
     }
   }
 
   skip(id, detail = '') {
-    this.update(id, { state: 'skipped', progress: null, detail, error: '', actions: [], heavy: false });
+    this.update(id, { state: 'skipped', progress: null, detail, error: '', actions: [], heavy: false, bar: false });
   }
 
   // what is on this PC already, so the plan counts only what is missing
@@ -237,7 +240,8 @@ class Provision extends EventEmitter {
     return this.job;
   }
 
-  async go({ rescan = false } = {}) {
+  async go({ rescan = false, repairOllama = false } = {}) {
+    this.repair = repairOllama; // (Ollama is put in again, over the one that is there: its engine is not whole)
     this.running = true;
     this.finished = false;
     this.ok = false;
@@ -256,6 +260,7 @@ class Provision extends EventEmitter {
     if (this.step('scan').state === 'done' && !this.cancelled) {
       const cfg = this.d.cfg();
       this.plan = this.decide(cfg, this.profile, this.have);
+      if (this.repair) this.plan.ollama = true;
       for (const s of this.steps) {
         if (s.id !== 'scan' && !this.wanted(s)) s.state = 'skipped';
       }
@@ -283,6 +288,7 @@ class Provision extends EventEmitter {
     this.finished = true;
     this.ok = this.steps.every((s) => s.state === 'done' || s.state === 'skipped');
     if (this.cancelled) this.ok = false;
+    this.repair = false;
     this.d.cleanTemp?.(); // (what a stopped download left behind)
     this.emit('change', this.snapshot());
     this.emit('finish', { ok: this.ok, plan: this.plan, attention: this.attention, profile: this.profile?.id, cancelled: this.cancelled });
@@ -389,16 +395,29 @@ class Provision extends EventEmitter {
     const { ollamaHost, ollamaApi } = this.d;
     const cfg = () => this.d.cfg();
     const lang = this.d.lang();
-    // find it
+    // find it (or, when it is to be repaired, put it in again: over the one that is there, whose engine is not whole)
+    const repair = this.repair;
     this.begin('ollama-find');
-    if (await ollamaHost.versionFn()) {
+    if (!repair && await ollamaHost.versionFn()) {
       this.done('ollama-find', this.t('olRunning'));
     } else {
-      let found = await ollamaHost.locate(cfg());
-      if (!found && !String(cfg().ollamaDir || '').trim()) {
+      let found = repair ? null : await ollamaHost.locate(cfg());
+      const named = String(cfg().ollamaDir || '').trim();
+      if (repair) {
+        this.update('ollama-find', { heavy: true, detail: this.t('olRepairing') });
+        this.d.save({ mindChecked: '' });
+        ollamaHost.stop(false);
+        await this.raceStop(Promise.resolve(this.d.killOllama?.()).catch(() => {})); // (its tray program and its server hold the files)
+      }
+      if (!found && (repair || !named)) {
         // nowhere: get it (winget, else its own installer, else its zip)
         const installs = [['winget', this.d.installOllama], ['installer', this.d.downloadOllama], ['zip', this.d.downloadOllamaZip]].filter(([, fn]) => fn);
         if (this.d.preferZip?.()) installs.sort(([a], [b]) => (b === 'zip') - (a === 'zip')); // (a folder you picked for everything: Ollama comes into it first)
+        // (repairing: the installer over the one there is keeps its models; her own zip is fetched again into its folder)
+        if (repair) {
+          const order = named ? ['zip', 'installer', 'winget'] : ['installer', 'winget', 'zip'];
+          installs.sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
+        }
         for (const [how, install] of installs) {
           this.begin('ollama-find', { heavy: true, detail: this.t('olInstalling', { line: '' }) });
           const res = await this.raceStop(Promise.resolve(install((line) => this.update('ollama-find', { detail: this.t('olInstalling', { line: String(line).slice(0, 80) }) }), this.abort.signal)).catch((err) => ({ ok: false, error: err.message })));
@@ -411,6 +430,7 @@ class Provision extends EventEmitter {
           }
         }
       }
+      if (!found && repair) found = await ollamaHost.locate(cfg()); // (nothing could be put in again, or nothing was asked to: what is there is looked at, and said)
       if (!found) this.fail('ollama-find', this.t('olMissing'), ['retry', 'choose-ollama', 'open-ollama-site']);
       this.done('ollama-find', this.t('olFoundAt', { path: found.exe }));
     }
@@ -427,12 +447,20 @@ class Provision extends EventEmitter {
     // of those she has, else the profile's
     this.begin('ollama-model');
     const models = await ollamaApi.models().catch(() => []);
+    // (a repair asked for while her mind is a service of the cloud: the engine is looked at with a model that is there, and her settings are left as they are)
+    if (repair && (cfg().provider || 'ollama') !== 'ollama') {
+      const there = pickInstalled(models, null);
+      if (there) await this.checkModel(there);
+      this.done('ollama-model', there ? this.t('olModelHave', { model: there }) : '');
+      return;
+    }
     const picked = String(cfg().wantModel || '').trim();
     if (picked) {
       const there = sameModel(models, picked);
       if (there) {
         this.d.save({ chatModel: there, wantModel: '', provider: 'ollama' });
         await this.d.onModelsChanged();
+        await this.checkModel(there);
         this.done('ollama-model', this.t('olModelHave', { model: there }));
         return;
       }
@@ -445,6 +473,7 @@ class Provision extends EventEmitter {
       if (cfg().chatModel !== have && (asked || !models.includes(cfg().chatModel))) this.d.save({ chatModel: have });
       if (reselect) this.d.save({ profileApplied: cfg().profile });
       await this.d.onModelsChanged();
+      await this.checkModel(have);
       this.done('ollama-model', this.t('olModelHave', { model: have }));
       return;
     }
@@ -466,7 +495,27 @@ class Provision extends EventEmitter {
     this.d.record('model', name); // hers: she can take it off again
     this.d.save({ chatModel: name, provider: 'ollama', ...(picked ? { wantModel: '' } : {}), ...(reselect ? { profileApplied: cfg().profile } : {}) });
     await this.d.onModelsChanged();
+    await this.checkModel(name);
     this.done('ollama-model', this.t('olModelHave', { model: name }));
+  }
+
+  // Can the model really be run here? One word of an answer says it: Ollama's engine is whole, the memory is enough. Done once
+  // for this Ollama with this model (it is written down), not at every start. An engine that is not whole (a file gone: an install that
+  // was cut short, the virus protection) is told as that, with the way out; any other reason is told as it is.
+  async checkModel(name) {
+    const { ollamaHost, ollamaApi } = this.d;
+    if (!ollamaApi.probe) return;
+    const key = `${ollamaHost.status().exe || ''}|${name}`;
+    if (!this.repair && this.d.cfg().mindChecked === key) return;
+    this.update('ollama-model', { bar: true, progress: null, detail: this.t('olChecking', { model: name }) });
+    const res = await this.raceStop(Promise.resolve(ollamaApi.probe(name, this.abort.signal)));
+    if (res.ok) {
+      this.d.save({ mindChecked: key });
+      return;
+    }
+    if (res.slow) return; // (a model that takes long to load on this PC: it is no failure, and it is looked at again next time)
+    if (res.engine) this.fail('ollama-model', this.t(this.repair ? 'olBrokenAfter' : 'olBroken'), this.repair ? ['retry', 'open-ollama-site'] : ['repair-ollama', 'retry'], [res.error]);
+    this.fail('ollama-model', this.t('olProbeFailed', { model: name, error: res.error }), ['retry'], [res.error]);
   }
 
   // ---- her voice: Chatterbox ----
@@ -531,21 +580,41 @@ class Provision extends EventEmitter {
     }
     // the package, in it
     this.begin('cb-package');
+    let progress = null; // how far pip is, over the whole step
+    let raw = false; // pip can say it in lines
+    const checkKey = String(python || 'system');
+    let checked = cfg().voiceChecked === checkKey; // the card and the voice were looked at for this Python already: not at every start
     if (python && !setup.hasChatterbox(python)) {
-      this.begin('cb-package', { heavy: true, detail: this.t('cbPackageInstalling', { what: 'chatterbox-tts' }) });
+      checked = false;
+      this.d.save({ voiceChecked: '' });
+      this.begin('cb-package', { heavy: true, progress: null, detail: this.t('cbPackageInstalling', { what: 'chatterbox-tts' }) });
       const target = setup.installTarget(dir);
-      const onLine = (line) => {
-        const a = setup.pipActivity(line);
-        if (a) this.update('cb-package', { detail: this.t('cbPackageInstalling', { what: `${a.what}${a.size ? ` (${a.size})` : ''}` }) });
-      };
       const wheels = this.wheelhouse(dir);
-      const res = await this.raceStop(setup.pip(python, ['install', '--no-cache-dir', ...(wheels ? ['--find-links', wheels] : []), ...target.args], onLine, this.pipOptions())); // (no cache: gigabytes of wheels would stay behind)
+      // how far it is: a bar over everything the step fetches (the packages, and the torch for the card after them)
+      progress = tools.createPipProgress();
+      progress.phase(PIP_PACKAGES_BYTES, this.wantsCard() ? PIP_CARD_BYTES : 0);
+      this.update('cb-package', { detail: this.t('cbPipUpdating') });
+      const prep = await this.raceStop(Promise.resolve(setup.preparePip?.(python, this.pipOptions())).catch(() => null));
+      raw = Boolean(prep?.raw);
+      const onLine = (line) => {
+        const changed = progress.feed(line);
+        if (raw) {
+          if (changed) this.showPip('cb-package', progress, 'cbPackageGetting', raw);
+          return;
+        }
+        const a = setup.pipActivity(line);
+        if (a) this.update('cb-package', { progress: progress.view().fraction || null, detail: this.t('cbPackageInstalling', { what: `${a.what}${a.size ? ` (${a.size})` : ''}` }) });
+      };
+      const res = await this.raceStop(setup.pip(python, ['install', '--no-cache-dir', ...(raw ? ['--progress-bar', 'raw'] : []), ...(wheels ? ['--find-links', wheels] : []), ...target.args], onLine, this.pipOptions())); // (no cache: gigabytes of wheels would stay behind)
       if (!res.ok) this.fail('cb-package', this.t('cbPackageFailed', { error: res.tail.slice(-3).join(' ') }), ['retry'], res.tail);
     }
-    if (python) await this.graphicsCard(python);
+    if (python && !checked) {
+      const made = await this.graphicsCard(python, { progress, raw });
+      if (made === 'installed') this.verifyTorch(python);
+    }
     this.done('cb-package', this.t('cbPackageHave'));
     // start it, and wait for the model
-    this.begin('cb-model', { detail: this.t('cbLoading') });
+    this.begin('cb-model', { bar: true, detail: this.t('cbLoading') }); // (a bar all the time: it goes with the download, and runs back and forth while the model is put into memory; it is no reason to open the window: that is a download)
     if (!cfg().ttsEngine || cfg().ttsEngine !== 'chatterbox') this.d.save({ ttsEngine: 'chatterbox', voiceMode: cfg().voiceMode === 'off' ? 'chat' : cfg().voiceMode, provisioned: true });
     const starting = chatterbox.status().phase === 'failed' ? chatterbox.restart(cfg()) : chatterbox.sync(cfg());
     try {
@@ -555,12 +624,29 @@ class Provision extends EventEmitter {
         this.checkStop();
         const st = chatterbox.status();
         if (st.phase === 'ready') {
+          if (!checked && chatterbox.check) {
+            // it is loaded: does it speak? (once for this Python: it is written down)
+            this.update('cb-model', { bar: true, progress: null, detail: this.t('cbChecking') });
+            try {
+              await this.raceStop(chatterbox.check(cfg(), this.d.lang()));
+            } catch (err) {
+              if (err.cancelled) throw err;
+              this.fail('cb-model', this.t('cbCheckFailed', { error: err.message }), ['retry', 'choose-chatterbox'], chatterbox.status().log);
+            }
+            this.d.save({ voiceChecked: checkKey });
+          }
           this.done('cb-model', this.t('cbReady', { device: st.device || 'cpu' }));
           return;
         }
         if (st.phase === 'failed') this.fail('cb-model', this.t('cbFailed', { error: st.error }), ['retry', 'choose-chatterbox'], st.log);
-        if (st.progress !== null) this.update('cb-model', { heavy: true, progress: st.progress, detail: this.t('cbDownloading', { percent: Math.round(st.progress * 100) }) });
-        else this.update('cb-model', { detail: st.log.length ? `${this.t('cbLoading')} ${st.log[st.log.length - 1].slice(0, 80)}` : this.t('cbLoading') });
+        if (st.progress !== null) {
+          const lang = this.d.lang();
+          const percent = Math.round(st.progress * 100);
+          this.update('cb-model', {
+            heavy: true, progress: st.progress,
+            detail: st.bytes ? this.t('cbDownloadingOf', { done: bytes(st.bytes, lang), total: bytes(st.expect, lang), percent }) : this.t('cbDownloading', { percent }),
+          });
+        } else this.update('cb-model', { bar: true, progress: null, detail: st.log.length ? `${this.t('cbLoading')} ${st.log[st.log.length - 1].slice(0, 80)}` : this.t('cbLoading') });
         await this.raceStop(sleep(400));
       }
     } catch (err) {
@@ -598,13 +684,17 @@ class Provision extends EventEmitter {
     return '';
   }
 
-  // an NVIDIA card (the profile says there is one that can carry the voice) and a torch that cannot use it: the
-  // same torch, built for the card and its driver (not fatal if it cannot be)
-  async graphicsCard(python) {
-    const { tools: setup } = this.d;
+  // does the voice want the graphics card (the profile says there is an NVIDIA one that can carry it)?
+  wantsCard() {
     const cfg = this.d.cfg();
-    const wantsCard = this.profile?.voice.device === 'cuda' || cfg.chatterboxDevice === 'cuda';
-    if (!wantsCard || cfg.chatterboxDevice === 'cpu') return;
+    return (this.profile?.voice.device === 'cuda' || cfg.chatterboxDevice === 'cuda') && cfg.chatterboxDevice !== 'cpu';
+  }
+
+  // an NVIDIA card and a torch that cannot use it: the same torch, built for the card and its driver (not fatal if it
+  // cannot be). `progress`: the bar of the step, and `raw`: pip can tell how far it is.
+  async graphicsCard(python, { progress = null, raw = false } = {}) {
+    const { tools: setup } = this.d;
+    if (!this.wantsCard()) return;
     const torch = setup.torchStatus(python);
     if (!torch || torch.cuda) return;
     const args = setup.cudaTorchArgs(torch, this.hw?.gpu || {});
@@ -615,8 +705,51 @@ class Provision extends EventEmitter {
     this.update('cb-package', { heavy: true, detail: this.t('cbGpu') });
     // (no cache here either: the build for the card is gigabytes)
     const uncached = args[0] === 'install' && !args.includes('--no-cache-dir') ? [args[0], '--no-cache-dir', ...args.slice(1)] : args;
-    const res = await this.raceStop(setup.pip(python, uncached, () => {}, this.pipOptions()));
-    if (!res.ok) this.update('cb-package', { detail: this.t('cbCpu') });
+    const bar = progress || tools.createPipProgress();
+    bar.phase(PIP_CARD_BYTES);
+    const onLine = (line) => {
+      if (bar.feed(line) && raw) this.showPip('cb-package', bar, 'cbGpuGetting', raw);
+    };
+    const res = await this.raceStop(setup.pip(python, [...uncached.slice(0, 1), ...(raw ? ['--progress-bar', 'raw'] : []), ...uncached.slice(1)], onLine, this.pipOptions()));
+    if (!res.ok) {
+      this.update('cb-package', { detail: this.t('cbCpu') });
+      return 'failed';
+    }
+    return 'installed';
+  }
+
+  // After torch was put in for the card: it is of one version with torchaudio (else the model does not load), it sees the card,
+  // and what pip finds wrong with the versions together is kept for the report (the card's torch is not the version the package
+  // asks for on the newest cards: that is no reason to stop)
+  verifyTorch(python) {
+    const { tools: setup } = this.d;
+    const torch = setup.torchStatus(python);
+    if (!torch) return;
+    if (!tools.sameTorch(torch)) this.fail('cb-package', this.t('cbTorchMismatch', { torch: torch.version, audio: torch.audio }), ['retry', 'choose-chatterbox']);
+    if (!torch.cuda) this.update('cb-package', { detail: this.t('cbNoCuda') });
+    const conflicts = setup.pipCheck?.(python) || [];
+    if (conflicts.length) this.update('cb-package', { log: conflicts });
+  }
+
+  // the bar of a step that pip fills: how far it is over everything, and in words what it is on now (not more than a few
+  // times a second: pip's lines come hundreds of times a second)
+  showPip(id, progress, key, raw) {
+    const view = progress.view();
+    const at = Date.now();
+    const shown = this.pipShown || (this.pipShown = {});
+    const sign = `${id}|${view.stage}|${view.what}`;
+    if (shown.sign === sign && Math.abs(view.fraction - shown.fraction) < 0.004 && at - shown.at < 800) return;
+    Object.assign(shown, { sign, fraction: view.fraction, at });
+    const lang = this.d.lang();
+    let detail;
+    if (view.stage === 'installing') detail = this.t('cbPackageUnpacking');
+    else if (raw && view.total) {
+      detail = this.t(key, {
+        what: view.what || 'chatterbox-tts', done: bytes(view.done, lang), total: bytes(view.total, lang), percent: Math.round(view.fraction * 100),
+        rate: view.rate > 50e3 ? ` · ${bytes(view.rate, lang)}/${lang === 'ru' ? 'с' : 's'}` : '',
+      });
+    } else detail = this.t('cbPackageInstalling', { what: view.what || 'chatterbox-tts' });
+    this.update(id, { heavy: true, progress: view.fraction, detail });
   }
 
   // ---- her voice: Piper ----

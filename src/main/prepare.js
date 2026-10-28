@@ -117,6 +117,12 @@ function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provi
     provision.run();
     return true;
   });
+  ipcMain.handle('prepare:repairOllama', () => {
+    if (provision.running) return false;
+    dismissed = false;
+    provision.run({ repairOllama: true });
+    return true;
+  });
   ipcMain.handle('prepare:rescan', async () => {
     if (provision.running) return false;
     dismissed = false;

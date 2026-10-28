@@ -38,7 +38,7 @@ function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', t
     running: false, job: null, runs: 0, cancels: 0, previews: 0,
     preview: async () => { prov.previews++; return { hw, have, profile: profiles.plan(hw, { have }) }; },
     snapshot: () => ({ running: prov.running, steps: [], plan: {} }),
-    run() { prov.runs++; return Promise.resolve(); },
+    run(opts) { prov.runs++; prov.lastRun = opts; return Promise.resolve(); },
     cancel() { prov.cancels++; },
     report: () => 'the report',
   });
@@ -431,4 +431,14 @@ test('moving what is fetched already into the folder in use: what can go is told
   const none = world({ folder });
   assert.deepEqual((await none.call('hub:state')).folder.movable, []);
   assert.deepEqual(await none.call('hub:folderMove'), { ok: false, error: 'missing' });
+});
+
+test('"Repair Ollama": the preparation is run again with Ollama put in over itself; not while something is fetched or moved', async () => {
+  const w = world();
+  assert.deepEqual(await w.call('hub:repairOllama'), { ok: true });
+  assert.deepEqual(w.prov.lastRun, { repairOllama: true });
+  assert.equal(w.prov.runs, 1);
+  w.prov.running = true;
+  assert.deepEqual(await w.call('hub:repairOllama'), { ok: false, error: 'busy' });
+  assert.equal(w.prov.runs, 1);
 });
