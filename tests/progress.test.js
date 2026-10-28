@@ -100,9 +100,9 @@ test('raw progress lines do not fill the tail of what pip said (the lines that s
 
 test('whether a pip can print its progress is read from its own help; an older one is made newer first, and a failure of that is no reason to stop', async () => {
   const help = (text) => (_py, args) => ({ ok: true, out: args.includes('--help') ? text : '' });
-  assert.equal(setup.supportsRawProgress('py', { run: help('--progress-bar <progress_bar>\n Specify whether the progress bar should be used.\n [auto, on, off, raw] (default: auto)') }), true);
-  assert.equal(setup.supportsRawProgress('py', { run: help('--progress-bar <progress_bar>\n Specify whether the progress bar should be used [on, off] (default: on)') }), false);
-  assert.equal(setup.supportsRawProgress('py', { run: () => ({ ok: false, out: '' }) }), false);
+  assert.equal(await setup.supportsRawProgress('py', { run: help('--progress-bar <progress_bar>\n Specify whether the progress bar should be used.\n [auto, on, off, raw] (default: auto)') }), true);
+  assert.equal(await setup.supportsRawProgress('py', { run: help('--progress-bar <progress_bar>\n Specify whether the progress bar should be used [on, off] (default: on)') }), false);
+  assert.equal(await setup.supportsRawProgress('py', { run: () => ({ ok: false, out: '' }) }), false);
   // an old pip: it is upgraded, and then it can
   let upgraded = false;
   const run = (_py, args) => ({ ok: true, out: args.includes('--help') ? (upgraded ? '--progress-bar [auto, on, off, raw]' : '--progress-bar [on, off]') : '' });
@@ -187,11 +187,11 @@ test('the voice says a line to prove that it speaks: wav back is speech, an erro
   await assert.rejects(() => scrap.check({}, 'en'), /not speech/);
 });
 
-test('torch and torchaudio of one version, and what pip finds wrong is read from its words', () => {
+test('torch and torchaudio of one version, and what pip finds wrong is read from its words', async () => {
   assert.equal(setup.sameTorch({ version: '2.6.0', audio: '2.6.0' }), true);
   assert.equal(setup.sameTorch({ version: '2.6.0', audio: '2.6.1' }), true, 'a fix release of one is the same');
   assert.equal(setup.sameTorch({ version: '2.7.1', audio: '2.6.0' }), false);
   assert.equal(setup.sameTorch({ version: '2.6.0', audio: '' }), true, 'no torchaudio: nothing to differ from');
-  assert.deepEqual(setup.pipCheck('py', { run: () => ({ ok: true, out: 'No broken requirements found.' }) }), []);
-  assert.deepEqual(setup.pipCheck('py', { run: () => ({ ok: false, out: 'chatterbox-tts 0.1.4 has requirement torch==2.6.0, but you have torch 2.7.1.\nsomething else' }) }), ['chatterbox-tts 0.1.4 has requirement torch==2.6.0, but you have torch 2.7.1.']);
+  assert.deepEqual(await setup.pipCheck('py', { run: () => ({ ok: true, out: 'No broken requirements found.' }) }), []);
+  assert.deepEqual(await setup.pipCheck('py', { run: () => ({ ok: false, out: 'chatterbox-tts 0.1.4 has requirement torch==2.6.0, but you have torch 2.7.1.\nsomething else' }) }), ['chatterbox-tts 0.1.4 has requirement torch==2.6.0, but you have torch 2.7.1.']);
 });

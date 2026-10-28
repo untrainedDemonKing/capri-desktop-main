@@ -610,7 +610,7 @@ class Provision extends EventEmitter {
     }
     if (python && !checked) {
       const made = await this.graphicsCard(python, { progress, raw });
-      if (made === 'installed') this.verifyTorch(python);
+      if (made === 'installed') await this.verifyTorch(python);
     }
     this.done('cb-package', this.t('cbPackageHave'));
     // start it, and wait for the model
@@ -695,7 +695,7 @@ class Provision extends EventEmitter {
   async graphicsCard(python, { progress = null, raw = false } = {}) {
     const { tools: setup } = this.d;
     if (!this.wantsCard()) return;
-    const torch = setup.torchStatus(python);
+    const torch = await this.raceStop(Promise.resolve(setup.torchStatus(python)));
     if (!torch || torch.cuda) return;
     const args = setup.cudaTorchArgs(torch, this.hw?.gpu || {});
     if (!args) {
@@ -721,13 +721,13 @@ class Provision extends EventEmitter {
   // After torch was put in for the card: it is of one version with torchaudio (else the model does not load), it sees the card,
   // and what pip finds wrong with the versions together is kept for the report (the card's torch is not the version the package
   // asks for on the newest cards: that is no reason to stop)
-  verifyTorch(python) {
+  async verifyTorch(python) {
     const { tools: setup } = this.d;
-    const torch = setup.torchStatus(python);
+    const torch = await this.raceStop(Promise.resolve(setup.torchStatus(python)));
     if (!torch) return;
     if (!tools.sameTorch(torch)) this.fail('cb-package', this.t('cbTorchMismatch', { torch: torch.version, audio: torch.audio }), ['retry', 'choose-chatterbox']);
     if (!torch.cuda) this.update('cb-package', { detail: this.t('cbNoCuda') });
-    const conflicts = setup.pipCheck?.(python) || [];
+    const conflicts = (await this.raceStop(Promise.resolve(setup.pipCheck?.(python)))) || [];
     if (conflicts.length) this.update('cb-package', { log: conflicts });
   }
 

@@ -110,4 +110,17 @@ function runPython(python, args, { spawnSync = cp.spawnSync, timeout = 30000, cw
   }
 }
 
-module.exports = { killTree, killOnAbort, runToEnd, which, foldersLike, runPython };
+// The same without holding her up: what a Python says to a snippet or a command, while she goes on with other things (the
+// installs of the voice ask this one at a time, and a Python that takes its time must not freeze her windows). { ok, out }
+function runPythonAsync(python, args, { execFile = cp.execFile, timeout = 30000, cwd } = {}) {
+  return new Promise((resolve) => {
+    try {
+      execFile(python, args, { encoding: 'utf8', timeout, windowsHide: true, cwd, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => (
+        resolve({ ok: !err, out: `${stdout || ''}${stderr || ''}`.trim() || (err ? err.message : '') })));
+    } catch (err) {
+      resolve({ ok: false, out: err.message });
+    }
+  });
+}
+
+module.exports = { killTree, killOnAbort, runToEnd, which, foldersLike, runPython, runPythonAsync };

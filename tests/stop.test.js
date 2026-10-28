@@ -13,7 +13,7 @@ const path = require('node:path');
 const cp = require('node:child_process');
 const Module = require('node:module');
 
-const { runToEnd } = require('../src/main/proc.js');
+const { runToEnd, runPythonAsync } = require('../src/main/proc.js');
 const files = require('../src/main/fetch-files.js');
 
 // setup.js only needs electron's safeStorage, for the keys: a stand-in so it runs under plain node
@@ -103,4 +103,20 @@ z.close()
   assert.equal(fs.existsSync(path.join(out, 'a', 'one.txt')), false, 'not even the first file');
   await files.unzip(zip, path.join(tmp, 'out-ok'), { signal: new AbortController().signal });
   assert.equal(fs.readFileSync(path.join(tmp, 'out-ok', 'a', 'two.txt'), 'utf8'), 'two');
+});
+
+test('a Python asked something does not hold her up: her own work goes on meanwhile, and a Python that takes too long is ended', async () => {
+  let ticks = 0;
+  const timer = setInterval(() => { ticks++; }, 20);
+  const slow = await runPythonAsync(process.execPath, ['-e', 'setTimeout(() => console.log("late"), 300)']);
+  clearInterval(timer);
+  assert.deepEqual(slow, { ok: true, out: 'late' });
+  assert.ok(ticks >= 5, `her event loop ran meanwhile (${ticks} ticks)`);
+  const hung = Date.now();
+  const cut = await runPythonAsync(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { timeout: 300 });
+  assert.equal(cut.ok, false);
+  assert.ok(Date.now() - hung < 3000, 'ended at the timeout');
+  const missing = await runPythonAsync(path.join(tmp, 'no-python'), ['-c', '1']);
+  assert.equal(missing.ok, false);
+  assert.match(missing.out, /ENOENT/);
 });

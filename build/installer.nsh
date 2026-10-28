@@ -7,6 +7,13 @@
 ; program is removed, as before.
 ; A silent uninstall (/S, winget) keeps everything unless it is given --remove-everything. An update never asks.
 
+; The installer is a wizard with a page for the folder to install into (package.json: nsis.oneClick false,
+; allowToChangeInstallationDirectory). It is always for you only, in your own account: no administrator is needed, and
+; the wizard does not ask "for all users or only for me" (that needs an administrator; the folder can still be on any disk).
+!macro customInstallMode
+  StrCpy $isForceCurrentInstall "1"
+!macroend
+
 !macro customUnInstall
   ${ifNot} ${isUpdated}
     ClearErrors

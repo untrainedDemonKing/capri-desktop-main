@@ -66,3 +66,17 @@ test('the uninstaller asks whether what she downloaded goes too, and never on an
   assert.match(main, /Uninstall \$\{app\.name\}\.exe/, 'the uninstaller the installer makes');
   assert.match(main, /'\/S', '--delete-app-data'/);
 });
+
+test('the installer is a wizard with a page for the folder, for you only (no administrator, no question about all users), in Russian or English by the system', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  const nsis = pkg.build.nsis;
+  assert.equal(nsis.oneClick, false, 'not the one-click installer: it asks nothing');
+  assert.equal(nsis.allowToChangeInstallationDirectory, true, 'the page where the folder is picked');
+  assert.equal(nsis.perMachine, false, 'in your own account');
+  assert.equal(nsis.allowElevation, false, 'no administrator');
+  assert.equal(nsis.runAfterFinish, true);
+  assert.equal(nsis.multiLanguageInstaller, true);
+  assert.deepEqual(nsis.installerLanguages, ['en_US', 'ru_RU'], 'the two languages she has');
+  const nsh = fs.readFileSync(path.join(__dirname, '..', nsis.include), 'utf8');
+  assert.match(nsh, /!macro customInstallMode\s+StrCpy \$isForceCurrentInstall "1"\s+!macroend/, 'the "for all users or only for me" page is skipped');
+});

@@ -8,7 +8,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const cp = require('node:child_process');
-const { runPython, which, runToEnd } = require('./proc');
+const { runPython, runPythonAsync, which, runToEnd } = require('./proc');
 
 const MIN = [3, 10];
 const MAX = [3, 12]; // (what Chatterbox is built for; a newer one often has no torch yet)
@@ -98,19 +98,19 @@ async function pip(python, args, onLine, { spawn = cp.spawn, env = {}, signal } 
 
 // Whether this pip can print its progress in lines (`--progress-bar raw`, from pip 25.1: the pip that comes with Python 3.11
 // has only the bar that needs a terminal, so there she would see no progress at all)
-function supportsRawProgress(python, { run = runPython } = {}) {
-  const r = run(python, ['-m', 'pip', 'install', '--help'], { timeout: 30000 });
+async function supportsRawProgress(python, { run = runPythonAsync } = {}) {
+  const r = await run(python, ['-m', 'pip', 'install', '--help'], { timeout: 20000 });
   return r.ok && /--progress-bar[\s\S]{0,400}?\braw\b/.test(r.out);
 }
 
 // Makes pip fit for showing how far it is: a newer one if this one cannot print its progress (a failure of that is
 // not a reason to stop: the install goes on with what there is). Resolves { raw } (the lines can be had).
-async function preparePip(python, { signal, env, onLine, run = runPython, pipFn = pip } = {}) {
-  if (!supportsRawProgress(python, { run })) {
+async function preparePip(python, { signal, env, onLine, run = runPythonAsync, pipFn = pip } = {}) {
+  if (!(await supportsRawProgress(python, { run }))) {
     // (quick to give up: a PC with no internet, with a folder of wheels, has no use for a newer pip, and must not wait for it)
     await pipFn(python, ['install', '--upgrade', '--no-cache-dir', '--retries', '1', '--timeout', '15', 'pip'], onLine, { signal, env });
   }
-  return { raw: supportsRawProgress(python, { run }) };
+  return { raw: await supportsRawProgress(python, { run }) };
 }
 
 // pip shows sizes in decimal units: "57.2 MB", "2.5 GB", "204.2 kB"
@@ -222,16 +222,16 @@ function pipActivity(line) {
 
 // torch in her Python: { version, audio, cuda } (null: not importable). One line, so it goes through any shell.
 const TORCH_CODE = "import importlib.metadata as m, torch; a=[d.version for d in m.distributions() if (d.metadata['Name'] or '').lower()=='torchaudio']; print(torch.__version__.split('+')[0], (a[0].split('+')[0] if a else '-'), int(torch.cuda.is_available()))";
-function torchStatus(python, { run = runPython } = {}) {
-  const r = run(python, ['-c', TORCH_CODE], { timeout: 120000 });
+async function torchStatus(python, { run = runPythonAsync } = {}) {
+  const r = await run(python, ['-c', TORCH_CODE], { timeout: 120000 });
   if (!r.ok) return null;
   const [version, audio, cuda] = r.out.split(/\s+/).slice(-3);
   return { version, audio: audio === '-' ? '' : audio, cuda: cuda === '1' };
 }
 
 // What pip finds wrong with the versions installed together ("a has requirement b==1, but you have b 2"): [] when they all fit
-function pipCheck(python, { run = runPython } = {}) {
-  const r = run(python, ['-m', 'pip', 'check'], { timeout: 60000 });
+async function pipCheck(python, { run = runPythonAsync } = {}) {
+  const r = await run(python, ['-m', 'pip', 'check'], { timeout: 60000 });
   if (r.ok) return [];
   return r.out.split(/\r?\n/).map((l) => l.trim()).filter((l) => /has requirement|requires|is not supported/i.test(l)).slice(0, 8);
 }

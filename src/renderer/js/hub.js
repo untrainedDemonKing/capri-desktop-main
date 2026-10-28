@@ -566,8 +566,7 @@
       if (next.failed.length) parts.push(fill(ui.moveFailed, { list: next.failed.map((f) => `${kindName(f.kind)} (${f.error})`).join('; ') }));
       if (next.skipped.length) parts.push(fill(ui.moveSkipped, { list: kinds(next.skipped) }));
       if (next.left.length) parts.push(fill(ui.moveLeft, { dirs: next.left.join(', ') }));
-      sayMove(parts.join(' '), next.failed.length || next.left.length ? 'bad' : 'ok');
-      // (what is where has changed)
+      // (what is where has changed: that is known before it is said, so the offer to move it is not shown for a moment more)
       const fresh = await window.hub.state().catch(() => null);
       if (fresh) {
         data.folder = fresh.folder;
@@ -578,6 +577,7 @@
         refreshPlan();
         refreshInventory();
       }
+      sayMove(parts.join(' '), next.failed.length || next.left.length ? 'bad' : 'ok');
     }
     renderFolder(document.getElementById('folderResult').textContent, $('folderResult').dataset.kind === 'bad');
     if (preview) renderPlan();
