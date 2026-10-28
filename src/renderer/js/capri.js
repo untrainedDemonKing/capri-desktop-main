@@ -1600,8 +1600,13 @@ export class Capri {
     await sleep(300);
     this.voice.play('possess');
     const move = this.mover && this.moveWindows ? moves.make(kind, moves.roomFor(win, this.view)) : null;
-    if (move) await this.carry(id, win, move, (o) => { shift = o; });
-    else await sleep(kind === 'glitch' ? 2300 : 1600);
+    let did = kind; // (what she really did: a window she could not hold was just taken over)
+    if (move) {
+      if (!(await this.carry(id, win, move, (o) => { shift = o; }))) did = 'take';
+    } else {
+      if (!['take', 'glitch'].includes(kind)) did = 'take';
+      await sleep(kind === 'glitch' ? 2300 : 1600);
+    }
     taken.leave();
     await sleep(260);
 
@@ -1621,7 +1626,7 @@ export class Capri {
     if (seat) this.fx.slit(to.x, toHead.top, seat.win.y, { width: 56 * s + 10 }); // the void she climbs out of
     await this.arrive(to, seat ? { stance: 'sit', perch: { id: seat.win.id, dx: seat.dx }, beam: false } : {});
     await this.settle();
-    this.onPossessed?.(kind);
+    this.onPossessed?.(did);
     return true;
   }
 

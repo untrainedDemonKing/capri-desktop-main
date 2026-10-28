@@ -110,6 +110,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
   }
 
   async function apply(choice = {}) {
+    if (cleanup?.busy) return { ok: false, error: 'removing' }; // (something is being taken off: not a moment to fetch)
     const cfg = config.load();
     const { have } = await look();
     if (provision.running) {

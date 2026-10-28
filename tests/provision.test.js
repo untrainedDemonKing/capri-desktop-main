@@ -538,6 +538,7 @@ test('the card and its driver decide the torch: a card without its torch gets th
   assert.equal(a.state.cudaCalls.length, 1);
   assert.equal(a.state.cudaCalls[0].driver, '552.22', 'the build is chosen by the card\'s driver and capability');
   assert.ok(a.state.pips.some((args) => args.includes('torch==cuda')), 'and installed');
+  assert.ok(a.state.pips.find((args) => args.includes('torch==cuda')).includes('--no-cache-dir'), 'without a pip cache: the build is gigabytes');
   const b = world({ state: { hw: pc({ ram: 15.9 * GB, gpus: [gpu] }), ollamaRunning: true, models: ['gemma3:4b'], hasPackage: true, torchHasCuda: false, cudaNone: true } });
   await b.p.run();
   assert.match(b.p.step('cb-package').detail, /without graphics-card support|installed/);

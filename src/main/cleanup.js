@@ -28,8 +28,9 @@ function inside(parent, child) {
 
 // How many bytes a folder (or a file) takes, counted without blocking her for long: it stops counting after
 // `budgetMs` and says so ({ bytes, partial }).
-async function sizeOf(target, { fsp = fs.promises, budgetMs = 6000 } = {}) {
+async function sizeOf(target, { fsp = fs.promises, budgetMs = 6000, skip = [] } = {}) {
   const until = Date.now() + budgetMs;
+  const skipped = new Set(skip.map((p) => path.resolve(p)));
   let bytes = 0;
   let partial = false;
   const queue = [target];
@@ -47,6 +48,7 @@ async function sizeOf(target, { fsp = fs.promises, budgetMs = 6000 } = {}) {
         return;
       }
       if (st.isDirectory()) {
+        if (skipped.has(path.resolve(p))) return; // (counted on its own)
         let names = [];
         try {
           names = await fsp.readdir(p);
@@ -81,9 +83,10 @@ class Cleanup {
     return env.HUGGINGFACE_HUB_CACHE || path.join(env.HF_HOME || path.join(home, '.cache', 'huggingface'), 'hub');
   }
 
-  // Chatterbox's model, kept in the default cache of the model hub by an older Capri: the entries of Resemble AI's
-  // (hers only when the Chatterbox folder is hers, and she did not put the cache inside it)
-  legacyCache() {
+  // Chatterbox's model, kept in the default cache of the model hub by an older Capri: the entries of Resemble AI's.
+  // Hers only for a folder of hers that has no cache of its own (a newer one keeps the model inside it).
+  legacyCache(dir = '') {
+    if (!dir || this.d.fsx.existsSync(path.join(dir, 'huggingface'))) return [];
     const hub = this.hf();
     let names = [];
     try {
@@ -106,6 +109,11 @@ class Cleanup {
     }
     const found = this.d.ollamaHost?.status?.().dir;
     return found && fsx.existsSync(found) ? { dir: found, ours: false, how: '' } : null;
+  }
+
+  // Does the Ollama in her folder keep its models there too? Then all of them are hers and go with it.
+  modelsInHerFolder(place = this.ollamaPlace()) {
+    return Boolean(place?.ours && place.how === 'zip' && inside(this.d.userData, this.d.ollamaHost?.status?.().modelsDir || ''));
   }
 
   piperPlace() {
@@ -143,22 +151,24 @@ class Cleanup {
     } catch {
       ollamaUp = false;
     }
+    const ol = this.ollamaPlace();
+    const inHers = this.modelsInHerFolder(ol);
     for (const m of models) {
-      items.push({ id: `model:${m.name}`, group: 'mind', kind: 'model', label: m.name, bytes: m.size, ours: man.models.includes(m.name), removable: true });
+      items.push({ id: `model:${m.name}`, group: 'mind', kind: 'model', label: m.name, bytes: m.size, ours: inHers || man.models.includes(m.name), removable: true });
     }
-    const sized = async (place, base) => {
-      const { bytes, partial } = await sizeOf(place.dir, { fsp: this.d.fsp });
+    const sized = async (place, base, opts = {}) => {
+      const { bytes, partial } = await sizeOf(place.dir, { fsp: this.d.fsp, ...opts });
       return { ...base, bytes, partial, ours: place.ours, removable: place.ours, path: place.dir };
     };
-    const ol = this.ollamaPlace();
-    if (ol) items.push(await sized(ol, { id: 'ollama', group: 'mind', kind: 'ollama', label: 'Ollama', how: ol.how }));
+    // (the program without its models when those are counted one by one above)
+    if (ol) items.push(await sized(ol, { id: 'ollama', group: 'mind', kind: 'ollama', label: 'Ollama', how: ol.how }, { skip: inHers ? [path.join(ol.dir, 'models')] : [] }));
     const pi = this.piperPlace();
     if (pi) items.push(await sized(pi, { id: 'piper', group: 'voice', kind: 'piper', label: 'Piper' }));
     const cb = this.chatterboxPlace();
     if (cb) {
       const item = await sized(cb, { id: 'chatterbox', group: 'voice', kind: 'chatterbox', label: 'Chatterbox' });
       if (cb.ours) {
-        for (const extra of this.legacyCache()) item.bytes += (await sizeOf(extra, { fsp: this.d.fsp })).bytes;
+        for (const extra of this.legacyCache(cb.dir)) item.bytes += (await sizeOf(extra, { fsp: this.d.fsp })).bytes;
       }
       items.push(item);
     }
@@ -232,8 +242,9 @@ class Cleanup {
     const place = this.chatterboxPlace();
     this.d.chatterbox?.stop?.();
     if (place?.ours) {
+      const older = this.legacyCache(place.dir); // (looked at before the folder goes)
       await this.removeDir(place.dir);
-      for (const extra of this.legacyCache()) {
+      for (const extra of older) {
         try {
           this.d.fsx.rmSync(extra, { recursive: true, force: true, maxRetries: 3, retryDelay: 300 });
         } catch {
@@ -250,7 +261,7 @@ class Cleanup {
   async removeNode() {
     const place = this.nodePlace();
     if (!place?.ours) return;
-    this.d.nodeTools.removeFromUserPath?.(place.dir);
+    this.d.nodeTools.removeFromUserPath?.(place.dir); // (and every PATH entry inside it: the folder with node.exe is a level down)
     await this.removeDir(place.dir);
     this.d.installed.forget('node');
     this.d.save({ autoNode: false });
@@ -266,7 +277,15 @@ class Cleanup {
   async removeOllama() {
     const place = this.ollamaPlace();
     if (!place?.ours) return;
-    for (const name of this.d.installed.get().models) {
+    const mine = new Set(this.d.installed.get().models);
+    if (this.modelsInHerFolder(place)) {
+      try {
+        for (const m of await this.d.ollamaApi.list()) mine.add(m.name); // (all of them live in her folder)
+      } catch {
+        // not answering: the folder goes with them
+      }
+    }
+    for (const name of mine) {
       try {
         await this.removeModel(name);
       } catch {

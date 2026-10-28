@@ -314,3 +314,14 @@ test('her own removal goes to the app\'s uninstall; without one there is none', 
   assert.deepEqual(await w.call('hub:uninstall'), { ok: true, freed: 7 });
   assert.deepEqual(await world().call('hub:uninstall'), { ok: false, error: 'missing' });
 });
+
+test('the words of her main menu and of her preparation: Russian and English have the same lines, with the same blanks to fill', () => {
+  for (const mod of ['../src/main/hub-lines.js', '../src/main/prepare-lines.js']) {
+    const { LINES } = require(mod);
+    assert.deepEqual(Object.keys(LINES.ru).sort(), Object.keys(LINES.en).sort(), `${mod}: the same lines`);
+    for (const key of Object.keys(LINES.en)) {
+      const blanks = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
+      assert.equal(blanks(LINES.ru[key]), blanks(LINES.en[key]), `${mod}: ${key} has the same blanks in both languages`);
+    }
+  }
+});

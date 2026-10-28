@@ -301,6 +301,7 @@
   // ---- what is on this PC, and taking it off ----
 
   let inv = null;      // what the main process told (hub:inventory)
+  let invSeq = 0;      // the newest look at it: an older answer that comes late is dropped
   let working = false; // something is being taken off
   const armed = new Map(); // button -> its timer: pressed once, waiting for the second press
 
@@ -384,8 +385,11 @@
   }
 
   async function refreshInventory() {
+    const mine = ++invSeq;
     $('invTotal').textContent = ui.invCounting;
-    inv = await window.hub.inventory().catch(() => ({ items: [], ollamaUp: true, total: 0, count: 0 }));
+    const got = await window.hub.inventory().catch(() => ({ items: [], ollamaUp: true, total: 0, count: 0 }));
+    if (mine !== invSeq) return; // (something was taken off meanwhile: that answer is newer)
+    inv = got;
     renderInventory();
   }
 
@@ -405,6 +409,7 @@
     setResult(ui.invWorking);
     const res = await window.hub.remove(item.id).catch((err) => ({ ok: false, error: err.message }));
     working = false;
+    invSeq++;
     if (res.inventory) inv = res.inventory;
     if (res.ok) setResult(fill(ui.invDone, { what: nameOf(item), size: fmtBytes(res.freed || 0) }), 'ok');
     else setResult(fill(ui.invFailed, { what: nameOf(item), error: reason(res.error) }), 'bad');
@@ -418,6 +423,7 @@
     setResult(ui.invWorking);
     const res = await window.hub.removeAll().catch((err) => ({ ok: false, failed: [{ id: '', error: err.message }], removed: [], freed: 0 }));
     working = false;
+    invSeq++;
     if (res.inventory) inv = res.inventory;
     const failed = (res.failed || []).map((f) => `${f.id || ''} ${reason(f.error)}`.trim());
     if (res.error) setResult(reason(res.error), 'bad');
@@ -586,6 +592,7 @@
     $('voiceSave').addEventListener('click', saveVoiceKey);
     $('voiceKey').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveVoiceKey(); });
     $('go').addEventListener('click', async () => {
+      if (working) return; // (something is being taken off)
       applied = true;
       $('go').disabled = true;
       await window.hub.apply({ mind: sel.mind, model: sel.mind === 'ollama' ? sel.model : '', voice: voiceValue(), node: sel.node });

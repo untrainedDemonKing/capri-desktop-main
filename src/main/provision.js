@@ -545,7 +545,9 @@ class Provision extends EventEmitter {
       return;
     }
     this.update('cb-package', { heavy: true, detail: this.t('cbGpu') });
-    const res = await setup.pip(python, args, () => {});
+    // (no cache here either: the build for the card is gigabytes)
+    const uncached = args[0] === 'install' && !args.includes('--no-cache-dir') ? [args[0], '--no-cache-dir', ...args.slice(1)] : args;
+    const res = await setup.pip(python, uncached, () => {});
     if (!res.ok) this.update('cb-package', { detail: this.t('cbCpu') });
   }
 

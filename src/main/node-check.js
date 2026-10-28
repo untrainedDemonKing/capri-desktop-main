@@ -127,15 +127,21 @@ function addToUserPath(folder, { platform = process.platform, spawnSync = cp.spa
   }
 }
 
-// Takes a folder out of the PATH of your account again (what addToUserPath put in), and out of hers.
+// Takes a folder, and every PATH entry inside it, out of the PATH of your account again (what addToUserPath put in:
+// the folder with node.exe, a level down in hers), and out of hers.
 function removeFromUserPath(folder, { platform = process.platform, spawnSync = cp.spawnSync, env = process.env } = {}) {
-  env.PATH = String(env.PATH || '').split(path.delimiter).filter((p) => p && p !== folder).join(path.delimiter);
+  const lower = folder.replace(/[\\/]+$/, '').toLowerCase();
+  const within = (p) => {
+    const q = String(p).replace(/[\\/]+$/, '').toLowerCase();
+    return q === lower || q.startsWith(`${lower}\\`) || q.startsWith(`${lower}/`);
+  };
+  env.PATH = String(env.PATH || '').split(path.delimiter).filter((p) => p && !within(p)).join(path.delimiter);
   if (platform !== 'win32') return { ok: false, error: 'Windows only' };
-  const quoted = folder.replace(/'/g, "''");
+  const quoted = folder.replace(/[\\/]+$/, '').replace(/'/g, "''");
   const script = [
-    `$d = '${quoted}'`,
+    `$d = '${quoted}'.ToLower()`,
     "$p = [Environment]::GetEnvironmentVariable('Path', 'User')",
-    "if ($p) { [Environment]::SetEnvironmentVariable('Path', (($p -split ';' | Where-Object { $_ -and $_ -ne $d }) -join ';'), 'User') }",
+    "if ($p) { [Environment]::SetEnvironmentVariable('Path', (($p -split ';' | Where-Object { $_ -and -not (($_.TrimEnd('\\','/').ToLower() -eq $d) -or ($_.ToLower().StartsWith($d + '\\'))) }) -join ';'), 'User') }",
   ].join('; ');
   try {
     const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, timeout: 20000 });

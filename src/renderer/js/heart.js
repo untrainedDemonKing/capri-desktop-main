@@ -195,7 +195,10 @@ export class Heart {
   watch(now = performance.now()) {
     if (!this.enabled) return;
     const at = this.at;
-    if (at?.near && !at.told && now - at.since >= LINGER_MS && this.calm(now)) {
+    // (still by her? she may have gone somewhere else while the pointer rested)
+    const h = at && this.capri.head();
+    const near = Boolean(at) && Math.hypot(at.x - h.x, at.y - h.y) < NEAR_PX;
+    if (near && !at.told && now - at.since >= LINGER_MS && this.calm(now)) {
       at.told = true;
       const angry = this.mood.mood === 'angry';
       this.remark({ line: pick(angry ? this.t.mouse.lingerAngry : this.t.mouse.linger), face: angry ? 'many' : 'smug' }, { now });

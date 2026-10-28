@@ -418,6 +418,7 @@ async function useProvider({ provider, key, url } = {}) {
   if (!llm.PROVIDERS[provider]) return { ok: false, error: 'unknown provider' };
   const before = config.load();
   const patch = { provider };
+  if (provider === 'ollama') patch.autoMind = true; // (choosing it again here: it is looked after at start-up again)
   if (key) patch.apiKeys = { ...before.apiKeys, [provider]: setup.sealKey(String(key).trim()) };
   if (url) patch.customUrl = String(url).trim();
   updateConfig(patch);
@@ -1045,7 +1046,7 @@ function registerIpc() {
     pulling = abort;
     try {
       await setup.pullModel(name, (p) => progress({ kind: 'pull', ...p }), abort.signal);
-      updateConfig({ provider: 'ollama' });
+      updateConfig({ provider: 'ollama', autoMind: true });
       await refreshModels();
       const model = chatModels?.find((m) => m === name || m.startsWith(`${name}:`));
       if (model) updateConfig({ chatModel: model });
@@ -1305,7 +1306,7 @@ async function uninstallCapri() {
   const res = await theCleanup().removeAll();
   if (!res.ok) return { ok: false, error: res.error || '', failed: res.failed };
   const dir = path.dirname(process.execPath);
-  const uninstaller = path.join(dir, `Uninstall ${app.getName()}.exe`);
+  const uninstaller = path.join(dir, `Uninstall ${app.name}.exe`);
   if (!app.isPackaged || process.platform !== 'win32' || !fs.existsSync(uninstaller)) return { ok: true, manual: true, dir: app.isPackaged ? dir : ROOT, freed: res.freed };
   // (the uninstaller waits for her to quit, then removes the program and, with this flag, her data folder too)
   const child = spawnProgram(uninstaller, ['/S', '--delete-app-data'], { detached: true, stdio: 'ignore', windowsHide: true });
@@ -1326,7 +1327,7 @@ function removeEverythingAndQuit() {
       console.error('[capri] taking off what she installed:', err.message);
     }
     clearTimeout(cap);
-    for (const stop of [() => ollamaHost.stop(false), () => chatterbox.stop(), () => piper.stop()]) {
+    for (const stop of [() => ollamaHost.stop(false), () => chatterbox.stop(), () => piper.stop(), () => config.flush()]) {
       try { stop(); } catch { /* not running */ }
     }
     app.exit(0);

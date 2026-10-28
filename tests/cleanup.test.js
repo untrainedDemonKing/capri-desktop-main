@@ -156,11 +156,12 @@ test('Piper: stopped, its folder gone, and the voice is the system\'s again (not
 
 test('Chatterbox: stopped, the folder with its model gone, an older cache of its model too (and only that)', async () => {
   const w = world();
+  fs.rmSync(path.join(w.userData, 'chatterbox', 'huggingface'), { recursive: true }); // (an older folder: its model is in the hub's default cache)
   const hub = path.join(w.home, '.cache', 'huggingface', 'hub');
   put(path.join(hub, 'models--ResembleAI--chatterbox', 'old.bin'), 900);
   put(path.join(hub, 'models--bert-base', 'keep.bin'), 100);
   const inv = await w.cleanup.inventory();
-  assert.equal(inv.items.find((i) => i.id === 'chatterbox').bytes, 2500 + 900, 'the older cache counts');
+  assert.equal(inv.items.find((i) => i.id === 'chatterbox').bytes, 2000 + 900, 'the older cache counts');
   const res = await w.cleanup.remove('chatterbox');
   assert.equal(res.ok, true);
   assert.ok(!w.exists('chatterbox'));
@@ -312,4 +313,33 @@ test('all of it with Ollama not answering: it is woken up for the models she pul
   const woke = await none.cleanup.removeAll();
   assert.equal(none.state.up, false);
   assert.equal(woke.ok, true);
+});
+
+test('Ollama of hers that keeps its models in her folder: all of them are hers, they are counted once, and they go with it', async () => {
+  const w = world();
+  w.cleanup.d.ollamaHost.status = () => ({ dir: path.join(w.userData, 'ollama'), modelsDir: path.join(w.userData, 'ollama', 'models') });
+  const inv = await w.cleanup.inventory();
+  const by = Object.fromEntries(inv.items.map((i) => [i.id, i]));
+  assert.equal(by['model:qwen2.5:7b'].ours, true, 'in her folder, so hers even if she did not write it down');
+  assert.equal(by.ollama.bytes, 400, 'the program without the models folder (they are the models\' own lines)');
+  const res = await w.cleanup.remove('ollama');
+  assert.equal(res.ok, true);
+  assert.deepEqual(w.state.removedModels.sort(), ['gemma3:4b', 'qwen2.5:7b']);
+  assert.ok(!w.exists('ollama'));
+});
+
+test('an older Chatterbox folder (no cache inside) has its model in the hub\'s default cache and that goes with it; a newer one leaves that cache alone', async () => {
+  const old = world();
+  fs.rmSync(path.join(old.userData, 'chatterbox', 'huggingface'), { recursive: true });
+  const hub = path.join(old.home, '.cache', 'huggingface', 'hub', 'models--ResembleAI--chatterbox');
+  put(path.join(hub, 'w.bin'), 900);
+  assert.equal((await old.cleanup.inventory()).items.find((i) => i.id === 'chatterbox').bytes, 2000 + 900);
+  await old.cleanup.remove('chatterbox');
+  assert.ok(!fs.existsSync(hub));
+  const fresh = world();
+  const mine = path.join(fresh.home, '.cache', 'huggingface', 'hub', 'models--ResembleAI--chatterbox');
+  put(path.join(mine, 'w.bin'), 900);
+  assert.equal((await fresh.cleanup.inventory()).items.find((i) => i.id === 'chatterbox').bytes, 2500, 'not counted: not hers');
+  await fresh.cleanup.remove('chatterbox');
+  assert.ok(fs.existsSync(mine), 'a cache outside her folder is left alone');
 });

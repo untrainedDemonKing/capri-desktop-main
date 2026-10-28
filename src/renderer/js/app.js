@@ -97,7 +97,7 @@ async function boot() {
   capri.possessWindows = config.possess;
   capri.moveWindows = config.possessMove !== false;
   // she can move the windows she has taken over (the host does it: main/mover.js)
-  if (host.windowGrab) capri.mover = { grab: (id) => host.windowGrab(id), move: (id, x, y) => host.windowMove(id, x, y), release: (id, restore) => host.windowRelease(id, restore) };
+  if (host.windowGrab && host.platform === 'win32') capri.mover = { grab: (id) => host.windowGrab(id), move: (id, x, y) => host.windowMove(id, x, y), release: (id, restore) => host.windowRelease(id, restore) };
   host.onWindowLost?.(({ id }) => capri.moverLost(id));
   capri.restOn = config.rest || 'corner';
   capri.lang = config.lang;
@@ -273,11 +273,18 @@ async function boot() {
   capri.onDrop = (drop) => heart.dragged(drop);
   // With no AI to answer her she says so, with a button for her main menu; asked now and then (not while she is being set up)
   heart.onConnect = () => host.hubShow?.();
+  let aiTimer = 0;
   const checkAi = async () => {
+    clearTimeout(aiTimer);
     heart.aiReady = (await host.chatReady?.().catch(() => 'ready')) !== 'none';
+    // (with one connected she hardly needs to ask again; without, she looks every minute and a half)
+    aiTimer = setTimeout(checkAi, heart.aiReady ? 15 * 60000 : 90000);
   };
-  setTimeout(checkAi, 8000);
-  setInterval(checkAi, 90000);
+  const askAiSoon = (ms) => {
+    clearTimeout(aiTimer);
+    aiTimer = setTimeout(checkAi, ms);
+  };
+  askAiSoon(8000);
   panel.onChar = (kind) => voice.play('blip', { mood: kind });
   panel.onTalk = (talking) => talking && capri.perform('talk');
   capri.onMenu = () => (ring ? ring.toggle() : host.openMenu()); // right-click: her circular menu
@@ -519,7 +526,7 @@ async function boot() {
   });
 
   host.onConfig((cfg) => {
-    setTimeout(checkAi, 2500); // (a new AI is connected, or taken away)
+    askAiSoon(2500); // (a new AI is connected, or taken away; many changes at once ask once)
     voice.configure(cfg);
     heart.configure(cfg);
     bond.configure(cfg);

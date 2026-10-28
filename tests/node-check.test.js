@@ -157,3 +157,19 @@ test('a hash that is not the one asked for leaves nothing (download with sha256)
   await assert.rejects(() => files.download('https://x.test/b', path.join(dir, 'b'), { fetchFn, sha256: 'f'.repeat(64) }), /damaged/);
   assert.equal(fs.existsSync(path.join(dir, 'b')), false);
 });
+
+test('removeFromUserPath takes out the folder and everything inside it (the folder with node.exe is a level down), nothing like it', () => {
+  const sep = require('node:path').delimiter;
+  const env = { PATH: ['/usr/bin', '/ud/node/node-v22-win-x64', '/ud/nodejs', '/ud/node', '/ud/node/'].join(sep) };
+  const res = nc.removeFromUserPath('/ud/node', { platform: 'linux', env });
+  assert.equal(res.ok, false, 'Windows only for the account\'s PATH');
+  assert.equal(env.PATH, ['/usr/bin', '/ud/nodejs'].join(sep));
+  // on Windows: the script that does it is given the folder, quoted
+  const calls = [];
+  const win = { PATH: '' };
+  const done = nc.removeFromUserPath("C:\\Users\\o'brien\\node", { platform: 'win32', env: win, spawnSync: (cmd, args) => { calls.push([cmd, args]); return { status: 0, stdout: '', stderr: '' }; } });
+  assert.equal(done.ok, true);
+  const script = Buffer.from(calls[0][1].at(-1), 'base64').toString('utf16le');
+  assert.match(script, /\$d = 'C:\\Users\\o''brien\\node'\.ToLower\(\)/);
+  assert.match(script, /SetEnvironmentVariable\('Path'/);
+});

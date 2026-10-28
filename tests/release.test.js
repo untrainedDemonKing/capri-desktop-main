@@ -63,6 +63,6 @@ test('the uninstaller asks whether what she downloaded goes too, and never on an
   // the app's side of it: the flag is handled before anything else starts
   const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'main.js'), 'utf8');
   assert.ok(main.indexOf("argv.includes('--remove-everything')") < main.indexOf('applyRender();\n  if (!app.requestSingleInstanceLock'), 'before she takes the one-instance lock');
-  assert.match(main, /Uninstall \$\{app\.getName\(\)\}\.exe/, 'the uninstaller the installer makes');
+  assert.match(main, /Uninstall \$\{app\.name\}\.exe/, 'the uninstaller the installer makes');
   assert.match(main, /'\/S', '--delete-app-data'/);
 });
