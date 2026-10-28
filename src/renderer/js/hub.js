@@ -458,8 +458,11 @@
 
   // ---- how it is going ----
 
+  let drawnRunning = false;
   function renderProgress() {
     if (!snap) return;
+    const was = drawnRunning;
+    drawnRunning = running();
     const shown = applied || running();
     const groups = $('groups');
     if (shown) renderGroups(snap, groups, { ui, actions: ACTIONS, open, toggle: toggleLog });
@@ -486,7 +489,7 @@
     for (const id of ['mindChoices', 'voiceChoices', 'models']) for (const input of $(id).querySelectorAll('input')) input.disabled = running();
     $('nodeBox').disabled = running();
     for (const b of $('providers').children) b.disabled = running();
-    if (inv) renderInventory();
+    if (inv && was !== running()) renderInventory(); // (the delete buttons wait while something is fetched; not redrawn at every step)
     if (preview) renderPlan();
   }
 

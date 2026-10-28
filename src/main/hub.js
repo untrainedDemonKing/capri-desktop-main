@@ -183,7 +183,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
   });
   ipcMain.handle('hub:report', () => provision.report());
   // what is on this PC because of her, and taking it off (cleanup.js)
-  const inventory = async () => (cleanup ? cleanup.inventory() : { items: [], ollamaUp: true, total: 0, count: 0 });
+  const inventory = async () => (cleanup ? cleanup.inventory({ fresh: true }) : { items: [], ollamaUp: true, total: 0, count: 0 });
   ipcMain.handle('hub:inventory', () => inventory());
   ipcMain.handle('hub:remove', async (_e, id) => {
     if (!cleanup) return { ok: false, error: 'missing', inventory: await inventory() };

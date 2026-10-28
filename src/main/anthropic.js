@@ -9,7 +9,9 @@
 // a cheaper or faster one (Sonnet 5.5, Haiku 5.5). Thinking can't be turned off on the newest models, so
 // her replies run at low effort: a few words, no long wait.
 
-const Anthropic = require('@anthropic-ai/sdk');
+// (the SDK takes a fifth of a second to load: only when something asks of Claude, not at every start)
+let sdkModule = null;
+const sdk = () => (sdkModule ||= require('@anthropic-ai/sdk'));
 
 const DEFAULT_MODEL = 'claude-opus-5-5';
 const KEY_PAGE = 'https://console.anthropic.com/settings/keys';
@@ -30,6 +32,7 @@ const withCode = (err, code) => Object.assign(err, { code });
 
 // The SDK client. `key` empty: the SDK looks for the credentials itself (environment, ant profile).
 function make(key, options = {}) {
+  const Anthropic = sdk();
   return new Anthropic({ ...(key ? { apiKey: key } : {}), maxRetries: 1, timeout: 90 * 1000, ...options });
 }
 
@@ -40,6 +43,7 @@ function explain(err) {
   if (err?.code && ['nokey', 'refused'].includes(err.code)) return err;
   // the API's own sentence ({"error": {"message": ...}}), not the SDK's "401 {...}" around it
   const message = String(err?.error?.error?.message || err?.message || err || 'failed');
+  const Anthropic = sdk();
   if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
     return withCode(new Error(message), 'badkey');
   }
@@ -111,7 +115,7 @@ async function chat(key, { model, messages }, onDelta, signal) {
       message = await go(FALLBACKS.test(params.model));
     } catch (err) {
       // the account doesn't have the fallback beta: the same request without it
-      if (!FALLBACKS.test(params.model) || signal?.aborted || !(err instanceof Anthropic.BadRequestError) || !/fallback|beta/i.test(err.message)) throw err;
+      if (!FALLBACKS.test(params.model) || signal?.aborted || !(err instanceof sdk().BadRequestError) || !/fallback|beta/i.test(err.message)) throw err;
       message = await go(false);
     }
   } catch (err) {

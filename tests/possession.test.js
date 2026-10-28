@@ -87,18 +87,8 @@ test('drag goes where there is room; bounce goes up; shake and sway really move 
   assert.ok(Math.max(biggest(puck, 'dx', 1), biggest(puck, 'dx', -1), biggest(puck, 'dy', 1), biggest(puck, 'dy', -1)) > 100);
 });
 
-test('make: null for a move the window has no room for or one that does not exist; pickMove skips the last one', async () => {
-  const { make, pickMove } = await load('possession.js');
+test('make: null for a move the window has no room for or one that does not exist', async () => {
+  const { make } = await load('possession.js');
   assert.equal(make('drag', { left: 0, right: 0, up: 0, down: 0 }), null);
   assert.equal(make('fly', { left: 900, right: 900, up: 900, down: 900 }), null);
-  const room = { left: 300, right: 700, up: 100, down: 300 };
-  const rng = seeded(3);
-  const names = new Set();
-  for (let i = 0; i < 60; i++) {
-    const name = pickMove(room, { last: 'drag', rng });
-    assert.notEqual(name, 'drag');
-    names.add(name);
-  }
-  assert.ok(names.size >= 4, 'a variety');
-  assert.equal(pickMove({ left: 1, right: 1, up: 1, down: 1 }), null);
 });

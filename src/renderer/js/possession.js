@@ -174,8 +174,3 @@ export function make(name, room, rng = Math.random) {
   return MOVES[name](room, rng);
 }
 
-// which move for this window: at random from the ones it has room for, not the one it had last time
-export function pickMove(room, { last = '', rng = Math.random } = {}) {
-  const names = available(room).filter((n) => n !== last);
-  return names.length ? names[Math.floor(rng() * names.length)] : null;
-}

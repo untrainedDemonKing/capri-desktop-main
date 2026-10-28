@@ -20,6 +20,7 @@ const COOLDOWN = 8000;
 const NEAR_PX = 230;          // "by her": the pointer within this of her head
 const LINGER_MS = 9000;       // resting there this long, she remarks on it
 const REMARK_GAP = 25000;     // between two remarks of hers about the pointer
+const SAMPLE_MS = 12;         // the pointer is looked at this often at most (a mouse reports a thousand times a second)
 const DOUBLE_MS = 380;        // two clicks this close are a double click
 const CARRY_MS = 2200;        // carried about this long
 const NOAI_FIRST = 4 * 60000; // with no AI: the first word about it, this long after she starts...
@@ -43,6 +44,7 @@ export class Heart {
     this.onConnect = null;   // () => void: the "Connect" button of what she says then (her main menu)
     this.shake = new Shake();
     this.at = null;          // the pointer: { x, y, since, near, told } (moved())
+    this.sampledAt = -Infinity;
     this.lastRemark = 0;
     this.lastTap = 0;
     this.noAiAt = performance.now() + NOAI_FIRST - NOAI_EVERY;
@@ -178,7 +180,8 @@ export class Heart {
 
   // The pointer moved anywhere on her screen (app.js): shaken about, or coming up to her.
   moved(x, y, now = performance.now()) {
-    if (!this.enabled) return;
+    if (!this.enabled || now - this.sampledAt < SAMPLE_MS) return;
+    this.sampledAt = now;
     const h = this.capri.head();
     const near = Math.hypot(x - h.x, y - h.y) < NEAR_PX;
     const was = this.at;

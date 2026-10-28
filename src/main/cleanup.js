@@ -64,6 +64,7 @@ async function sizeOf(target, { fsp = fs.promises, budgetMs = 6000, skip = [] } 
   return { bytes, partial };
 }
 
+const SEEN_MS = 30 * 1000;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class Cleanup {
@@ -74,6 +75,7 @@ class Cleanup {
   constructor(deps) {
     this.d = { platform: process.platform, env: process.env, fsx: fs, fsp: fs.promises, home: os.homedir(), settle: 700, run: runProgram, onModelsChanged: async () => {}, ...deps };
     this.busy = false;
+    this.seen = null; // the last list and when it was made: counting a Python environment takes a moment
   }
 
   // ---------- what is there ----------
@@ -140,8 +142,16 @@ class Cleanup {
     return null;
   }
 
-  // The list: [{ id, group, label, bytes, ours, removable, how?, path? }] and what the ones that are hers take
-  async inventory() {
+  // The list: [{ id, group, label, bytes, ours, removable, how?, path? }] and what the ones that are hers take.
+  // One made a moment ago is reused (a removal needs only to know what is there), unless `fresh`.
+  async inventory({ fresh = false } = {}) {
+    if (!fresh && this.seen && Date.now() - this.seen.at < SEEN_MS) return this.seen.list;
+    const list = await this.count();
+    this.seen = { at: Date.now(), list };
+    return list;
+  }
+
+  async count() {
     const items = [];
     const man = this.d.installed.get();
     let ollamaUp = true;
@@ -312,6 +322,16 @@ class Cleanup {
     await this.d.onModelsChanged();
   }
 
+  // Takes one listed thing off, the way its kind goes
+  async removeItem(item) {
+    if (item.kind === 'model') await this.removeModel(item.label);
+    else if (item.kind === 'piper') await this.removePiper();
+    else if (item.kind === 'chatterbox') await this.removeChatterbox();
+    else if (item.kind === 'node') await this.removeNode();
+    else if (item.kind === 'python') await this.removePython();
+    else if (item.kind === 'ollama') await this.removeOllama();
+  }
+
   // One thing off. Resolves { ok, id, freed, error? }
   async remove(id) {
     if (this.busy) return { ok: false, id, error: 'busy' };
@@ -322,16 +342,12 @@ class Cleanup {
       const item = list.items.find((i) => i.id === id);
       if (!item) return { ok: false, id, error: 'missing' };
       if (!item.removable || (!item.ours && item.kind !== 'model')) return { ok: false, id, error: 'not hers' };
-      if (item.kind === 'model') await this.removeModel(item.label);
-      else if (item.kind === 'piper') await this.removePiper();
-      else if (item.kind === 'chatterbox') await this.removeChatterbox();
-      else if (item.kind === 'node') await this.removeNode();
-      else if (item.kind === 'python') await this.removePython();
-      else if (item.kind === 'ollama') await this.removeOllama();
+      await this.removeItem(item);
       return { ok: true, id, freed: item.bytes };
     } catch (err) {
       return { ok: false, id, error: String(err.message || err).slice(0, 300) };
     } finally {
+      this.seen = null; // (what is there has changed)
       this.busy = false;
     }
   }
@@ -353,12 +369,7 @@ class Cleanup {
       const hers = items.filter((i) => i.ours && i.removable).sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
       for (const item of hers) {
         try {
-          if (item.kind === 'model') await this.removeModel(item.label);
-          else if (item.kind === 'piper') await this.removePiper();
-          else if (item.kind === 'chatterbox') await this.removeChatterbox();
-          else if (item.kind === 'node') await this.removeNode();
-          else if (item.kind === 'python') await this.removePython();
-          else if (item.kind === 'ollama') await this.removeOllama();
+          await this.removeItem(item);
           removed.push(item.id);
           freed += item.bytes;
         } catch (err) {
@@ -367,6 +378,7 @@ class Cleanup {
       }
       return { ok: failed.length === 0, freed, removed, failed, left: items.filter((i) => !i.ours).map((i) => i.id) };
     } finally {
+      this.seen = null;
       this.busy = false;
     }
   }

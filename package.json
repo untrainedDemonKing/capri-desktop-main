@@ -38,6 +38,8 @@
     "test:profiles": "node --test tests/profiles.test.js",
     "test:piper": "node --test tests/piper.test.js",
     "test:hub": "node --test tests/hub.test.js",
+    "test:labels": "node --test tests/labels.test.js",
+    "test:openai": "node --test tests/openai.test.js",
     "test:ledges": "node --test tests/ledges.test.js",
     "test:heart": "node --test tests/heart.test.js",
     "test:acting": "node --test tests/acting.test.js",

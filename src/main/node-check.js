@@ -109,22 +109,26 @@ async function install({ dir, arch = process.arch, fetchFn = (...a) => fetch(...
   return { exe, dir: path.dirname(exe), version: rel.version.replace(/^v/, '') };
 }
 
-// Adds a folder to the PATH of your account (yours only, no administrator; new programs see it), and to hers now.
-function addToUserPath(folder, { platform = process.platform, spawnSync = cp.spawnSync, env = process.env } = {}) {
-  env.PATH = `${folder}${path.delimiter}${env.PATH || ''}`;
-  if (platform !== 'win32') return { ok: false, error: 'Windows only' };
-  const quoted = folder.replace(/'/g, "''");
-  const script = [
-    `$d = '${quoted}'`,
-    "$p = [Environment]::GetEnvironmentVariable('Path', 'User')",
-    "if (-not (($p -split ';') -contains $d)) { [Environment]::SetEnvironmentVariable('Path', ((($p + ';' + $d) -replace '^;+', '') -replace ';{2,}', ';'), 'User') }",
-  ].join('; ');
+// Runs a PowerShell script that changes your account's PATH (nothing shown, nothing asked)
+function changeUserPath(lines, spawnSync) {
+  const script = lines.join('; ');
   try {
     const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, timeout: 20000 });
     return { ok: r.status === 0, error: r.status === 0 ? '' : String(r.stderr || r.stdout).slice(0, 200) };
   } catch (err) {
     return { ok: false, error: err.message };
   }
+}
+
+// Adds a folder to the PATH of your account (yours only, no administrator; new programs see it), and to hers now.
+function addToUserPath(folder, { platform = process.platform, spawnSync = cp.spawnSync, env = process.env } = {}) {
+  env.PATH = `${folder}${path.delimiter}${env.PATH || ''}`;
+  if (platform !== 'win32') return { ok: false, error: 'Windows only' };
+  return changeUserPath([
+    `$d = '${folder.replace(/'/g, "''")}'`,
+    "$p = [Environment]::GetEnvironmentVariable('Path', 'User')",
+    "if (-not (($p -split ';') -contains $d)) { [Environment]::SetEnvironmentVariable('Path', ((($p + ';' + $d) -replace '^;+', '') -replace ';{2,}', ';'), 'User') }",
+  ], spawnSync);
 }
 
 // Takes a folder, and every PATH entry inside it, out of the PATH of your account again (what addToUserPath put in:
@@ -137,18 +141,11 @@ function removeFromUserPath(folder, { platform = process.platform, spawnSync = c
   };
   env.PATH = String(env.PATH || '').split(path.delimiter).filter((p) => p && !within(p)).join(path.delimiter);
   if (platform !== 'win32') return { ok: false, error: 'Windows only' };
-  const quoted = folder.replace(/[\\/]+$/, '').replace(/'/g, "''");
-  const script = [
-    `$d = '${quoted}'.ToLower()`,
+  return changeUserPath([
+    `$d = '${folder.replace(/[\\/]+$/, '').replace(/'/g, "''")}'.ToLower()`,
     "$p = [Environment]::GetEnvironmentVariable('Path', 'User')",
     "if ($p) { [Environment]::SetEnvironmentVariable('Path', (($p -split ';' | Where-Object { $_ -and -not (($_.TrimEnd('\\','/').ToLower() -eq $d) -or ($_.ToLower().StartsWith($d + '\\'))) }) -join ';'), 'User') }",
-  ].join('; ');
-  try {
-    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true, timeout: 20000 });
-    return { ok: r.status === 0, error: r.status === 0 ? '' : String(r.stderr || r.stdout).slice(0, 200) };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
+  ], spawnSync);
 }
 
 // The command that runs a script with Node: `node` when it is on the PATH, else the path of the one she found

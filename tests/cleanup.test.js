@@ -343,3 +343,21 @@ test('an older Chatterbox folder (no cache inside) has its model in the hub\'s d
   await fresh.cleanup.remove('chatterbox');
   assert.ok(fs.existsSync(mine), 'a cache outside her folder is left alone');
 });
+
+test('a list made a moment ago is reused by a removal (counting takes a while), and what is taken off makes the next one new', async () => {
+  const w = world();
+  let counts = 0;
+  const list = w.cleanup.d.ollamaApi.list;
+  w.cleanup.d.ollamaApi.list = async () => { counts++; return list(); };
+  await w.cleanup.inventory({ fresh: true });
+  const after = counts;
+  assert.equal((await w.cleanup.remove('piper')).ok, true);
+  assert.equal(counts, after, 'the removal did not count again');
+  const next = await w.cleanup.inventory();
+  assert.ok(counts > after, 'afterwards it is counted again');
+  assert.ok(!next.items.some((i) => i.id === 'piper'));
+  // and `fresh` always counts
+  const before = counts;
+  await w.cleanup.inventory({ fresh: true });
+  assert.ok(counts > before);
+});
