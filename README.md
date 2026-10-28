@@ -86,7 +86,7 @@
    он делает сам). Для скачивания проекта командой нужен ещё [Git](https://git-scm.com), но можно и без него (шаг 2).
 2. Скачай проект. Либо на странице репозитория **Code › Download ZIP** и распакуй, либо в терминале:
    ```bash
-   git clone https://github.com/anisimovkirill597-create/capri-desktop-main.git
+   git clone https://github.com/untrainedDemonKing/capri-desktop-main.git
    cd capri-desktop-main
    git checkout capri-alive
    ```
