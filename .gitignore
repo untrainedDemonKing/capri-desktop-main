@@ -8,5 +8,8 @@ Thumbs.db
 # local debug captures
 captures/
 
+# a recording of a voice that is put next to the installer's build (assets/voice-default/README.md): not part of the project
+assets/voice-default/capri.*
+
 # Python caches (the voice server, the test fixtures)
 __pycache__/

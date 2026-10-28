@@ -209,7 +209,7 @@ test('Antigravity: its events reach her as its own sessions, and its hook never 
   const stub = (obj) => new Proxy(obj, { get: (o, key) => (key in o ? o[key] : noop) });
   const brain = new Brain({
     capri: stub({ windows: { fg: null, wins: [] }, mode: 'idle', setMode(mode) { this.mode = mode; } }),
-    panel: stub({ say() {}, setTicker() {} }), voice: { play: noop }, host: { cursor: async () => null }, lang: 'fr', assistant: 'agy',
+    panel: stub({ say() {}, setTicker() {} }), voice: { play: noop }, host: { cursor: async () => null }, lang: 'en', assistant: 'agy',
   });
   t.after(() => clearInterval(brain.thinkTimer));
   await brain.handle({ hook_event_name: 'UserPromptSubmit', session_id: 'agy:c1', cwd: '/project', prompt: 'go' });

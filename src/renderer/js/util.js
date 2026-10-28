@@ -30,13 +30,13 @@ export const reducedMotion = {
 // "{project} a fini" + {project: 'x'} -> "x a fini"
 export const fmt = (str, vars = {}) => str.replace(/\{(\w+)\}/g, (_, k) => (vars[k] ?? ''));
 
-export function duration(ms, lang = 'fr') {
+export function duration(ms, lang = 'en') {
   const ru = lang === 'ru';
   const s = Math.max(0, Math.round(ms / 1000));
   if (s < 60) return ru ? `${s} с` : `${s} s`;
   const m = Math.floor(s / 60);
   const ss = String(s % 60).padStart(2, '0');
-  if (m < 60) return lang === 'en' ? `${m}m ${ss}s` : ru ? `${m} мин ${ss} с` : `${m} min ${ss}`;
+  if (m < 60) return ru ? `${m} мин ${ss} с` : `${m}m ${ss}s`;
   return `${Math.floor(m / 60)} ${ru ? 'ч' : 'h'} ${String(m % 60).padStart(2, '0')}`;
 }
 

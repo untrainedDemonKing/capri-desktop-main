@@ -15,7 +15,7 @@ const THINK_SAY = 40000;
 const THINK_LONG = 120000;
 
 export class Brain {
-  constructor({ capri, panel, voice, host, mission, lang = 'fr', assistant = 'claude' }) {
+  constructor({ capri, panel, voice, host, mission, lang = 'en', assistant = 'claude' }) {
     this.capri = capri;
     this.panel = panel;
     this.voice = voice;

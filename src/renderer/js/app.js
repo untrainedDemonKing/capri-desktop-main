@@ -499,6 +499,7 @@ async function boot() {
   };
 
   host.onClaudeEvent((evt) => brain.handle(evt));
+  let lastFg = null;
   host.onWindows((data) => {
     capri.setWindows(data);
     brain.onWindows(data);
@@ -507,7 +508,6 @@ async function boot() {
       eyes.onForeground(); // the window in front changed: worth a glance soon
     }
   });
-  let lastFg = null;
   // (she glances at the screen on her own, now and then, when she's allowed and things are calm: eyes.js
   // keeps that clock itself, and only while vision is on)
   // the windows as they are now: the watcher only speaks again when something changes
@@ -708,7 +708,7 @@ async function boot() {
     panel.say({ kind: 'done', face: 'grin', line: te.saved, hold: 6000 });
   }
 
-  const runCommand = async (cmd) => {
+  async function runCommand(cmd) {
     const t = brain.t;
     switch (cmd.name) {
       case 'teleport':
@@ -903,7 +903,7 @@ async function boot() {
       default:
         break;
     }
-  };
+  }
   host.onCommand(runCommand);
 
   // the overlay opened in a plain browser (tests, screenshots): its pieces, to drive it from there

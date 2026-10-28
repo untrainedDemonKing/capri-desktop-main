@@ -75,7 +75,7 @@ export function word(fx, x, y, text, { color = COLORS.paper, size = 18, life = 1
 
 // "ХА ХА" (or "HA HA") bursting out around her head as she laughs.
 export function haha(fx, head, { lang = 'en', count = 2 } = {}) {
-  const ha = lang === 'ru' ? 'ХА' : lang === 'fr' ? 'HA' : lang === 'es' || lang === 'pt' ? 'JA' : 'HA';
+  const ha = lang === 'ru' ? 'ХА' : 'HA';
   for (let i = 0; i < count; i++) {
     const side = Math.random() < 0.5 ? -1 : 1;
     word(fx, head.x + side * rand(40, 90), head.y - rand(20, 70), ha, {
@@ -427,6 +427,46 @@ function drawHeadphones(ctx, p, s, frame) {
   }
 }
 
+// The shapes, as polylines in px around (0, 0).
+const SHAPES = {
+  grin: (k) => {
+    const teeth = [];
+    for (let i = 0; i <= 10; i++) teeth.push([(-75 + i * 15) * k, (i % 2 ? 14 : -10) * k]);
+    const eyeL = circle(-42 * k, -52 * k, 14 * k, 14);
+    const eyeR = circle(42 * k, -52 * k, 14 * k, 14);
+    return [eyeL, eyeR, teeth];
+  },
+  satellite: (k) => [
+    circle(0, 0, 16 * k, 16),
+    [[-70 * k, -14 * k], [-24 * k, -14 * k], [-24 * k, 14 * k], [-70 * k, 14 * k], [-70 * k, -14 * k]],
+    [[70 * k, -14 * k], [24 * k, -14 * k], [24 * k, 14 * k], [70 * k, 14 * k], [70 * k, -14 * k]],
+    arc(0, 40 * k, 110 * k, Math.PI * 1.15, Math.PI * 1.85, 18),
+  ],
+  star: (k) => {
+    const pts = [];
+    for (let i = 0; i <= 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const r = (i % 2 ? 26 : 64) * k;
+      pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    return [pts];
+  },
+  heart: (k) => {
+    const pts = [];
+    for (let i = 0; i <= 28; i++) {
+      const a = (i / 28) * Math.PI * 2;
+      const x = 16 * Math.sin(a) ** 3;
+      const y = -(13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a));
+      pts.push([x * 3.6 * k, y * 3.6 * k]);
+    }
+    return [pts];
+  },
+  eye: (k) => [
+    [...arc(0, 40 * k, 80 * k, Math.PI * 1.2, Math.PI * 1.8, 14), ...arc(0, -40 * k, 80 * k, Math.PI * 0.2, Math.PI * 0.8, 14)],
+    circle(0, 0, 18 * k, 14),
+  ],
+};
+
 // Graffiti: she paints something in neon on your screen with her finger. It's drawn as her hand
 // goes (over `drawMs`), stays a while, then glitches away. `shape`: 'grin' (her zigzag grin),
 // 'satellite', 'star', 'heart', 'eye' or 'tag' (her name, with `text`).
@@ -492,46 +532,6 @@ function glitchOut(ctx, x, y, w, h, k) {
   }
   ctx.globalCompositeOperation = 'source-over';
 }
-
-// The shapes, as polylines in px around (0, 0).
-const SHAPES = {
-  grin: (k) => {
-    const teeth = [];
-    for (let i = 0; i <= 10; i++) teeth.push([(-75 + i * 15) * k, (i % 2 ? 14 : -10) * k]);
-    const eyeL = circle(-42 * k, -52 * k, 14 * k, 14);
-    const eyeR = circle(42 * k, -52 * k, 14 * k, 14);
-    return [eyeL, eyeR, teeth];
-  },
-  satellite: (k) => [
-    circle(0, 0, 16 * k, 16),
-    [[-70 * k, -14 * k], [-24 * k, -14 * k], [-24 * k, 14 * k], [-70 * k, 14 * k], [-70 * k, -14 * k]],
-    [[70 * k, -14 * k], [24 * k, -14 * k], [24 * k, 14 * k], [70 * k, 14 * k], [70 * k, -14 * k]],
-    arc(0, 40 * k, 110 * k, Math.PI * 1.15, Math.PI * 1.85, 18),
-  ],
-  star: (k) => {
-    const pts = [];
-    for (let i = 0; i <= 10; i++) {
-      const a = -Math.PI / 2 + (i * Math.PI) / 5;
-      const r = (i % 2 ? 26 : 64) * k;
-      pts.push([Math.cos(a) * r, Math.sin(a) * r]);
-    }
-    return [pts];
-  },
-  heart: (k) => {
-    const pts = [];
-    for (let i = 0; i <= 28; i++) {
-      const a = (i / 28) * Math.PI * 2;
-      const x = 16 * Math.sin(a) ** 3;
-      const y = -(13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a));
-      pts.push([x * 3.6 * k, y * 3.6 * k]);
-    }
-    return [pts];
-  },
-  eye: (k) => [
-    [...arc(0, 40 * k, 80 * k, Math.PI * 1.2, Math.PI * 1.8, 14), ...arc(0, -40 * k, 80 * k, Math.PI * 0.2, Math.PI * 0.8, 14)],
-    circle(0, 0, 18 * k, 14),
-  ],
-};
 
 function circle(cx, cy, r, n) {
   return arc(cx, cy, r, 0, Math.PI * 2, n);

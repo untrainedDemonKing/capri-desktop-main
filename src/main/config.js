@@ -8,7 +8,7 @@ const DEFAULTS = {
   scale: 0.6,        // sprite scale, 0.6 ≈ 250px tall
   muted: false,
   volume: 0.7,
-  lang: 'auto',      // 'auto' follows the system language, or 'fr' / 'en'
+  lang: 'auto',      // 'auto' follows the system language (Russian or English), or 'ru' / 'en'
   displayId: null,   // null = primary display
   wander: true,      // random teleports when idle
   possess: true,     // now and then she dives into the window she sits on and takes it over
@@ -62,6 +62,7 @@ const DEFAULTS = {
   profileApplied: '', // the profile whose model has been fetched (so that what you pick in her menu afterwards stays)
   piperDir: '',      // Piper's folder ('' she looks for one with "piper" in its name next to her, then fetches it)
   hardwareCache: null, // the last look at this PC ({ at, key, hw }): it is looked at again after two weeks, or when asked
+  voiceBundledTaken: false, // the recording that came with her was taken as her voice once (voice-sample.js): taking it away stays taken away
   mindTune: null,    // how she asks her model on this PC (tune.js): the profile's numbers and what a short run measured ({ profile, base, model, tps, speed, onCard, at })
   ttsRate: 1,        // how fast she talks (0.5..2)
   // her senses and her hands (all off by default: each one is a permission you turn on)

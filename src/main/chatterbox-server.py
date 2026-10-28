@@ -30,7 +30,7 @@ import threading
 import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-LANGUAGES = set('ar da de el en es fi fr he hi it ja ko ms nl no pl pt ru sv sw tr zh'.split())
+LANGUAGES = {'en', 'ru'}  # the two she speaks (anything else is read as English)
 CHUNK = 260       # characters: the model is at its best on a sentence or two at a time
 PAUSE = 0.14      # seconds of silence between two pieces
 REFERENCE = 20    # seconds of a recording the voice is taken from: more only makes every line slower

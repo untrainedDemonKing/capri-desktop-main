@@ -50,9 +50,9 @@ const REACTIONS = {
 };
 // the words of her marks, in her language
 const SAY = {
-  hmph: { ru: 'хмф', en: 'hmph', fr: 'pff', es: 'hmpf', pt: 'hunf' },
-  huh: { ru: '!?', en: '!?', fr: '!?', es: '¡¿', pt: '!?' },
-  yawn: { ru: 'ахх…', en: 'yawn…', fr: 'baille…', es: 'bostezo…', pt: 'bocejo…' },
+  hmph: { ru: 'хмф', en: 'hmph' },
+  huh: { ru: '!?', en: '!?' },
+  yawn: { ru: 'ахх…', en: 'yawn…' },
 };
 
 export class Capri {

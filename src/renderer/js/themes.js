@@ -77,14 +77,14 @@ export function applyTheme(id, { capri, root = document.documentElement } = {}) 
 // (Russian words from their start, any ending; the others whole words only: "red" isn't in "tired")
 const word = (ru, other) => new RegExp(`${ru}|(?<![\\p{L}])(?:${other})(?![\\p{L}])`, 'iu');
 const NAMES = [
-  ['netrunner', word('син|голуб|бирюз|циан|неттраннер|нетраннер', 'blue|cyan|teal|netrunner|bleu|azul')],
-  ['toxic', word('зел[её]н|токсич|кислот|салат', 'green|toxic|acid|lime|vert|verde')],
-  ['violet', word('фиолет|сирен|пурпур|лилов', 'violet|purple|lilac|morad[ao]|roxo|violette')],
-  ['gold', word('золот|ж[её]лт|оранж', 'gold|golden|yellow|orange|dor[ée]e?|amarill[ao]|amarel[ao]|dourad[ao]')],
-  ['sakura', word('розов|сакур', 'pink|sakura|rose|rosa')],
-  ['ghost', word('бел(?:ый|ой|ая|ую|ым|еньк|ою)|сер(?:ый|ой|ая|ую|ым|еньк|ою)|призрак|монохром', 'white|grey|gray|ghost|mono|monochrome|blanc|blanche|blanco|blanca|branc[ao]')],
-  ['classic', word('красн|обычн|стандарт|классич|верни\\s+(?:как\\s+было|цвет)', 'red|classic|default|rouge|rojo|roja|vermelh[ao]')],
-  ['mood', word('по\\s+настроени|под\\s+настроени', 'mood|humeur|[aá]nimo|humor')],
+  ['netrunner', word('син|голуб|бирюз|циан|неттраннер|нетраннер', 'blue|cyan|teal|netrunner')],
+  ['toxic', word('зел[её]н|токсич|кислот|салат', 'green|toxic|acid|lime')],
+  ['violet', word('фиолет|сирен|пурпур|лилов', 'violet|purple|lilac')],
+  ['gold', word('золот|ж[её]лт|оранж', 'gold|golden|yellow|orange')],
+  ['sakura', word('розов|сакур', 'pink|sakura|rose')],
+  ['ghost', word('бел(?:ый|ой|ая|ую|ым|еньк|ою)|сер(?:ый|ой|ая|ую|ым|еньк|ою)|призрак|монохром', 'white|grey|gray|ghost|mono|monochrome')],
+  ['classic', word('красн|обычн|стандарт|классич|верни\\s+(?:как\\s+было|цвет)', 'red|classic|default')],
+  ['mood', word('по\\s+настроени|под\\s+настроени', 'mood')],
 ];
 // a message asking her to change colour (needs a colour word too)
 const RECOLOUR = /перекрас|верни\s+(?:как\s+было|цвет|свой\s+цвет)|покрась|смени\s+цвет|поменяй\s+цвет|сделай\s+(?:себя|себе|волосы|гриву)|стань\s+\p{L}+|цвет\s+(?:волос|гривы)|recolou?r|turn\s+(?:yourself\s+)?\w+|change\s+(?:your\s+)?colou?r|dye|make\s+yourself|colou?r\s+(?:yourself|your\s+hair)|change\s+de\s+couleur|cambia\s+de\s+color|mude\s+de\s+cor/iu;

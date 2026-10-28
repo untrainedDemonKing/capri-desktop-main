@@ -42,11 +42,10 @@ function sizeClass(model) {
 
 // ---- the task ----
 
-const TASKS = ['chat', 'note', 'look'];
 const CHAT_TEMPERATURE = { tiny: 0.7, small: 0.8, mid: 0.85, big: 0.9 }; // her talk: lively, but a small model keeps its head
 const REPEAT_PENALTY = { tiny: 1.12, small: 1.06 }; // (the bigger ones are left to their own default)
 // the tokens that three sentences take, by language (Cyrillic costs about twice what Latin does)
-const ANSWER = { ru: 320, fr: 260, es: 260, pt: 260, en: 240 };
+const ANSWER = { ru: 320, en: 240 };
 
 // What to ask for in this task: Ollama's `options`, and its `format` ('json' or '') apart.
 //   { model, lang, answerCap (the longest answer wanted: a slow PC sets it) }
@@ -137,4 +136,4 @@ function settle(base = {}, measured = null) {
   return out;
 }
 
-module.exports = { TASKS, STEPS, billions, sizeClass, ask, estimateTokens, needed, stepFor, grow, judge, stillGood, settle, FRESH_DAYS };
+module.exports = { billions, sizeClass, ask, estimateTokens, needed, grow, judge, stillGood, settle };

@@ -1,29 +1,8 @@
 'use strict';
 
-// The tray menu (and the one she opens when you right-click her), in every language she speaks.
-// The order of this object is the order of the Language submenu.
+// The tray menu (and the one she opens when you right-click her), in the two languages she speaks.
 
 const TRAY = {
-  fr: {
-    name: 'Français',
-    mood: (m) => `Humeur : ${m}`, moods: { calm: 'calme', happy: 'de bonne humeur', angry: 'en colère', annoyed: 'agacée', sad: 'triste', shy: 'gênée', bored: 's’ennuie' },
-    character: 'Caractère', emotions: 'Émotions (colère, rires, bouderies)', life: 'Ses propres activités', dj: 'Mode DJ (elle change de morceau)', musicAware: 'Savoir ce qui joue', learn: 'Elle apprend à me connaître', bond: 'Ce qu’elle sait de moi…',
-    colors: 'Couleurs', themes: { classic: 'Rouge (comme dans l’anime)', netrunner: 'Netrunner (cyan)', toxic: 'Toxique (vert acide)', violet: 'Violet', gold: 'Or', sakura: 'Sakura (rose)', ghost: 'Fantôme (blanc)', mood: 'Selon son humeur' },
-    voice: 'Voix', voiceOff: 'Muette (bips seulement)', voiceChat: 'Lit ses réponses du chat', voiceAll: 'Lit tout ce qu’elle dit', voiceEngine: 'Moteur', engines: { piper: 'Piper (léger, sur ce PC, lancé par elle)', system: 'Voix du système (hors ligne, gratuit)', chatterbox: 'Chatterbox (sur ce PC, lancé par elle)', openai: 'OpenAI (clé)', elevenlabs: 'ElevenLabs (clé)', custom: 'Serveur compatible OpenAI (local)' }, voiceFx: 'Effet « plusieurs esprits »', voiceSetup: 'Clé, adresse ou voix…', voiceTest: 'Tester sa voix', voiceKeyPage: 'Où trouver une clé ?',
-    senses: 'Sens', vision: 'Qu’elle voie mon écran', lookNow: 'Regarde mon écran', rhythm: 'Bouger sur ma musique', ears: 'M’écouter (micro)', converse: 'Mode conversation', pushToTalk: 'Pour parler', visionSetup: 'Modèle de vision…', earsSetup: 'Reconnaissance vocale…', hands: 'Mains', handsOn: 'Qu’elle agisse sur mes fenêtres', handsType: 'Qu’elle écrive des messages',
-    online: (port) => `Capri — à l'écoute sur ${port}`,
-    teleport: 'Téléporter', satellite: 'Regarder le satellite', demo: 'Lancer la démo', help: 'Comment ça marche ?', prepare: 'Préparation (Ollama et Chatterbox)…', hub: 'Menu principal (IA et installation)…',
-    report: 'Rapport de mission', talk: 'Lui parler', ring: 'Menu circulaire', custom: 'La personnaliser…', chatModel: 'Modèle IA', aiSetup: 'Choisir avec elle…', apiKey: 'Clé API ou adresse…', noOllama: 'Ollama introuvable',
-    rest: 'Quand elle se repose', restCorner: 'Dans son coin', restTaskbar: 'Assise sur la barre des tâches', watch: 'Surveiller', watchNone: 'Rien, juste me tenir compagnie',
-    motion: 'Animations', motionAuto: 'Comme Windows', motionFull: 'Toutes', motionReduced: 'Réduites',
-    display: 'Affichage', displayAuto: 'Normal', displayGl: 'OpenGL (si son fond est noir)', displaySoftware: 'Sans la carte graphique (si c’est encore noir)',
-    show: 'La faire revenir', hide: 'La ranger',
-    size: 'Taille', small: 'Petite', medium: 'Moyenne', large: 'Grande', sound: 'Son', mute: 'Muet',
-    soundsDir: 'Ouvrir le dossier des sons perso', screen: 'Écran', wander: 'Se balader quand rien ne se passe',
-    possess: 'Posséder mes fenêtres', possessMove: 'Les déplacer quand elle les possède', lang: 'Langue', auto: 'Automatique (système)', startup: 'Lancer au démarrage',
-    hooksOn: 'Hooks Claude Code : installés', hooksOff: 'Installer les hooks Claude Code',
-    hooksRemove: 'Retirer les hooks Claude Code', forget: 'Oublier nos conversations', quit: 'Quitter',
-  },
   en: {
     name: 'English',
     mood: (m) => `Mood: ${m}`, moods: { calm: 'calm', happy: 'in a good mood', angry: 'angry', annoyed: 'annoyed', sad: 'sad', shy: 'flustered', bored: 'bored' },
@@ -43,46 +22,6 @@ const TRAY = {
     possess: 'Possess my windows', possessMove: 'Move them while she has them', lang: 'Language', auto: 'Automatic (system)', startup: 'Start with Windows',
     hooksOn: 'Claude Code hooks: installed', hooksOff: 'Install Claude Code hooks',
     hooksRemove: 'Remove Claude Code hooks', forget: 'Forget our conversations', quit: 'Quit',
-  },
-  es: {
-    name: 'Español',
-    mood: (m) => `Humor: ${m}`, moods: { calm: 'tranquila', happy: 'de buen humor', angry: 'enfadada', annoyed: 'molesta', sad: 'triste', shy: 'avergonzada', bored: 'aburrida' },
-    character: 'Carácter', emotions: 'Emociones (enfados, risas, berrinches)', life: 'Sus propias actividades', dj: 'Modo DJ (cambia de canción)', musicAware: 'Saber qué suena', learn: 'Aprende a conocerme', bond: 'Lo que sabe de mí…',
-    colors: 'Colores', themes: { classic: 'Rojo (como en el anime)', netrunner: 'Netrunner (cian)', toxic: 'Tóxico (verde ácido)', violet: 'Violeta', gold: 'Oro', sakura: 'Sakura (rosa)', ghost: 'Fantasma (blanco)', mood: 'Según su humor' },
-    voice: 'Voz', voiceOff: 'Muda (solo pitidos)', voiceChat: 'Lee sus respuestas del chat', voiceAll: 'Lee todo lo que dice', voiceEngine: 'Motor', engines: { piper: 'Piper (ligero, en este PC, lo lanza ella)', system: 'Voz del sistema (sin conexión, gratis)', chatterbox: 'Chatterbox (en este PC, lo arranca ella)', openai: 'OpenAI (clave)', elevenlabs: 'ElevenLabs (clave)', custom: 'Servidor compatible con OpenAI (local)' }, voiceFx: 'Efecto «muchas mentes»', voiceSetup: 'Clave, dirección o voz…', voiceTest: 'Probar su voz', voiceKeyPage: '¿Dónde consigo una clave?',
-    senses: 'Sentidos', vision: 'Que vea mi pantalla', lookNow: 'Mira mi pantalla', rhythm: 'Moverse con mi música', ears: 'Escucharme (micro)', converse: 'Modo conversación', pushToTalk: 'Para hablar', visionSetup: 'Modelo de visión…', earsSetup: 'Voz a texto…', hands: 'Manos', handsOn: 'Que maneje mis ventanas', handsType: 'Que escriba mensajes',
-    online: (port) => `Capri — escuchando en ${port}`,
-    teleport: 'Teletransportar', satellite: 'Mirar el satélite', demo: 'Ver la demo', help: '¿Cómo funciona?', prepare: 'Preparación (Ollama y Chatterbox)…', hub: 'Menú principal (IA e instalación)…',
-    report: 'Informe de misión', talk: 'Hablar con ella', ring: 'Menú circular', custom: 'Personalizarla…', chatModel: 'Modelo de IA', aiSetup: 'Elegir con ella…', apiKey: 'Clave API o dirección…', noOllama: 'Ollama no encontrado',
-    rest: 'Cuando descansa', restCorner: 'En su rincón', restTaskbar: 'Sentada en la barra de tareas', watch: 'Vigilar', watchNone: 'Nada, solo hacerme compañía',
-    motion: 'Animaciones', motionAuto: 'Como Windows', motionFull: 'Completas', motionReduced: 'Reducidas',
-    display: 'Pantalla', displayAuto: 'Normal', displayGl: 'OpenGL (si su fondo sale negro)', displaySoftware: 'Sin la tarjeta gráfica (si sigue negro)',
-    show: 'Traerla de vuelta', hide: 'Guardarla',
-    size: 'Tamaño', small: 'Pequeña', medium: 'Mediana', large: 'Grande', sound: 'Sonido', mute: 'Silenciar',
-    soundsDir: 'Abrir la carpeta de sonidos propios', screen: 'Pantalla', wander: 'Pasear cuando no pasa nada',
-    possess: 'Poseer mis ventanas', possessMove: 'Moverlas mientras las posee', lang: 'Idioma', auto: 'Automático (sistema)', startup: 'Iniciar con Windows',
-    hooksOn: 'Hooks de Claude Code: instalados', hooksOff: 'Instalar los hooks de Claude Code',
-    hooksRemove: 'Quitar los hooks de Claude Code', forget: 'Olvidar nuestras conversaciones', quit: 'Salir',
-  },
-  pt: {
-    name: 'Português (Brasil)',
-    mood: (m) => `Humor: ${m}`, moods: { calm: 'calma', happy: 'de bom humor', angry: 'brava', annoyed: 'irritada', sad: 'triste', shy: 'envergonhada', bored: 'entediada' },
-    character: 'Personalidade', emotions: 'Emoções (raiva, risadas, birra)', life: 'Atividades próprias', dj: 'Modo DJ (ela troca de música)', musicAware: 'Saber o que está tocando', learn: 'Aprende a me conhecer', bond: 'O que ela sabe de mim…',
-    colors: 'Cores', themes: { classic: 'Vermelho (como no anime)', netrunner: 'Netrunner (ciano)', toxic: 'Tóxico (verde ácido)', violet: 'Violeta', gold: 'Ouro', sakura: 'Sakura (rosa)', ghost: 'Fantasma (branco)', mood: 'Conforme o humor' },
-    voice: 'Voz', voiceOff: 'Muda (só bipes)', voiceChat: 'Lê as respostas do chat', voiceAll: 'Lê tudo o que diz', voiceEngine: 'Motor', engines: { piper: 'Piper (leve, neste PC, iniciado por ela)', system: 'Voz do sistema (offline, grátis)', chatterbox: 'Chatterbox (neste PC, iniciado por ela)', openai: 'OpenAI (chave)', elevenlabs: 'ElevenLabs (chave)', custom: 'Servidor compatível com OpenAI (local)' }, voiceFx: 'Efeito “muitas mentes”', voiceSetup: 'Chave, endereço ou voz…', voiceTest: 'Testar a voz dela', voiceKeyPage: 'Onde consigo uma chave?',
-    senses: 'Sentidos', vision: 'Deixar ela ver minha tela', lookNow: 'Olhar minha tela', rhythm: 'Dançar com minha música', ears: 'Me ouvir (microfone)', converse: 'Modo conversa', pushToTalk: 'Para falar', visionSetup: 'Modelo de visão…', earsSetup: 'Voz para texto…', hands: 'Mãos', handsOn: 'Deixar ela mexer nas janelas', handsType: 'Deixar ela escrever mensagens',
-    online: (port) => `Capri — ouvindo na porta ${port}`,
-    teleport: 'Teletransportar', satellite: 'Olhar o satélite', demo: 'Ver a demo', help: 'Como funciona?', prepare: 'Preparação (Ollama e Chatterbox)…', hub: 'Menu principal (IA e instalação)…',
-    report: 'Relatório de missão', talk: 'Falar com ela', ring: 'Menu circular', custom: 'Personalizar…', chatModel: 'Modelo de IA', aiSetup: 'Escolher com ela…', apiKey: 'Chave de API ou endereço…', noOllama: 'Ollama não encontrado',
-    rest: 'Quando ela descansa', restCorner: 'No canto dela', restTaskbar: 'Sentada na barra de tarefas', watch: 'Acompanhar', watchNone: 'Nada, só me fazer companhia',
-    motion: 'Animações', motionAuto: 'Como o Windows', motionFull: 'Completas', motionReduced: 'Reduzidas',
-    display: 'Exibição', displayAuto: 'Normal', displayGl: 'OpenGL (se o fundo dela ficar preto)', displaySoftware: 'Sem a placa de vídeo (se continuar preto)',
-    show: 'Trazer de volta', hide: 'Guardar',
-    size: 'Tamanho', small: 'Pequena', medium: 'Média', large: 'Grande', sound: 'Som', mute: 'Sem som',
-    soundsDir: 'Abrir a pasta de sons personalizados', screen: 'Tela', wander: 'Passear quando nada acontece',
-    possess: 'Possuir minhas janelas', possessMove: 'Movê-las enquanto ela as possui', lang: 'Idioma', auto: 'Automático (sistema)', startup: 'Iniciar com o Windows',
-    hooksOn: 'Hooks do Claude Code: instalados', hooksOff: 'Instalar os hooks do Claude Code',
-    hooksRemove: 'Remover os hooks do Claude Code', forget: 'Esquecer nossas conversas', quit: 'Sair',
   },
   ru: {
     name: 'Русский',
@@ -106,4 +45,7 @@ const TRAY = {
   },
 };
 
-module.exports = { TRAY, LANGS: Object.keys(TRAY) };
+// (the order of the Language submenu)
+const LANGS = ['ru', 'en'];
+
+module.exports = { TRAY, LANGS };

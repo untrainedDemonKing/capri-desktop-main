@@ -12,6 +12,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const LANGS = ['ru', 'en'];
 const NAME = 'capri'; // the name the voice server finds it by (chatterbox-server.py find_voice)
 const EXTS = ['.wav', '.mp3', '.flac', '.ogg'];
 const MAX_BYTES = 60 * 1024 * 1024;
@@ -88,29 +89,47 @@ function judge(info) {
 function createSample({ dir: dirOrFn, fsx = fs }) {
   const where = () => (typeof dirOrFn === 'function' ? dirOrFn() : dirOrFn);
   const fileFor = (ext) => path.join(where(), NAME + ext);
+  const noteFile = () => path.join(where(), `${NAME}.json`); // what is known of the recording ({ lang }): beside it
   const found = () => EXTS.map(fileFor).find((f) => fsx.existsSync(f)) || '';
+  let looked = null; // the last look at the file, kept while it is the same file (a WAV is read through to be looked into)
 
-  // { has, name, ext, bytes, seconds (WAV only, else null), warn: [codes], file }
+  // the language that is spoken in the recording, if it was said when she was given it ('' when not known)
+  function lang() {
+    try {
+      const said = JSON.parse(fsx.readFileSync(noteFile(), 'utf8')).lang;
+      return LANGS.includes(said) ? said : '';
+    } catch {
+      return '';
+    }
+  }
+
+  // { has, name, ext, bytes, seconds (WAV only, else null), warn: [codes], lang, file }
   function status() {
     const file = found();
-    if (!file) return { has: false, name: '', ext: '', bytes: 0, seconds: null, warn: [], file: '' };
-    let info = null;
-    const ext = path.extname(file);
-    try {
-      if (ext === '.wav') info = readWav(fsx.readFileSync(file));
-    } catch {
-      // unreadable: still hers, just not looked into
+    if (!file) return { has: false, name: '', ext: '', bytes: 0, seconds: null, warn: [], lang: '', file: '' };
+    const stat = fsx.statSync(file);
+    const key = `${file}|${stat.size}|${stat.mtimeMs}`;
+    if (looked?.key !== key) {
+      let info = null;
+      try {
+        if (path.extname(file) === '.wav') info = readWav(fsx.readFileSync(file));
+      } catch {
+        // unreadable: still hers, just not looked into
+      }
+      looked = { key, seconds: info ? Math.round(info.seconds * 10) / 10 : null, warn: judge(info).warn };
     }
-    return { has: true, name: NAME, ext, bytes: fsx.statSync(file).size, seconds: info ? Math.round(info.seconds * 10) / 10 : null, warn: judge(info).warn, file };
+    return { has: true, name: NAME, ext: path.extname(file), bytes: stat.size, seconds: looked.seconds, warn: [...looked.warn], lang: lang(), file };
   }
 
   function remove() {
     for (const ext of EXTS) fsx.rmSync(fileFor(ext), { force: true });
+    fsx.rmSync(noteFile(), { force: true });
     return status();
   }
 
-  // Takes a recording as her voice. { ok: true, ...status } or { ok: false, error: 'missing' | 'format' | 'empty' | 'big' | 'wav' | 'short' | 'silent' | 'copy' }.
-  function use(src) {
+  // Takes a recording as her voice. `spoken`: the language in it, when it is known ('ru' or 'en').
+  // { ok: true, ...status } or { ok: false, error: 'missing' | 'format' | 'empty' | 'big' | 'wav' | 'short' | 'silent' | 'copy' }.
+  function use(src, { spoken = '' } = {}) {
     const from = String(src || '');
     const ext = path.extname(from).toLowerCase();
     let stat;
@@ -135,13 +154,30 @@ function createSample({ dir: dirOrFn, fsx = fs }) {
       fsx.copyFileSync(from, tmp);
       for (const other of EXTS) if (other !== ext) fsx.rmSync(fileFor(other), { force: true }); // (one voice: the new one replaces the old)
       fsx.renameSync(tmp, fileFor(ext));
+      if (LANGS.includes(spoken)) fsx.writeFileSync(noteFile(), JSON.stringify({ lang: spoken }));
+      else fsx.rmSync(noteFile(), { force: true });
     } catch {
       return { ok: false, error: 'copy' };
     }
     return { ok: true, ...status() };
   }
 
-  return { status, use, remove, dir: where, name: NAME, current: () => (found() ? NAME : '') };
+  // The recording that came with her (a folder with capri.wav, and capri.json saying what is spoken in it), if she has none
+  // of her own yet: { ok: true, ... } or null when there is nothing to take. Only ever once (the caller keeps a note), so that
+  // taking it away stays taken away.
+  function useBundled(folder) {
+    const file = EXTS.map((e) => path.join(folder, NAME + e)).find((f) => fsx.existsSync(f));
+    if (!file) return null;
+    let spoken = '';
+    try {
+      spoken = JSON.parse(fsx.readFileSync(path.join(folder, `${NAME}.json`), 'utf8')).lang;
+    } catch {
+      // not said: not known
+    }
+    return found() ? { ok: false, error: 'has' } : use(file, { spoken });
+  }
+
+  return { status, use, useBundled, remove, lang, dir: where, name: NAME, current: () => (found() ? NAME : '') };
 }
 
 module.exports = { createSample, readWav, judge, NAME, EXTS, MAX_BYTES };

@@ -28,13 +28,10 @@ const ASSETS = {
   'darwin-arm64': 'piper_macos_aarch64.tar.gz',
 };
 // the voices she likes, by the language she speaks (the first that the library has; else any of that language)
-const LANG_PREFIX = { ru: 'ru_', en: 'en_', fr: 'fr_', es: 'es_', pt: 'pt_' };
+const LANG_PREFIX = { ru: 'ru_', en: 'en_' };
 const PREFERRED = {
   ru: ['ru_RU-irina-medium'],
   en: ['en_US-amy-medium', 'en_GB-jenny_dioco-medium', 'en_US-lessac-medium'],
-  fr: ['fr_FR-siwis-medium'],
-  es: ['es_ES-sharvard-medium', 'es_MX-claude-high'],
-  pt: ['pt_BR-faber-medium'],
 };
 const QUALITY = ['medium', 'high', 'low', 'x_low'];
 // How the voice is asked to speak. Piper's defaults are made for reading aloud; she is quick, lively and a little teasing:

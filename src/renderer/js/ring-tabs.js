@@ -317,7 +317,9 @@ const brain = {
 };
 
 // the models as a column of rows
-const pick_ = (models, current, onPick) => pick(models.map((m) => ({ id: m.id, label: m.label })), current, onPick);
+function pick_(models, current, onPick) {
+  return pick(models.map((m) => ({ id: m.id, label: m.label })), current, onPick);
+}
 
 // Connecting: saved and tried, and put back as it was if it doesn't work (main.js setup:use).
 async function connect(c, provider, extra = {}) {
@@ -699,7 +701,7 @@ const voice = {
 
 // ---------- More ----------
 
-const LANGS = [['auto', null], ['fr', 'Français'], ['en', 'English'], ['es', 'Español'], ['pt', 'Português'], ['ru', 'Русский']];
+const LANGS = [['auto', null], ['ru', 'Русский'], ['en', 'English']];
 const SIZES = [['small', 0.45], ['medium', 0.6], ['large', 0.8]];
 
 const more = {
@@ -711,7 +713,7 @@ const more = {
     root.append(row(m.size, seg(SIZES.map(([id, scale]) => ({ id, label: m[id], scale })), size, (id) => c.set({ scale: SIZES.find(([s]) => s === id)[1] }))));
     root.append(row(m.rest, seg([{ id: 'corner', label: m.corner }, { id: 'taskbar', label: m.taskbar }], cfg.rest || 'corner', (id) => c.set({ rest: id }))));
     root.append(row(m.lang, null));
-    root.append(seg(LANGS.map(([id, name]) => ({ id, label: name || m.auto })), cfg.lang || 'auto', (id) => c.set({ lang: id })));
+    root.append(seg(LANGS.map(([id, name]) => ({ id, label: name || m.auto })), cfg.langSetting ?? cfg.lang ?? 'auto', (id) => c.set({ lang: id })));
     root.append(heading(''));
     root.append(buttons(
       go(c, m.teleport, 'teleport'),

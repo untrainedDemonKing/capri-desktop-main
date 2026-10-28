@@ -13,6 +13,9 @@ import { ASSISTANT_NAMES } from './lines.js';
 const MIN_GAP = 18000;        // never two looks closer than this, whatever asks
 const CHANGE_GAP = 8000;      // the foreground window changed: wait this long before a fresh glance
 
+const LANG_NAME = { ru: 'Russian', en: 'English' };
+const str = (v) => (typeof v === 'string' ? v.trim() : '');
+
 export class Eyes {
   constructor({ host, brain, heart, panel, capri, voice, life }) {
     this.host = host;
@@ -135,8 +138,6 @@ export class Eyes {
   }
 }
 
-const LANG_NAME = { ru: 'Russian', en: 'English', fr: 'French', es: 'Spanish', pt: 'Brazilian Portuguese' };
-
 // A lenient read of the model's answer: the JSON if it's there, else the whole thing as the line.
 export function parse(text) {
   const raw = String(text || '').trim();
@@ -153,4 +154,3 @@ export function parse(text) {
   return { scene: clean.slice(0, 120), mood: '', line: clean.slice(0, 200) };
 }
 
-const str = (v) => (typeof v === 'string' ? v.trim() : '');

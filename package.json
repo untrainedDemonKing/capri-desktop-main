@@ -17,6 +17,7 @@
     "hooks:agy:install": "node scripts/install-hooks-agy.js",
     "hooks:agy:uninstall": "node scripts/install-hooks-agy.js --uninstall",
     "check:llm": "node scripts/check-llm.js",
+    "voices:demo": "node scripts/voice-demo.js",
     "test:hooks": "node --test tests/hooks.test.js",
     "dist": "electron-builder --win --x64",
     "dist:32": "electron-builder --win --ia32 -c.electronVersion=43.8.3",
@@ -49,6 +50,7 @@
     "test:node": "node --test tests/node-check.test.js",
     "test:stacking": "node --test tests/stacking.test.js",
     "test:tune": "node --test tests/tune.test.js",
+    "test:voice-demo": "node --test tests/voice-demo.test.js",
     "test:voice-sample": "node --test tests/voice-sample.test.js",
     "test": "node --test tests/*.test.js"
   },
@@ -76,6 +78,7 @@
     "files": [
       "src/**",
       "assets/**",
+      "!assets/voice-default/**",
       "hooks/**",
       "scripts/**",
       "package.json",
@@ -88,6 +91,13 @@
       {
         "from": "src/main/chatterbox-server.py",
         "to": "chatterbox-server.py"
+      },
+      {
+        "from": "assets/voice-default",
+        "to": "voice-default",
+        "filter": [
+          "capri.*"
+        ]
       }
     ],
     "asarUnpack": [
@@ -109,6 +119,10 @@
       "shortcutName": "Capri",
       "artifactName": "Capri-Setup-${version}-${arch}.${ext}"
     },
-    "compression": "maximum"
+    "compression": "maximum",
+    "electronLanguages": [
+      "en-US",
+      "ru"
+    ]
   }
 }

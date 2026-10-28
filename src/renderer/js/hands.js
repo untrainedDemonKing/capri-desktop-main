@@ -10,26 +10,26 @@
 import { pick, fmt } from './util.js';
 import { lifeLines } from './lines-life.js';
 
-// window arrangement, said plainly (RU / EN and a little FR/ES/PT). Each op: how it's named, and
+// window arrangement, said plainly (RU / EN). Each op: how it's named, and
 // the word that comes right before the window's name, which is stripped off.
 // (\w and \b don't match Cyrillic in JS, so every boundary here is \p{L} with the u flag)
 const END = '(?![\\p{L}])';
 const SHOW_DESKTOP = /сверн(?:и|уть)\s+вс[её]|покажи\s+рабочий\s+стол|show\s+(?:the\s+)?desktop|свернуть\s+все\s+окна|minimize\s+all/iu;
 const WINDOW_OPS = [
-  ['minimize', new RegExp(`(сверни|свернуть|минимизируй|minimi[sz]e|réduis|minimiza)${END}`, 'iu')],
-  ['maximize', new RegExp(`(разверни|разверну|во\\s+весь\\s+экран|maximi[sz]e|plein\\s+écran|maximiza)${END}`, 'iu')],
-  ['restore', new RegExp(`(восстанови|восстановить|restore|restaure|restaura)${END}`, 'iu')],
+  ['minimize', new RegExp(`(сверни|свернуть|минимизируй|minimi[sz]e)${END}`, 'iu')],
+  ['maximize', new RegExp(`(разверни|разверну|во\\s+весь\\s+экран|maximi[sz]e)${END}`, 'iu')],
+  ['restore', new RegExp(`(восстанови|восстановить|restore)${END}`, 'iu')],
   ['focus', new RegExp('(переключись\\s+на|покажи\\s+окно|подними\\s+окно|на\\s+передний\\s+план|switch\\s+to|bring\\s+up|focus\\s+on)', 'iu')],
 ];
-// "окно/window/la fenêtre/ventana" before the name, and little filler we drop from the front
-const WINDOW_WORD = /^\s*(?:окн[оа]|window|fen[êe]tre|ventana|de|of)\s+/iu;
+// "окно/window" before the name, and little filler we drop from the front
+const WINDOW_WORD = /^\s*(?:окн[оа]|window|of)\s+/iu;
 
 // the messengers she can write in, named plainly
 const MESSENGERS = /(телеграм\p{L}*|телег\p{L}*|\btg\b|telega|telegram|дискорд\p{L}*|discord|вотсап\p{L}*|ватсап\p{L}*|whats\s?app|слак\p{L}*|slack)/iu;
 // a verb that means "write/send a message"
-const WRITE = /(напиш\p{L}*|напеч\p{L}*|отправ\p{L}*|сообщ\p{L}*|скаж\p{L}*|передай|write|send|message|text|écris|envoie|escribe|manda)/iu;
+const WRITE = /(напиш\p{L}*|напеч\p{L}*|отправ\p{L}*|сообщ\p{L}*|скаж\p{L}*|передай|write|send|message|text)/iu;
 // filler at the start of the chat part: "и напиши В телеграме МАМЕ" -> "маме"
-const LEAD = new RegExp(`^(?:(?:и|а|в|во|на|у|то|что|для|сообщение|message|to|in|the|a|that|dans|en|à|al)${END}[\\s,:]*)+`, 'iu');
+const LEAD = new RegExp(`^(?:(?:и|а|в|во|на|у|то|что|для|сообщение|message|to|in|the|a|that)${END}[\\s,:]*)+`, 'iu');
 
 export class Hands {
   constructor({ host, capri, panel, voice, brain }) {
@@ -86,7 +86,7 @@ export class Hands {
     }
     if (!m) return null;
     // a trailing preposition the app sat after ("жене в [вотсапе]") isn't part of the name
-    const chat = m[1].trim().replace(/\s+(?:в|во|на|у|in|to|on|dans|en)$/iu, '').replace(/^["'«»]+|["'«»]+$/g, '').trim();
+    const chat = m[1].trim().replace(/\s+(?:в|во|на|у|in|to|on)$/iu, '').replace(/^["'«»]+|["'«»]+$/g, '').trim();
     const message = m[2].trim().replace(/^["'«»]+|["'«»]+$/g, '');
     if (!chat || !message) return null;
     return { kind: 'message', app: appM[1], chat, message };

@@ -62,6 +62,7 @@ const placesNextToHer = () => {
   return [path.dirname(process.execPath), ROOT, path.resolve(ROOT, '..'), process.env.PORTABLE_EXECUTABLE_DIR, process.cwd(), place('desktop'), place('downloads'), place('documents'), place('home')]
     .filter(Boolean).filter((p, i, all) => all.indexOf(p) === i);
 };
+let overlay = null; // her window
 // (a message to the overlay once its window is gone, while she is quitting, would throw)
 const toOverlay = (channel, payload) => { if (overlay && !overlay.isDestroyed()) overlay.webContents.send(channel, payload); };
 // the recording she was given as her voice, if any (voice-sample.js): in her own data folder
@@ -145,7 +146,6 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'capri', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ]);
 
-let overlay = null;
 let tray = null;
 let trayMenu = null; // also what she opens when you right-click her
 let demoTimer = null;
@@ -386,7 +386,7 @@ function resolveLang(setting) {
 // What the overlay gets: `lang` is the resolved one, `langSetting` what the user picked.
 function rendererConfig() {
   const { apiKeys, ...cfg } = config.load(); // the keys stay here: the overlay only learns which ones are set
-  return { ...cfg, keys: Object.keys(apiKeys || {}), assistant: activeAssistant().id, lang: resolveLang(cfg.lang), langSetting: cfg.lang, floorGap: overlayArea().gap };
+  return { ...cfg, keys: Object.keys(apiKeys || {}), assistant: activeAssistant().id, lang: resolveLang(cfg.lang), langSetting: LANGS.includes(cfg.lang) ? cfg.lang : 'auto', floorGap: overlayArea().gap };
 }
 
 // A setting changed (her menus, her ring, her setup). Only what really changed is acted on: the same
@@ -671,7 +671,7 @@ function buildTray() {
     {
       label: t.lang,
       submenu: [[t.auto, 'auto'], ...LANGS.map((lang) => [TRAY[lang].name, lang])].map(([label, lang]) => ({
-        label, type: 'radio', checked: cfg.lang === lang, click: () => updateConfig({ lang }),
+        label, type: 'radio', checked: (LANGS.includes(cfg.lang) ? cfg.lang : 'auto') === lang, click: () => updateConfig({ lang }),
       })),
     },
     {
@@ -720,6 +720,18 @@ function runHooks(action, { quiet = false } = {}) {
 function pickModel(cfg = config.load()) {
   if (!chatModels?.length) return null;
   return chatModels.includes(cfg.chatModel) ? cfg.chatModel : chatModels[0];
+}
+
+// The recording that came with her (resources/voice-default, put there by whoever made the installer), taken as her voice
+// once when she has none: a note in the config keeps it from coming back after you took it away.
+function adoptBundledVoice() {
+  if (config.load().voiceBundledTaken) return;
+  for (const folder of [process.resourcesPath && path.join(process.resourcesPath, 'voice-default'), path.join(ROOT, 'assets', 'voice-default')]) {
+    if (folder && voiceSample.useBundled(folder)) {
+      updateConfig({ voiceBundledTaken: true });
+      return;
+    }
+  }
 }
 
 // ---- her mind, fitted to this PC (tune.js) ----
@@ -1195,7 +1207,8 @@ function registerIpc() {
     const cfg = config.load();
     try {
       const base = cfg.ttsEngine === 'chatterbox' ? await chatterbox.ready(cfg) : '';
-      const audio = await tts.speak(cfg, setup.openKeys(cfg.apiKeys), { text, mood, lang, base, piper, sample: voiceSample.current() });
+      const sample = voiceSample.current();
+      const audio = await tts.speak(cfg, setup.openKeys(cfg.apiKeys), { text, mood, lang, base, piper, sample, sampleLang: sample ? voiceSample.lang() : '' });
       return { ok: true, audio };
     } catch (err) {
       return { ok: false, error: err.message, code: err.code || null };
@@ -1509,6 +1522,7 @@ function main() {
       chatterbox.sync(config.load()).catch(() => {});
       if ((config.load().provider || 'ollama') === 'ollama') ollamaHost.sync(config.load()).catch(() => {});
     }
+    adoptBundledVoice();
     refreshModels(); // for her menu's model list
     setTimeout(() => launch.launchables().catch(() => {}), 20000); // what she can open, before you ask
     screen.on('display-metrics-changed', fitOverlay);

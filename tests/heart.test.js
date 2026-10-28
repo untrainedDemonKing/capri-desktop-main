@@ -265,7 +265,7 @@ test('the pointer lines exist in Russian and English, the same set, none empty',
     assert.ok(lang.noAi.click.length >= 4 && lang.noAi.chatter.length >= 4);
     assert.ok(lang.noAi.button.trim());
   }
-  // the other languages use the English ones
+  // any other language (a settings file from an older version may still say 'fr') uses the English ones
   assert.deepEqual(lifeLines('fr').mood.mouse, en.mouse);
 });
 

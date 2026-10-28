@@ -3,7 +3,7 @@
 
 // Plays the demo session against a running Capri, through the same HTTP bridge the hooks use.
 //   npm run demo           (in English)
-//   npm run demo -- fr     (or es, pt, ru)
+//   npm run demo -- ru
 
 const http = require('node:http');
 const steps = require('./demo-sequence')(process.argv[2]);

@@ -34,26 +34,26 @@ const re = (src) => new RegExp(src, 'iu');
 // What you ask of how she talks, plainly: [what it moves, how far, the words]
 export const ASKS = [
   // ("короче" alone is mostly a filler word in Russian: only as an ask, or on its own)
-  ['short', 0.55, re(`^\\s*(?:ну\\s+)?короче[.!?]*\\s*$|${L}(?:покороче|(?:давай|можно|говори|пиши|отвечай)\\s+(?:по)?короче|короче\\s+(?:говори|пиши|отвечай)|кратко|кратче|в\\s+двух\\s+словах|меньше\\s+(?:слов|текста|воды)|слишком\\s+(?:много|длинно|долго)|без\\s+воды|не\\s+растекайся|too\\s+long|shorter|tl;?dr|be\\s+brief|keep\\s+it\\s+short|plus\\s+court|m[aá]s\\s+corto|mais\\s+curto)`)],
-  ['short', -0.45, re(`${L}(?:подробн|поподробнее|развернут|детальн|расскажи\\s+(?:больше|побольше)|а\\s+подробнее|more\\s+details?|elaborate|tell\\s+me\\s+more|go\\s+on|plus\\s+de\\s+d[ée]tails|m[aá]s\\s+detalles|mais\\s+detalhes)`)],
+  ['short', 0.55, re(`^\\s*(?:ну\\s+)?короче[.!?]*\\s*$|${L}(?:покороче|(?:давай|можно|говори|пиши|отвечай)\\s+(?:по)?короче|короче\\s+(?:говори|пиши|отвечай)|кратко|кратче|в\\s+двух\\s+словах|меньше\\s+(?:слов|текста|воды)|слишком\\s+(?:много|длинно|долго)|без\\s+воды|не\\s+растекайся|too\\s+long|shorter|tl;?dr|be\\s+brief|keep\\s+it\\s+short)`)],
+  ['short', -0.45, re(`${L}(?:подробн|поподробнее|развернут|детальн|расскажи\\s+(?:больше|побольше)|а\\s+подробнее|more\\s+details?|elaborate|tell\\s+me\\s+more|go\\s+on)`)],
   ['slang', -0.55, re(`${L}(?:без\\s+сленга|хватит\\s+(?:сленга|чумб)|что\\s+(?:значит|такое)\\s+(?:чумба|нова|гонк|флэтлайн|преем)|не\\s+понимаю\\s+(?:твой\\s+|твоего\\s+|этот\\s+)?сленг|no\\s+slang|what\\s+(?:does|is)\\s+(?:choom|preem|nova|gonk|flatline)|stop\\s+(?:saying|calling\\s+me)\\s+choom)`)],
   ['slang', 0.4, re(`${L}(?:(?:больше|побольше)\\s+сленга|говори\\s+как\\s+в\\s+(?:киберпанке|найт[- ]?сити)|more\\s+slang|talk\\s+like\\s+night\\s+city)`)],
-  ['tease', -0.55, re(`${L}(?:(?:будь|давай)\\s+(?:по)?серь[её]зн|не\\s+(?:шути|прикалывайся|издевайся|подкалывай|язви|ерничай)|хватит\\s+(?:шутить|прикалываться|издеваться|подкалывать|язвить|стебать)|без\\s+(?:шуток|приколов|подколов)|stop\\s+(?:joking|teasing|mocking)|be\\s+serious|no\\s+jokes|arr[êe]te\\s+de\\s+(?:rire|te\\s+moquer)|en\\s+serio|fala\\s+s[ée]rio)`)],
+  ['tease', -0.55, re(`${L}(?:(?:будь|давай)\\s+(?:по)?серь[её]зн|не\\s+(?:шути|прикалывайся|издевайся|подкалывай|язви|ерничай)|хватит\\s+(?:шутить|прикалываться|издеваться|подкалывать|язвить|стебать)|без\\s+(?:шуток|приколов|подколов)|stop\\s+(?:joking|teasing|mocking)|be\\s+serious|no\\s+jokes)`)],
   ['tease', 0.45, re(`${L}(?:подколи|подкалывай|дерзи|будь\\s+(?:дерзк|наглее|злее)|поязви|roast\\s+me|be\\s+(?:sassier|meaner|cheekier)|tease\\s+me)`)],
-  ['warm', 0.5, re(`${L}(?:будь\\s+(?:милее|добрее|нежнее|ласковее|помягче|мягче)|(?:помягче|поласковее)\\s+со\\s+мной|be\\s+(?:nicer|sweeter|kinder|gentle)|sois\\s+(?:plus\\s+)?gentille|s[eé]\\s+(?:m[aá]s\\s+)?amable)`)],
+  ['warm', 0.5, re(`${L}(?:будь\\s+(?:милее|добрее|нежнее|ласковее|помягче|мягче)|(?:помягче|поласковее)\\s+со\\s+мной|be\\s+(?:nicer|sweeter|kinder|gentle))`)],
   ['warm', -0.45, re(`${L}(?:(?:хватит|не\\s+надо)\\s+(?:сюсюкать|нежностей|сюсю)|не\\s+(?:сюсюкай|подлизывайся)|less\\s+sweet|stop\\s+being\\s+(?:so\\s+)?(?:nice|sweet|cute))`)],
 ];
 
 // "What do you know about me?" / "Forget everything about me"
-export const ABOUT_ME = re(`${L}(?:что\\s+ты\\s+(?:вообще\\s+)?(?:знаешь|помнишь|узнала|думаешь)\\s+(?:обо|о|про)\\s+(?:мне|меня)|что\\s+ты\\s+(?:обо|о|про)\\s+(?:мне|меня)\\s+(?:знаешь|помнишь|узнала|думаешь)|кто\\s+я\\s+для\\s+тебя|what\\s+do\\s+you\\s+(?:know|remember|think)\\s+(?:about|of)\\s+me|who\\s+am\\s+i\\s+to\\s+you|que\\s+sais[- ]tu\\s+(?:de|sur)\\s+moi|qu[ée]\\s+sabes\\s+de\\s+m[ií]|o\\s+que\\s+voc[eê]\\s+sabe\\s+(?:sobre|de)\\s+mim)`);
-export const FORGET_ME = re(`${L}(?:забудь|сотри|удали|стери)\\p{L}*\\s+(?:вс[её],?\\s+)?(?:что\\s+(?:ты\\s+)?(?:знаешь|узнала|помнишь|запомнила)\\s+)?(?:обо\\s+мне|о\\s+мне|про\\s+меня)|forget\\s+(?:everything\\s+|all\\s+)?(?:you\\s+know\\s+|you\\s+learned\\s+)?about\\s+me|oublie\\s+tout\\s+(?:sur|de)\\s+moi|olvida\\s+todo\\s+(?:sobre|de)\\s+m[ií]|esque[cç]a\\s+tudo\\s+sobre\\s+mim`);
+export const ABOUT_ME = re(`${L}(?:что\\s+ты\\s+(?:вообще\\s+)?(?:знаешь|помнишь|узнала|думаешь)\\s+(?:обо|о|про)\\s+(?:мне|меня)|что\\s+ты\\s+(?:обо|о|про)\\s+(?:мне|меня)\\s+(?:знаешь|помнишь|узнала|думаешь)|кто\\s+я\\s+для\\s+тебя|what\\s+do\\s+you\\s+(?:know|remember|think)\\s+(?:about|of)\\s+me|who\\s+am\\s+i\\s+to\\s+you)`);
+export const FORGET_ME = re(`${L}(?:забудь|сотри|удали|стери)\\p{L}*\\s+(?:вс[её],?\\s+)?(?:что\\s+(?:ты\\s+)?(?:знаешь|узнала|помнишь|запомнила)\\s+)?(?:обо\\s+мне|о\\s+мне|про\\s+меня)|forget\\s+(?:everything\\s+|all\\s+)?(?:you\\s+know\\s+|you\\s+learned\\s+)?about\\s+me`);
 
 // How you take her last answer: good, bad (beyond the tags of mood.js)
-const GOOD = re(`${L}(?:круто|класс|кайф|супер|топ${R}|огонь|лол|именно|согласен|согласна|в\\s+точку|ахах|хаха|ору${R}|nice|cool|lol|exactly|love\\s+it|great|perfect|g[ée]nial|exacto|perfeito)|❤|😂|🤣|👍|🔥`);
-const BAD = re(`${L}(?:не\\s+так|не\\s+то|не\\s+понял|не\\s+поняла|бред|чушь|ерунд|скучно|занудн|непонятно|зачем\\s+ты|что\\?|что\\s+за\\s+бред|отстой|кринж|cringe|what\\?|nonsense|boring|that'?s\\s+wrong|not\\s+what\\s+i|n'importe\\s+quoi|tonter[ií]a)|👎|🙄`);
+const GOOD = re(`${L}(?:круто|класс|кайф|супер|топ${R}|огонь|лол|именно|согласен|согласна|в\\s+точку|ахах|хаха|ору${R}|nice|cool|lol|exactly|love\\s+it|great|perfect)|❤|😂|🤣|👍|🔥`);
+const BAD = re(`${L}(?:не\\s+так|не\\s+то|не\\s+понял|не\\s+поняла|бред|чушь|ерунд|скучно|занудн|непонятно|зачем\\s+ты|что\\?|что\\s+за\\s+бред|отстой|кринж|cringe|what\\?|nonsense|boring|that'?s\\s+wrong|not\\s+what\\s+i)|👎|🙄`);
 // Night City slang in her answer (to tell what you liked about it)
 const SLANG = re(`${L}(?:чумб|нова${R}|гонк|флэтлайн|преем|корпо|choom|preem|nova${R}|gonk|flatline|delta|дельта)`);
-const SWEAR = re(`${L}(?:бля|хуй|хуе|хуё|пизд|еба|ёба|ебу|ебл|сука${R}|нахер|херн|fuck|shit|merde|putain|mierda|joder|porra|caralho)`);
+const SWEAR = re(`${L}(?:бля|хуй|хуе|хуё|пизд|еба|ёба|ебу|ебл|сука${R}|нахер|херн|fuck|shit)`);
 const FORMAL = re(`${L}(?:вы|вас|вам|вами|ваш\\p{L}*)${R}`);
 const INFORMAL = re(`${L}(?:ты|тебя|тебе|тобой|твой|твоя|твоё|твое|твои|твоих)${R}`);
 const EMOJI = /\p{Extended_Pictographic}/u;
@@ -76,6 +76,14 @@ const EMPTY = () => ({
   level: 0,
   pending: 0,          // your messages since her last notebook entry
 });
+
+const LEVELS = [
+  'You have only just met the user: you are curious about them and a little guarded. Now and then (not in every answer) ask them one small thing about themselves: what they do, what they like, how their day is.',
+  'You are getting to know the user: friendly, and you remember what they told you. Ask them about themselves once in a while.',
+  'You and the user are friends by now: relaxed, you tease them like a friend, you bring back things they told you, you are glad when they show up.',
+  'The user is one of the people closest to you: warm and open with them, inside jokes, you missed them when they were gone, you can be honest even when it stings.',
+  'The user is practically one of the minds in you: you know them very well, deep trust, you can finish their thoughts. Still Capri: cheeky, never sappy.',
+];
 
 export class Bond {
   constructor({ host, brain, heart }) {
@@ -402,14 +410,6 @@ export function progressOf(d) {
   return out;
 }
 
-const LEVELS = [
-  'You have only just met the user: you are curious about them and a little guarded. Now and then (not in every answer) ask them one small thing about themselves: what they do, what they like, how their day is.',
-  'You are getting to know the user: friendly, and you remember what they told you. Ask them about themselves once in a while.',
-  'You and the user are friends by now: relaxed, you tease them like a friend, you bring back things they told you, you are glad when they show up.',
-  'The user is one of the people closest to you: warm and open with them, inside jokes, you missed them when they were gone, you can be honest even when it stings.',
-  'The user is practically one of the minds in you: you know them very well, deep trust, you can finish their thoughts. Still Capri: cheeky, never sappy.',
-];
-
 // How you write, as advice for her (only once there's enough to go on).
 export function styleHints(s) {
   if (s.n < 6) return [];
@@ -463,7 +463,7 @@ export function hourHints(hours, talks, now = new Date().getHours()) {
 
 // What her chat model is asked, to update her notebook.
 export function reflectPrompt(notes, talk, lang = 'en', name = '') {
-  const language = { ru: 'Russian', en: 'English', fr: 'French', es: 'Spanish', pt: 'Brazilian Portuguese' }[lang] || 'English';
+  const language = lang === 'ru' ? 'Russian' : 'English';
   const transcript = talk
     .map((m) => `${m.role === 'user' ? 'User' : 'Capri'}: ${String(m.content).replace(/\s+/g, ' ').slice(0, 400)}`)
     .join('\n');

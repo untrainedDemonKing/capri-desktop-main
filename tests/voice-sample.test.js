@@ -95,7 +95,7 @@ test('what is wrong with a recording: refused when nothing can be copied from it
 
 test('she takes a recording as her voice: copied into her folder as capri.wav, with its length', () => {
   const { sample, voices, dir } = fresh();
-  assert.deepEqual(sample.status(), { has: false, name: '', ext: '', bytes: 0, seconds: null, warn: [], file: '' });
+  assert.deepEqual(sample.status(), { has: false, name: '', ext: '', bytes: 0, seconds: null, warn: [], lang: '', file: '' });
   assert.equal(sample.current(), '');
   const src = put(path.join(dir, 'Моя запись (1).WAV'), wav({ seconds: 9 }));
   const res = sample.use(src);
@@ -118,7 +118,7 @@ test('one voice: a new recording replaces the old, whatever its format; taking i
   assert.equal(res.ext, '.mp3');
   assert.equal(res.seconds, null, 'only a wav is looked into');
   assert.deepEqual(fs.readdirSync(voices), ['capri.mp3'], 'the wav is gone');
-  assert.deepEqual(sample.remove(), { has: false, name: '', ext: '', bytes: 0, seconds: null, warn: [], file: '' });
+  assert.deepEqual(sample.remove(), { has: false, name: '', ext: '', bytes: 0, seconds: null, warn: [], lang: '', file: '' });
   assert.deepEqual(fs.readdirSync(voices), []);
   assert.equal(sample.remove().has, false, 'taking away nothing is nothing');
 });
@@ -148,6 +148,60 @@ test('what she refuses, and says why; the voice she has stays', () => {
   assert.deepEqual(warned.warn, ['shortish', 'quiet']);
 });
 
+test('the language spoken in a recording is kept beside it when it is known, and goes with it', () => {
+  const { sample, voices, dir } = fresh();
+  const src = put(path.join(dir, 'a.wav'), wav());
+  assert.equal(sample.use(src, { spoken: 'en' }).lang, 'en');
+  assert.deepEqual(fs.readdirSync(voices).sort(), ['capri.json', 'capri.wav']);
+  assert.equal(sample.lang(), 'en');
+  // another recording with nothing said about it: not known any more (it is not the same voice)
+  assert.equal(sample.use(src).lang, '');
+  assert.deepEqual(fs.readdirSync(voices), ['capri.wav']);
+  // nonsense in the note, or a language she does not speak: not known
+  sample.use(src, { spoken: 'fr' });
+  assert.equal(sample.lang(), '');
+  sample.use(src, { spoken: 'ru' });
+  fs.writeFileSync(path.join(voices, 'capri.json'), '{not json');
+  assert.equal(sample.lang(), '');
+  sample.use(src, { spoken: 'ru' });
+  sample.remove();
+  assert.deepEqual(fs.readdirSync(voices), [], 'the note goes with the recording');
+});
+
+test('a recording that came with her is taken once, only when she has none of her own, with what is spoken in it', () => {
+  const { sample, voices, dir } = fresh();
+  const bundled = path.join(dir, 'resources', 'voice-default');
+  assert.equal(sample.useBundled(bundled), null, 'no such folder');
+  put(path.join(bundled, 'capri.wav'), wav({ seconds: 8 }));
+  fs.writeFileSync(path.join(bundled, 'capri.json'), JSON.stringify({ lang: 'en' }));
+  const res = sample.useBundled(bundled);
+  assert.equal(res.ok, true);
+  assert.deepEqual([res.seconds, res.lang], [8, 'en']);
+  assert.ok(fs.existsSync(path.join(voices, 'capri.wav')));
+  // one of her own is not replaced
+  sample.use(put(path.join(dir, 'mine.wav'), wav({ seconds: 6 })), { spoken: 'ru' });
+  assert.deepEqual(sample.useBundled(bundled), { ok: false, error: 'has' });
+  assert.equal(sample.status().seconds, 6);
+  // a bad one that came with her is refused like any
+  sample.remove();
+  put(path.join(bundled, 'capri.wav'), wav({ seconds: 0.5 }));
+  assert.deepEqual(sample.useBundled(bundled), { ok: false, error: 'short' });
+});
+
+test('the recording is looked through once, not at every look, and again when it changes', () => {
+  const { sample, voices, dir } = fresh();
+  let reads = 0;
+  const fsx = { ...fs, readFileSync: (...a) => { if (String(a[0]).endsWith('.wav')) reads++; return fs.readFileSync(...a); } };
+  const counted = createSample({ dir: voices, fsx });
+  counted.use(put(path.join(dir, 'a.wav'), wav({ seconds: 6 })));
+  const before = reads;
+  for (let i = 0; i < 20; i++) assert.equal(counted.status().seconds, 6);
+  assert.equal(reads, before, 'twenty looks, no new read');
+  fs.writeFileSync(path.join(voices, 'capri.wav'), wav({ seconds: 9 }));
+  assert.equal(counted.status().seconds, 9, 'a changed file is looked at again');
+  assert.ok(sample);
+});
+
 test('the folder is asked for when it is needed (her data folder is known only once the app is ready)', () => {
   const { dir } = fresh();
   let asked = 0;
@@ -165,13 +219,20 @@ test('Chatterbox is told to speak with the recording she was given; a name in he
     return new Response(Buffer.from('RIFFxxxxWAVE'), { status: 200 });
   };
   try {
-    const say = (cfg, sample) => tts.speak({ ttsEngine: 'chatterbox', ...cfg }, {}, { text: 'Привет', mood: 'calm', lang: 'ru', base: 'http://127.0.0.1:1/v1', sample });
+    const say = (cfg, sample, sampleLang = '') => tts.speak({ ttsEngine: 'chatterbox', ...cfg }, {}, { text: 'Привет', mood: 'calm', lang: 'ru', base: 'http://127.0.0.1:1/v1', sample, sampleLang });
     await say({}, '');
     await say({}, 'capri');
     await say({ ttsVoice: 'anna' }, '');
     await say({ ttsVoice: 'anna' }, 'capri');
     assert.deepEqual(seen.map((b) => b.voice), [undefined, 'capri', 'anna', 'capri']);
     assert.ok(seen.every((b) => b.exaggeration !== undefined && b.cfg_weight !== undefined), 'her mood still goes with it');
+    // a recording in another language than she speaks: no pull towards its own delivery (it carries its accent over)
+    seen.length = 0;
+    await say({}, 'capri', 'en');   // she speaks Russian, the recording is English
+    await say({}, 'capri', 'ru');   // the same language
+    await say({}, 'capri', '');     // not known
+    await say({}, '', 'en');        // no recording
+    assert.deepEqual(seen.map((b) => b.cfg_weight === 0), [true, false, false, false]);
   } finally {
     globalThis.fetch = realFetch;
   }

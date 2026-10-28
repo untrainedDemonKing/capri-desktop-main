@@ -50,13 +50,9 @@ const PATTERNS = {
     // English
     `${L}(?:you(?:'re|\\s+are)?|ur|u\\s+r)\\s+(?:so\\s+|such\\s+an?\\s+|an?\\s+|really\\s+|just\\s+)*(?:stupid|dumb|idiot|moron|useless|worthless|annoying|ugly|trash|garbage|bitch|pathetic|retarded)`,
     `${L}(?:shut\\s+up|stfu|go\\s+away|get\\s+lost|i\\s+hate\\s+you|you\\s+suck|fuck\\s+(?:you|off)|piece\\s+of\\s+(?:junk|crap|shit|trash|garbage))`,
-    // French, Spanish, Portuguese, enough to catch the obvious
-    `${L}(?:t(?:u\\s+es|'es)\\s+(?:trop\\s+|vraiment\\s+|tellement\\s+)?(?:conne|nulle|stupide|idiote|bête|moche|inutile)|ta\\s+gueule|tais[- ]toi|d[ée]gage)`,
-    `${L}(?:eres\\s+(?:muy\\s+|tan\\s+)?(?:est[uú]pida|idiota|in[uú]til|tonta|fea|burra)|c[aá]llate|l[aá]rgate)`,
-    `${L}(?:voc[eê]\\s+[eé]\\s+(?:muito\\s+|t[aã]o\\s+)?(?:burra|idiota|in[uú]til|est[uú]pida|feia|chata)|cala\\s+a\\s+boca)`,
   ].join('|')),
   // swearing, not necessarily at her: she pulls a face
-  rude: re(`${L}(?:бля|хуй|хуе|хуё|пизд|еба|ёба|ебу|ебл|сука${R}|fuck|shit|merde|putain|mierda|joder|porra|caralho)`),
+  rude: re(`${L}(?:бля|хуй|хуе|хуё|пизд|еба|ёба|ебу|ебл|сука${R}|fuck|shit)`),
   // "you're just a program": the one thing that really gets to her
   justBot: re([
     `${L}ты\\s+(?:всего\\s+лишь\\s+|просто\\s+|лишь\\s+|же\\s+|только\\s+)?(?:бот|программ|код${R}|нейросет|нейронк|скрипт|чат-?бот|игрушк|ии${R}|алгоритм|машин[аы]${R}|набор\\s+(?:цифр|байт|кода))`,
@@ -67,7 +63,7 @@ const PATTERNS = {
   ].join('|')),
   // called by somebody else's name (another assistant, or someone from the show)
   wrongName: re([
-    `^\\s*(?:(?:эй|привет|хай|слушай|ок(?:ей)?|hey|hi|hello|ok(?:ay)?|yo|dis|oye|ei)[,!\\s]+)?(?:${NAMES})${R}`,
+    `^\\s*(?:(?:эй|привет|хай|слушай|ок(?:ей)?|hey|hi|hello|ok(?:ay)?|yo)[,!\\s]+)?(?:${NAMES})${R}`,
     `${L}ты\\s+(?:же\\s+|что\\s+ли\\s+)?(?:${NAMES})${R}`,
     `${L}you(?:'re|\\s+are)\\s+(?:${NAMES})${R}`,
   ].join('|')),
@@ -80,24 +76,21 @@ const PATTERNS = {
   // the corps: she has no love for them
   corpo: re(`${L}(?:арасак|arasaka|militech|милитех|корпорат|корпо|corpo|корпы|корпам|корпов|netwatch|нетвотч|сетевой\\s+дозор|biotechnica|kang\\s+tao|канг\\s+тао)`),
   jokeAsk: re(`${L}(?:расскажи|расскажешь|давай|знаешь|пошути|рассмеши|скажи)\\p{L}*\\s+(?:\\p{L}+\\s+)?(?:шутк|анекдот|прикол|что-нибудь\\s+смешн)|${L}(?:шутку|анекдот)${R}|${L}(?:tell\\s+me\\s+a\\s+joke|make\\s+me\\s+laugh|a\\s+joke)|${L}(?:une\\s+blague|un\\s+chiste|uma\\s+piada)`),
-  laughing: re(`(?:${L}(?:ха){2,}|${L}(?:ах){2,}а?|${L}(?:хе){2,}|${L}хд${R}|${L}лол${R}|${L}ржу|${L}ору${R}|${L}кек${R}|😂|🤣|😆|😹|${L}(?:ha){2,}|${L}(?:he){2,}${R}|${L}lol${R}|${L}lmao|${L}rofl|${L}xd${R}|${L}mdr${R}|${L}(?:ja){2,}|${L}k{3,}${R}|${L}rsrs)`),
+  laughing: re(`(?:${L}(?:ха){2,}|${L}(?:ах){2,}а?|${L}(?:хе){2,}|${L}хд${R}|${L}лол${R}|${L}ржу|${L}ору${R}|${L}кек${R}|😂|🤣|😆|😹|${L}(?:ha){2,}|${L}(?:he){2,}${R}|${L}lol${R}|${L}lmao|${L}rofl|${L}xd${R})`),
   compliment: re([
     `${L}(?:ты|вы)\\s+(?:такая\\s+|очень\\s+|самая\\s+|прям\\s+|просто\\s+|реально\\s+|сегодня\\s+|всё\\s+же\\s+)*(?:классн|крут|мил|красив|умн|лучш|прелест|чудесн|потрясающ|шикарн|няш|кавайн|замечательн|офигенн|кл[её]в|хорош|прекрасн|великолепн|восхитительн|забавн|смешн|топ${R}|огонь|секси|горяч)`,
     `${L}(?:умничка|умница|красотка|красавица|милашка|прелесть|солнышко|зайка|лапочка|котик|хорошая\\s+девочка|молодец|ты\\s+(?:мне\\s+)?нравишься|мне\\s+нравится\\s+(?:с\\s+тобой|твой|твоя|твои|как\\s+ты))`,
     `${L}you(?:'re|\\s+are)\\s+(?:so\\s+|really\\s+|the\\s+|such\\s+a\\s+|very\\s+|pretty\\s+)*(?:cute|beautiful|pretty|awesome|amazing|best|smart|gorgeous|adorable|cool|great|lovely|funny|clever|sweet|hot|cutest)`,
     `${L}(?:i\\s+like\\s+you|good\\s+girl|well\\s+done|nice\\s+job|great\\s+job|good\\s+job)`,
-    `${L}t(?:u\\s+es|'es)\\s+(?:trop\\s+|si\\s+|vraiment\\s+)?(?:mignonne|belle|g[ée]niale|dr[ôo]le|intelligente|adorable|la\\s+meilleure)`,
-    `${L}eres\\s+(?:muy\\s+|tan\\s+|la\\s+)?(?:linda|guapa|bonita|genial|lista|graciosa|mejor|preciosa)`,
-    `${L}voc[eê]\\s+[eé]\\s+(?:muito\\s+|t[aã]o\\s+|a\\s+)?(?:linda|fofa|incr[ií]vel|esperta|engra[cç]ada|melhor|demais)`,
   ].join('|')),
-  love: re(`${L}(?:люблю\\s+тебя|я\\s+тебя\\s+люблю|влюбил|влюбл[её]н|обожаю\\s+тебя|i\\s+love\\s+you|love\\s+you|luv\\s+u|je\\s+t'aime|te\\s+quiero|te\\s+amo|eu\\s+te\\s+amo)`),
-  flirt: re(`${L}(?:обним|поцелу|целую|чмок|обнимаш|давай\\s+встречаться|будь\\s+моей|выходи\\s+за\\s+меня|hug|kiss|marry\\s+me|be\\s+my\\s+girlfriend|bisou|c[âa]lin|beso|abrazo|beijo|abra[cç]o)`),
-  thanks: re(`${L}(?:спасибо|спс${R}|благодар|пасиб|thank|thx${R}|ty${R}|merci|gracias|obrigad|valeu)`),
-  apology: re(`${L}(?:прости|извини|сорри|сори${R}|прошу\\s+прощения|виноват|не\\s+обижайся|не\\s+злись|sorry|my\\s+bad|apologi[sz]e|forgive\\s+me|pardon|d[ée]sol[ée]|excuse[- ]moi|perd[oó]n|lo\\s+siento|desculp|me\\s+perdoa)`),
+  love: re(`${L}(?:люблю\\s+тебя|я\\s+тебя\\s+люблю|влюбил|влюбл[её]н|обожаю\\s+тебя|i\\s+love\\s+you|love\\s+you|luv\\s+u)`),
+  flirt: re(`${L}(?:обним|поцелу|целую|чмок|обнимаш|давай\\s+встречаться|будь\\s+моей|выходи\\s+за\\s+меня|hug|kiss|marry\\s+me|be\\s+my\\s+girlfriend)`),
+  thanks: re(`${L}(?:спасибо|спс${R}|благодар|пасиб|thank|thx${R}|ty${R})`),
+  apology: re(`${L}(?:прости|извини|сорри|сори${R}|прошу\\s+прощения|виноват|не\\s+обижайся|не\\s+злись|sorry|my\\s+bad|apologi[sz]e|forgive\\s+me)`),
   userSad: re(`${L}(?:мне\\s+(?:так\\s+|очень\\s+|сегодня\\s+|что-то\\s+)?(?:грустно|плохо|одиноко|тоскливо|хреново|паршиво|тяжело|херово|страшно)|я\\s+(?:так\\s+)?устал|депресс|вс[её]\\s+плохо|не\\s+могу\\s+больше|i'?m\\s+(?:so\\s+)?(?:sad|lonely|depressed|tired|down|scared)|i\\s+feel\\s+(?:bad|sad|lonely|down|awful)|je\\s+suis\\s+triste|estoy\\s+triste|estou\\s+triste)`),
-  userBored: re(`${L}(?:мне\\s+скучно|скукота|скучно${R}|i'?m\\s+bored|so\\s+boring|je\\s+m'ennuie|estoy\\s+aburrid|estou\\s+entediad)`),
-  sky: re(`${L}(?:спутник|зв[её]зд|луна|луну|космос|небо|неба|орбит|satellite|stars?${R}|moon|space${R}|sky|orbit|sat[ée]llite|[ée]toile|estrella|estrela|sat[ée]lite)`),
-  greet: re(`^\\s*(?:привет|здравствуй|хай${R}|ку${R}|здарова|салют|йоу|доброе\\s+утро|добрый\\s+(?:день|вечер)|hi${R}|hello|hey|yo${R}|good\\s+(?:morning|evening)|salut|bonjour|hola|oi${R}|ol[áa])`),
+  userBored: re(`${L}(?:мне\\s+скучно|скукота|скучно${R}|i'?m\\s+bored|so\\s+boring)`),
+  sky: re(`${L}(?:спутник|зв[её]зд|луна|луну|космос|небо|неба|орбит|satellite|stars?${R}|moon|space${R}|sky|orbit)`),
+  greet: re(`^\\s*(?:привет|здравствуй|хай${R}|ку${R}|здарова|салют|йоу|доброе\\s+утро|добрый\\s+(?:день|вечер)|hi${R}|hello|hey|yo${R}|good\\s+(?:morning|evening))`),
   bye: re(`${L}(?:пока${R}|до\\s+встречи|до\\s+завтра|спокойной\\s+ночи|bye|good\\s+night|see\\s+you|bonne\\s+nuit|buenas\\s+noches|boa\\s+noite|tchau|adi[oó]s)`),
 };
 
@@ -145,10 +138,12 @@ const EVENTS = {
   lateNight: { anger: 0.08 },
 };
 
+const READ_MAX = 2000; // how much of a message is read for what it does to her (the patterns are for a sentence or two)
+
 // What a message is to her: { tags: [...] }. `recent`: your messages before this one, with when
 // you sent them ([{ text, at }]), to tell when you repeat yourself or flood her.
 export function classify(text, { recent = [], now = Date.now() } = {}) {
-  const raw = String(text || '');
+  const raw = String(text || '').slice(0, READ_MAX);
   const tags = new Set();
   for (const [tag, pattern] of Object.entries(PATTERNS)) if (pattern.test(raw)) tags.add(tag);
   // a direct insult or a threat already says it all: the swearing in it isn't a separate thing
@@ -162,7 +157,7 @@ export function classify(text, { recent = [], now = Date.now() } = {}) {
   const upper = letters.filter((c) => c === c.toUpperCase()).length;
   if (letters.length >= 8 && upper / letters.length >= 0.75) tags.add('yell');
   // the same thing again, or a flood of messages
-  const same = (a) => a.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const same = (a) => String(a).slice(0, READ_MAX).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
   const said = same(raw);
   const repeats = recent.filter((m) => said.length > 2 && same(m.text) === said && now - m.at < 5 * MINUTE).length;
   const burst = recent.filter((m) => now - m.at < 15000).length;

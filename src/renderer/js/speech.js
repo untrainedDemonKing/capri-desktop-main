@@ -6,16 +6,13 @@
 // minds" effect: a chorus of slightly delayed copies of her, like the dozens of minds she's made of, and a
 // little digital edge. Her body nods along while she talks.
 
-const LOCALES = { ru: 'ru-RU', en: 'en-US', fr: 'fr-FR', es: 'es-ES', pt: 'pt-BR' };
+const LOCALES = { ru: 'ru-RU', en: 'en-US' };
 // female system voices she'd rather use, by language (Windows, macOS, Edge's names)
 const PREFERRED = {
   ru: ['svetlana', 'dariya', 'irina', 'ekaterina', 'milena', 'anna', 'elena', 'alena'],
   en: ['aria', 'jenny', 'ava', 'emma', 'zira', 'samantha', 'susan', 'hazel', 'libby', 'sonia', 'michelle'],
-  fr: ['denise', 'eloise', 'julie', 'hortense', 'vivienne', 'amelie', 'audrey'],
-  es: ['elvira', 'helena', 'laura', 'dalia', 'sabina', 'paloma', 'monica'],
-  pt: ['francisca', 'thalita', 'maria', 'luciana', 'fernanda'],
 };
-const MALE = /pavel|dmitry|david|mark|guy|george|james|paul|pablo|daniel|antonio|henri|thomas|raul|ryan|eric|roger|christopher/i;
+const MALE = /pavel|dmitry|david|mark|guy|george|james|paul|daniel|thomas|ryan|eric|roger|christopher/i;
 // pitch and pace by mood (the system voice): higher and quicker when she's up, lower when she's down
 const PROSODY = {
   calm: [1.2, 1.02], happy: [1.32, 1.08], laugh: [1.38, 1.1], angry: [0.95, 1.14], annoyed: [1.05, 1.06],

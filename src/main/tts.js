@@ -79,7 +79,8 @@ async function failure(res) {
 // Piper). keys: the opened API keys ({ openai, elevenlabs, tts }); lang: what she speaks; base: where
 // Chatterbox is listening (chatterbox.js knows); piper: her Piper (piper.js); sample: the name of the recording she was
 // given as her voice ('' none; voice-sample.js), which Chatterbox speaks with; without one, the voice named in her settings.
-async function speak(cfg, keys, { text, mood = 'calm', lang = 'en', base: chatterboxBase = '', piper = null, sample = '' }) {
+// sampleLang: the language spoken in that recording, if it is known.
+async function speak(cfg, keys, { text, mood = 'calm', lang = 'en', base: chatterboxBase = '', piper = null, sample = '', sampleLang = '' }) {
   const input = String(text || '').trim().slice(0, 1500);
   if (!input) throw new Error('nothing to say');
   const engine = ENGINES[cfg.ttsEngine] ? cfg.ttsEngine : 'system';
@@ -101,6 +102,9 @@ async function speak(cfg, keys, { text, mood = 'calm', lang = 'en', base: chatte
     const body = { model: 'chatterbox', input, response_format: 'wav', language: String(lang || 'en').slice(0, 2), ...moodDials(mood), mood };
     const named = sample || cfg.ttsVoice; // (the recording she was given is her voice; a name in her settings is for when she has none)
     if (named) body.voice = named;
+    // a recording in another language than she speaks: Chatterbox carries the accent of the recording into the speech,
+    // unless the guidance towards the recording's own delivery is switched off (its own advice for this case)
+    if (sample && sampleLang && sampleLang !== body.language) body.cfg_weight = 0;
     res = await fetch(`${base}/audio/speech`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
