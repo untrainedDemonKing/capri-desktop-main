@@ -364,13 +364,15 @@ export class Brain {
     return name ? fmt(pick(this.t.custom.onlineName), { name }) : pick(this.t.online);
   }
 
-  // What she says when you click her. Nothing going on: she offers to talk (chat.js).
-  status() {
+  // What she says when you click her (`click`: { zone, double }, where and how). Nothing going on: she offers to
+  // talk (chat.js), or says what she makes of the click (heart.js), or that she has no AI to answer with.
+  status(click = {}) {
     const busy = this.busySessions;
     if (!busy.length) {
       const talk = this.onTalk && { actions: [{ id: 'talk', label: this.t.chat.talk }], onAction: () => this.onTalk(), hold: 6000 };
-      const felt = this.heart?.idleLine() || this.bond?.idleLine(); // how she feels, how close you are
-      this.say('idle', felt?.line || this.idleLine(), null, { face: felt?.face || pick(['calm', 'smug', 'aside']), hold: 4000, ...talk });
+      const felt = this.heart?.clickLine(click) || this.heart?.idleLine() || this.bond?.idleLine(); // the click, how she feels, how close you are
+      const own = felt?.actions && { actions: felt.actions, onAction: felt.onAction, hold: felt.hold };
+      this.say('idle', felt?.line || this.idleLine(), null, { face: felt?.face || pick(['calm', 'smug', 'aside']), hold: 4000, ...(own || talk) });
       return;
     }
     const s = busy.sort((a, b) => b.seen - a.seen)[0];

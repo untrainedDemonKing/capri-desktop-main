@@ -54,6 +54,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
     const cfg = config.load();
     const { hw, have, profile } = await look({ rescan });
     const voiceOnCard = profiles.chatterboxDevice(hw) !== 'cpu';
+    const rec = profiles.recommend(hw, { voiceOnCard });
     return {
       lang: lang(),
       ui: ui(),
@@ -61,32 +62,35 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
       pc: profiles.describe(hw),
       recommended: { id: profile.id, mind: profile.mind, voice: profile.voice },
       have,
-      models: profiles.LADDER.map((m) => ({ model: m.model, bytes: m.bytes, vision: m.vision, heavy: !profiles.runsWell(hw, m.bytes, { voiceOnCard }), have: Boolean(sameModel(have.models || [], m.model)) })),
+      models: rec.rows.map((m) => ({ model: m.model, bytes: m.bytes, vision: m.vision, ru: m.ru, rank: m.rank, heavy: m.rank === 'heavy', have: Boolean(sameModel(have.models || [], m.model)) })),
+      rec: { mind: { best: rec.best, alt: rec.alt, bestWhy: rec.bestWhy, altWhy: rec.altWhy }, voice: profiles.recommendVoice(hw) },
       cloud: cloudState(cfg),
       voiceKeys: { openai: Boolean(cfg.apiKeys?.openai), elevenlabs: Boolean(cfg.apiKeys?.elevenlabs) },
+      node: { auto: cfg.autoNode !== false },
       current: { provider: cfg.provider, chatModel: cfg.chatModel, ttsEngine: cfg.ttsEngine || 'system', customUrl: cfg.customUrl || '' },
       snapshot: provision.snapshot(),
     };
   }
 
   // What the picked set-up is made of, what of it is to be fetched, and whether the disk has room
-  async function preview({ mind, model, voice } = {}) {
+  async function preview({ mind, model, voice, node } = {}) {
     const { hw, have } = await look();
     const device = profiles.chatterboxDevice(hw);
-    const parts = profiles.components({ mind: MINDS.includes(mind) ? mind : 'skip', model: String(model || ''), voice: VOICES.includes(voice) ? voice : 'system', device, have });
+    const parts = profiles.components({ mind: MINDS.includes(mind) ? mind : 'skip', model: String(model || ''), voice: VOICES.includes(voice) ? voice : 'system', device, node: node === true, have });
     const free = Number.isFinite(hw.disk.free) ? hw.disk.free : Infinity;
     const notes = [];
     if (voice === 'chatterbox' && device === 'cpu') notes.push('slowVoice');
     if (free < parts.need) notes.push('diskShort');
-    const info = profiles.LADDER.find((m) => m.model === model);
+    const info = profiles.CATALOG.find((m) => m.model === model);
     if (mind === 'ollama' && info && !profiles.runsWell(hw, info.bytes, { voiceOnCard: voice === 'chatterbox' && device !== 'cpu' })) notes.push('heavy');
     return { items: parts.items, total: parts.total, need: parts.need, free: Number.isFinite(free) ? free : 0, ok: free >= parts.need, notes, device };
   }
 
   // The config of the picked set-up. A model that is there already is taken as it is; one that is not is asked
   // of the preparation (wantModel). The voice she runs herself is set in the end by the preparation, when it works.
-  function patchFor({ mind, model, voice }, cfg, installed) {
+  function patchFor({ mind, model, voice, node }, cfg, installed) {
     const patch = { hubDone: true, autoSetup: true };
+    if (typeof node === 'boolean') patch.autoNode = node;
     if (mind === 'ollama') {
       patch.provider = 'ollama';
       const there = model ? sameModel(installed, model) : null;
@@ -147,6 +151,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
 
   provision.on('change', (snapshot) => send('hub:change', snapshot));
 
+  ipcMain.on('hub:show', () => show()); // from the overlay: her "Connect" button
   ipcMain.handle('hub:state', (_e, opts) => state(opts));
   ipcMain.handle('hub:rescan', () => state({ rescan: true }));
   ipcMain.handle('hub:preview', (_e, choice) => preview(choice));

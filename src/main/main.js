@@ -14,6 +14,7 @@ const config = require('./config');
 const { TRAY, LANGS } = require('./labels');
 const { createBridge } = require('./bridge');
 const { startWindowWatch } = require('./windows');
+const { createMover } = require('./mover');
 const llm = require('./llm');
 const setup = require('./setup');
 const apps = require('./apps');
@@ -93,6 +94,7 @@ const provision = new Provision({
   installPython: process.platform === 'win32' ? (onLine) => setup.installPython(onLine, placesNextToHer()) : null,
   roots: placesNextToHer,
   defaultDir: () => path.join(app.getPath('userData'), 'chatterbox'),
+  nodeDir: () => path.join(app.getPath('userData'), 'node'),
   hardware: lookAtPc,
   // what the profile of this PC says about how she asks Ollama, and how Ollama is started
   tune: (tuning) => {
@@ -123,6 +125,7 @@ let tray = null;
 let trayMenu = null; // also what she opens when you right-click her
 let demoTimer = null;
 let windowWatch = null;
+let mover = null; // moves the window she has taken over (mover.js)
 // the watcher only speaks when something changes: the overlay asks for this when it (re)loads
 let lastWindows = null;
 let chatModels = null; // the provider's models, as last seen (null: not reached)
@@ -594,6 +597,7 @@ function buildTray() {
     },
     { label: t.wander, type: 'checkbox', checked: cfg.wander, click: (item) => updateConfig({ wander: item.checked }) },
     { label: t.possess, type: 'checkbox', checked: cfg.possess, click: (item) => updateConfig({ possess: item.checked }) },
+    { label: t.possessMove, type: 'checkbox', checked: cfg.possess && cfg.possessMove !== false, enabled: cfg.possess, click: (item) => updateConfig({ possessMove: item.checked }) },
     {
       label: t.rest,
       submenu: [['corner', t.restCorner], ['taskbar', t.restTaskbar]].map(([rest, label]) => ({
@@ -910,6 +914,10 @@ function registerIpc() {
   ipcMain.handle('claude:found', () => fs.existsSync(path.dirname(hooksNow().file))); // Claude Code keeps its settings there
   ipcMain.on('claude:help', () => shell.openExternal(activeAssistant().help));
   ipcMain.handle('windows:get', () => lastWindows);
+  // the window she has taken over (possession.js): hold it, move it, let go; it goes back where it was
+  ipcMain.handle('window:grab', (_e, id) => (Number.isSafeInteger(id) && mover ? mover.grab(id) : { ok: false, why: 'unknown' }));
+  ipcMain.on('window:move', (_e, m) => { if (mover && Number.isSafeInteger(m?.id)) mover.move(m.id, Number(m.x), Number(m.y)); });
+  ipcMain.on('window:release', (_e, m) => { if (mover && Number.isSafeInteger(m?.id)) mover.release(m.id, { restore: m.restore !== false }); });
   // talking to her (chat.js): is Ollama there, with a model to talk with
   ipcMain.handle('chat:status', async () => {
     const cfg = config.load(true); // keys may have been edited by hand
@@ -921,6 +929,15 @@ function registerIpc() {
     if (!models.length) return { ok: false, error: 'nomodel', provider };
     llm.warm(provider, pickModel()); // loading while you type your first message
     return { ok: true, provider, model: pickModel(), agent: provider === 'claude', local: llm.isLocal(provider, cfg), warmup: provider === 'ollama' };
+  });
+  // Can her chat answer? 'ready', 'none' (nothing to answer with: she says so, with a button to her main menu),
+  // or 'busy' (it is being got ready, or her main menu is open: not the time to nag). The look chat:status takes,
+  // but without loading the model, so it can be asked now and then.
+  ipcMain.handle('chat:ready', async () => {
+    const cfg = config.load(true);
+    if (hub?.isOpen() || (provision.running && cfg.provider === 'ollama' && provision.step('ollama-model').state !== 'done')) return 'busy';
+    const models = await refreshModels({ cached: true });
+    return models?.length ? 'ready' : 'none';
   });
   // her answer, streamed to the overlay piece by piece as `chat:delta`
   ipcMain.handle('chat:send', async (_e, { id, messages }) => {
@@ -1275,6 +1292,13 @@ function main() {
     createOverlay();
     createTray();
     watchWindows();
+    mover = createMover({
+      screen,
+      bounds: () => overlay.getBounds(),
+      windows: () => lastWindows,
+      enabled: () => { const c = config.load(); return c.possess !== false && c.possessMove !== false; },
+      onLost: (id, why) => overlay?.webContents.send('window:lost', { id, why }),
+    });
     createBridge({
       port: PORT,
       // her own Claude Code chat's hooks would cover its answer with theirs
@@ -1338,6 +1362,7 @@ function main() {
     clearTimeout(trayTimer);
     globalShortcut.unregisterAll();
     windowWatch?.stop();
+    mover?.stop(); // a window she is holding goes back where it was
     mediaWatch?.stop();
     clearInterval(presenceTimer);
     try {

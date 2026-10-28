@@ -386,6 +386,161 @@ export const ACTS = {
     ],
   },
 
+  // ---- idle fidgets: the small things she does with herself when nobody needs her (capri.js fidget()) ----
+  // (on a ledge: the legs. On the taskbar most of her legs hang below the screen, so these swing wide.)
+
+  // sitting: both legs swinging out and in together, like a child on a ledge
+  swing: {
+    priority: 1,
+    keys: [
+      [3, { kickL: 0.1, kickR: 0.1, hair: -1, head: 0.05, arms: -0.42 }],
+      ...rep(5, [
+        [3, { kickL: 0.58, kickR: 0.58, hair: -2, head: 0.07, bob: -1, arms: -0.42 }],
+        [3, { kickL: -0.04, kickR: -0.04, hair: 2, head: -0.05, bob: 0, arms: -0.42 }],
+      ]),
+      [3, { kickL: 0.1, kickR: 0.1, head: 0.04, arms: -0.4 }],
+    ],
+  },
+
+  // sitting: lazy and wide, one leg after the other, head back, watching the sky
+  swingSlow: {
+    priority: 1,
+    keys: [
+      [4, { kickL: 0.2, kickR: 0.02, head: -0.05, arms: -0.45 }],
+      ...rep(3, [
+        [8, { kickL: 0.55, kickR: -0.04, hair: -2, head: -0.1, tilt: -1.5, mane: -0.02, arms: -0.5 }],
+        [4, { kickL: 0.2, kickR: 0.2, head: -0.12, arms: -0.5 }],
+        [8, { kickL: -0.04, kickR: 0.55, hair: 2, head: -0.1, tilt: 1.5, mane: -0.02, arms: -0.5 }],
+        [4, { kickL: 0.2, kickR: 0.2, head: -0.12, arms: -0.5 }],
+      ]),
+      [5, { kickL: 0.06, kickR: 0.06, head: 0.04, arms: -0.42 }],
+    ],
+  },
+
+  // sitting: quick kicks, one two one two, pleased with herself
+  kickfast: {
+    priority: 1,
+    keys: [
+      ...rep(8, [
+        [2, { kickL: 0.55, kickR: -0.05, hair: -1.5, head: 0.06, bob: -1, arms: -0.42 }],
+        [2, { kickL: -0.05, kickR: 0.55, hair: 1.5, head: -0.06, bob: 0, arms: -0.42 }],
+      ]),
+      [3, { kickL: 0.1, kickR: 0.1, arms: -0.4 }],
+    ],
+  },
+
+  // sitting: waiting for something, one foot tapping, arms in a little, a tsk at the end
+  tap: {
+    priority: 1,
+    keys: [
+      [3, { kickL: 0.04, kickR: 0.3, head: -0.06, mane: 0.06, arms: -0.2 }],
+      ...rep(8, [
+        [2, { kickL: 0.04, kickR: 0.04, head: -0.07, mane: 0.07, arms: -0.2 }],
+        [2, { kickL: 0.04, kickR: 0.36, head: -0.06, mane: 0.06, arms: -0.2 }],
+      ]),
+      [2, { kickL: 0.04, kickR: 0.04, head: -0.12, mane: 0.14, arms: -0.18 }, 'tsk'],
+      [4, { kickL: 0.04, kickR: 0.04, head: -0.1, arms: -0.3 }],
+    ],
+  },
+
+  // sitting: leaning back on her hands, face to the sky, legs slowly going
+  lean: {
+    priority: 1,
+    keys: [
+      [4, { tilt: -2, head: -0.1, arms: -0.55, kickL: 0.1, kickR: 0.1 }],
+      ...rep(2, [
+        [10, { tilt: -4, head: -0.2, mane: -0.06, arms: -0.7, kickL: 0.34, kickR: 0.02, bob: 1 }],
+        [10, { tilt: -4.5, head: -0.22, mane: -0.06, arms: -0.7, kickL: 0.02, kickR: 0.34, bob: 1 }],
+      ]),
+      [4, { tilt: -2, head: -0.1, arms: -0.5, kickL: 0.1, kickR: 0.1 }],
+    ],
+  },
+
+  // sitting: leans forward and looks down over the edge, then a glance up
+  peer: {
+    priority: 1,
+    keys: [
+      [3, { tilt: 2, head: 0.1, arms: -0.5, kickL: 0.06, kickR: 0.06 }],
+      [14, { tilt: 5, head: 0.3, mane: -0.04, arms: -0.6, kickL: 0.02, kickR: 0.02, bob: 1 }],
+      [1, { tilt: 5, head: 0.1, arms: -0.6, smear: [0, 6] }],
+      [8, { tilt: 4, head: 0.28, arms: -0.6, kickL: 0.22, kickR: 0.02 }],
+      [8, { tilt: 4, head: 0.28, arms: -0.6, kickL: 0.02, kickR: 0.22 }],
+      [3, { tilt: 1, head: 0.06, arms: -0.45 }],
+    ],
+  },
+
+  // sitting: humming along to nothing, head and mane swaying, legs rocking
+  hum: {
+    priority: 1,
+    keys: [
+      [1, { kickL: 0.26, kickR: 0, hair: -2.5, head: 0.12, tilt: -1.5, mane: 0.06, arms: -0.4 }, 'note'],
+      [4, { kickL: 0.26, kickR: 0, hair: -2.5, head: 0.12, tilt: -1.5, mane: 0.06, arms: -0.4 }],
+      [3, { kickL: 0.1, kickR: 0.1, hair: 0, head: 0.04, tilt: 0, arms: -0.4 }],
+      [5, { kickL: 0, kickR: 0.26, hair: 2.5, head: -0.12, tilt: 1.5, mane: 0.06, arms: -0.4 }],
+      [3, { kickL: 0.1, kickR: 0.1, hair: 0, head: -0.04, tilt: 0, arms: -0.4 }],
+      [1, { kickL: 0.26, kickR: 0, hair: -2.5, head: 0.12, tilt: -1.5, mane: 0.06, arms: -0.4 }, 'note'],
+      [4, { kickL: 0.26, kickR: 0, hair: -2.5, head: 0.12, tilt: -1.5, mane: 0.06, arms: -0.4 }],
+      [3, { kickL: 0.1, kickR: 0.1, hair: 0, head: 0.04, tilt: 0, arms: -0.4 }],
+      [5, { kickL: 0, kickR: 0.26, hair: 2.5, head: -0.12, tilt: 1.5, mane: 0.06, arms: -0.4 }],
+      [3, { kickL: 0.1, kickR: 0.1, hair: 0, head: -0.04, tilt: 0, arms: -0.4 }],
+    ],
+  },
+
+  // floating: a hand up to wave hello
+  wave: {
+    priority: 1,
+    keys: [
+      [2, { armR: 0.5, head: 0.05, bob: -1 }],
+      [2, { armR: 1.0, head: 0.1, bob: -2 }],
+      ...rep(4, [
+        [2, { armR: 1.3, head: 0.1, mane: 0.1, bob: -2 }],
+        [2, { armR: 0.95, head: 0.12, mane: 0.08, bob: -2 }],
+      ]),
+      [3, { armR: 0.4, head: 0.06 }],
+      [2, {}],
+    ],
+  },
+
+  // floating: a shrug, arms up, head cocked, held, dropped
+  shrug: {
+    priority: 1,
+    keys: [
+      [2, { bob: 1, arms: -0.1 }],
+      [2, { bob: -3, arms: 0.45, head: 0.2, tilt: 2, mane: 0.06 }],
+      [10, { bob: -3, arms: 0.5, head: 0.22, tilt: 2.5, mane: 0.05 }],
+      [3, { bob: 0, arms: 0.05, head: 0.05 }],
+      [2, {}],
+    ],
+  },
+
+  // floating: a hand to her mane, a toss of the head, patting it into place
+  primp: {
+    priority: 1,
+    keys: [
+      [3, { armL: 0.5, head: 0.08 }],
+      [8, { armL: 1.15, head: 0.16, tilt: 2, mane: 0.12, hair: 1 }],
+      [3, { armL: 1.0, head: 0.14, mane: 0.1, smear: [4, 0] }],
+      [8, { armL: 1.15, head: 0.17, tilt: 2.2, mane: 0.14, hair: 1.5 }],
+      [1, { armL: 0.6, head: -0.1, tilt: -1, mane: 0.22, smear: [-8, 0] }], // the toss
+      [5, { armL: 0.2, head: 0.04, mane: 0.1 }],
+      [2, {}],
+    ],
+  },
+
+  // floating: swaying side to side, humming
+  sway: {
+    priority: 1,
+    keys: [
+      [1, { hair: -3, head: 0.12, tilt: -2.5, arms: -0.15, bob: -2 }, 'note'],
+      [7, { hair: -3, head: 0.12, tilt: -2.5, arms: -0.15, bob: -2 }],
+      [3, { hair: 0, head: 0, tilt: 0, bob: -3 }],
+      [8, { hair: 3, head: -0.12, tilt: 2.5, arms: -0.15, bob: -2 }],
+      [3, { hair: 0, head: 0, tilt: 0, bob: -3 }],
+      [8, { hair: -3, head: 0.12, tilt: -2.5, arms: -0.15, bob: -2 }],
+      [3, { hair: 0, head: 0, tilt: 0, bob: -2 }],
+    ],
+  },
+
   // little nods while the words come out, two drawings on threes
   talk: { priority: 0, keys: rep(2, [[3, { head: 0.04, mane: 0.08 }], [3, { head: 0, mane: 0.03 }]]) },
 
@@ -794,3 +949,25 @@ export class Player {
     return out;
   }
 }
+
+// What she fidgets with when nobody needs her, by stance and mood (capri.js fidget()). An empty list: nothing.
+export const FIDGETS = {
+  sit: {
+    calm: ['swing', 'swingSlow', 'kickfast', 'tap', 'lean', 'peer', 'hum'],
+    happy: ['swing', 'kickfast', 'hum', 'swing', 'lean'],
+    angry: ['tap', 'kickfast', 'tap'],
+    annoyed: ['tap', 'tap', 'peer'],
+    sad: ['swingSlow', 'peer', 'lean'],
+    shy: ['swingSlow', 'peer', 'hum'],
+    bored: ['swingSlow', 'lean', 'peer', 'tap', 'swing'],
+  },
+  stand: {
+    calm: ['wave', 'shrug', 'primp', 'sway'],
+    happy: ['wave', 'sway', 'primp'],
+    angry: [],
+    annoyed: ['shrug'],
+    sad: ['sway'],
+    shy: ['primp', 'sway'],
+    bored: ['shrug', 'sway', 'primp'],
+  },
+};

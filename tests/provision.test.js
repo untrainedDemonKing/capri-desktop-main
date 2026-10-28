@@ -52,7 +52,7 @@ function world(overrides = {}) {
     ollamaRunning: false, ollamaFound: true, ollamaStartFails: '', models: [], pullFails: '', pulls: [],
     cbPhase: 'off', cbProgress: [], cbFails: '', hasPackage: true, pipFails: false, systemPython: { cmd: 'python3', pre: [], version: '3.11.4' },
     installed: [], piperFound: false, piperVoice: '', piperInstallFails: '', piperVoiceFails: '', piperCheckFails: '', piperInstalls: 0, voiceFetches: [],
-    tuned: [], hardwareCalls: [], hw: { ram: 32 * GB, vram: 8 * GB }, hardwareFails: false, cudaCalls: [], pips: [], torchHasCuda: true,
+    nodeFound: true, nodeOld: false, nodeInstalls: [], nodeFails: '', nodePath: [], tuned: [], hardwareCalls: [], hw: { ram: 32 * GB, vram: 8 * GB }, hardwareFails: false, cudaCalls: [], pips: [], torchHasCuda: true,
     ...(overrides.state || {}),
   };
   const ollamaHost = {
@@ -134,6 +134,17 @@ function world(overrides = {}) {
     check: async () => { if (state.piperCheckFails) throw new Error(state.piperCheckFails); },
     status: () => ({ phase: state.piperCheckFails ? 'failed' : 'ready', voice: state.piperVoice, exe: '/p/piper', log: ['piper log'] }),
   };
+  const nodeTools = {
+    findNode: async () => (state.nodeFound ? { exe: 'C:\\nodejs\\node.exe', version: '22.1.0', where: 'path' } : state.nodeOld ? { tooOld: '16.0.0' } : null),
+    install: async ({ dir, arch, onProgress }) => {
+      if (state.nodeFails) throw new Error(state.nodeFails);
+      for (const done of [1, 2, 3]) { onProgress({ completed: done * 1e7, total: 3e7 }); await new Promise((r) => setTimeout(r, 3)); }
+      state.nodeInstalls.push({ dir, arch });
+      state.nodeFound = true;
+      return { exe: path.join(dir, 'node.exe'), dir, version: '24.22.1' };
+    },
+    addToUserPath: (dir) => { state.nodePath.push(dir); return { ok: true }; },
+  };
   const api = {
     models: async () => [...state.models],
     pull: async (name, onProgress, signal) => {
@@ -151,7 +162,7 @@ function world(overrides = {}) {
     cfg: () => cfg,
     save: (patch) => { saved.push(patch); Object.assign(cfg, patch); },
     lang: () => 'en',
-    ollamaHost, chatterbox, piper, ollamaApi: api, tools,
+    ollamaHost, chatterbox, piper, ollamaApi: api, tools, nodeTools, nodeDir: () => path.join(tmp, 'userdata', 'node'), platform: overrides.platform || 'win32',
     installOllama: overrides.installOllama === undefined ? async () => { state.installed.push('ollama'); state.ollamaFound = true; return { ok: true }; } : overrides.installOllama,
     downloadOllama: null,
     installPython: async () => { state.installed.push('python'); state.systemPython = { cmd: 'python3', pre: [], version: '3.11.4' }; return { ok: true }; },
@@ -183,7 +194,7 @@ test('everything is there already: nothing is shown, nothing is fetched, her cho
   const { p, saved, state, cfg } = world({ state: { ollamaRunning: true, models: ['gemma3:4b'], hasPackage: true, cbProgress: [] } });
   await p.run();
   assert.deepEqual(states(p), {
-    scan: 'done', 'ollama-find': 'done', 'ollama-run': 'done', 'ollama-model': 'done', 'cb-find': 'done', 'cb-python': 'done', 'cb-package': 'done', 'cb-model': 'done',
+    scan: 'done', node: 'done', 'ollama-find': 'done', 'ollama-run': 'done', 'ollama-model': 'done', 'cb-find': 'done', 'cb-python': 'done', 'cb-package': 'done', 'cb-model': 'done',
     'pp-find': 'skipped', 'pp-voice': 'skipped', 'pp-run': 'skipped',
   });
   assert.equal(p.ok, true);
@@ -224,9 +235,9 @@ test('what she is not using she does not prepare: Claude for the mind, ElevenLab
   const { p } = world({ cfg: { provider: 'anthropic', ttsEngine: 'elevenlabs', provisioned: true } });
   await p.run();
   assert.equal(p.ok, true);
-  assert.ok(p.steps.filter((s) => s.id !== 'scan').every((s) => s.state === 'skipped'));
+  assert.ok(p.steps.filter((s) => !['scan', 'node'].includes(s.id)).every((s) => s.state === 'skipped'));
   assert.equal(p.step('scan').state, 'done', 'she looks at the PC all the same');
-  assert.deepEqual(p.plan, { ollama: false, chatterbox: false, piper: false, adopt: false, engine: 'elevenlabs' });
+  assert.deepEqual(p.plan, { ollama: false, chatterbox: false, piper: false, node: true, adopt: false, engine: 'elevenlabs' });
   // and a voice she was given before is not taken from you the first time either
   const w = world({ cfg: { provider: 'ollama', ttsEngine: 'openai', provisioned: false }, state: { ollamaRunning: true, models: ['gemma3:4b'] } });
   await w.p.run();
@@ -612,4 +623,65 @@ test('the look at the PC for her main menu starts and fetches nothing', async ()
   assert.deepEqual(w.state.hardwareCalls[1], { force: true });
   const broken = world({ state: { hardwareFails: true } });
   assert.ok((await broken.p.preview()).profile.id, 'a look that fails still gives a usual PC');
+});
+
+// ---- Node.js ----
+
+test('Node.js is looked for first: if it is there, nothing is fetched; if not, the portable one is fetched into her folder and put on your PATH', async () => {
+  const has = world({ cfg: { provider: 'anthropic', ttsEngine: 'openai', provisioned: true }, state: { hw: pc({ ram: 15.9 * GB }) } });
+  await has.p.run();
+  assert.equal(has.p.step('node').state, 'done');
+  assert.match(has.p.step('node').detail, /Node\.js 22\.1\.0/);
+  assert.deepEqual(has.state.nodeInstalls, []);
+  assert.equal(has.p.attention, false, 'nothing long happened');
+
+  const none = world({ cfg: { provider: 'anthropic', ttsEngine: 'openai', provisioned: true }, state: { hw: pc({ ram: 15.9 * GB }), nodeFound: false } });
+  const changes = [];
+  none.p.on('change', (s) => changes.push(s));
+  await none.p.run();
+  assert.equal(none.p.ok, true, JSON.stringify(states(none.p)));
+  assert.equal(none.state.nodeInstalls.length, 1);
+  assert.equal(none.state.nodeInstalls[0].arch, 'x64');
+  assert.deepEqual(none.state.nodePath, [none.state.nodeInstalls[0].dir], 'on your PATH');
+  assert.match(none.p.step('node').detail, /Installed Node\.js 24\.22\.1 .* added it to the PATH/);
+  assert.equal(none.p.attention, true, 'a fetch: worth showing');
+  assert.ok(changes.some((c) => /Fetching Node\.js: \d+ MB of \d+ MB/.test(c.steps.find((x) => x.id === 'node').detail)));
+  assert.equal(none.p.snapshot().plan.node, true);
+});
+
+test('Node.js too old is replaced like a missing one; 32-bit Windows gets the 32-bit one; failing says why with a button to its page', async () => {
+  const old = world({ cfg: { provider: 'anthropic', ttsEngine: 'openai', provisioned: true }, state: { hw: pc({ ram: 15.9 * GB }), nodeFound: false, nodeOld: true } });
+  await old.p.run();
+  assert.equal(old.state.nodeInstalls.length, 1);
+  const x86 = world({ cfg: { provider: 'anthropic', ttsEngine: 'openai', provisioned: true }, state: { hw: pc({ arch: 'ia32', env: { PROCESSOR_ARCHITECTURE: 'x86' }, ram: 3 * GB }), nodeFound: false } });
+  await x86.p.run();
+  assert.equal(x86.state.nodeInstalls[0].arch, 'ia32');
+  const arm = world({ cfg: { provider: 'anthropic', ttsEngine: 'openai', provisioned: true }, state: { hw: pc({ arch: 'arm64', ram: 16 * GB }), nodeFound: false } });
+  await arm.p.run();
+  assert.equal(arm.state.nodeInstalls[0].arch, 'arm64');
+  const bad = world({ cfg: { provider: 'anthropic', ttsEngine: 'openai', provisioned: true }, state: { hw: pc({ ram: 15.9 * GB }), nodeFound: false, nodeFails: 'nodejs.org answered 503' } });
+  await bad.p.run();
+  assert.equal(bad.p.step('node').state, 'failed');
+  assert.match(bad.p.step('node').error, /Could not install Node\.js: nodejs\.org answered 503/);
+  assert.deepEqual(bad.p.step('node').actions, ['retry', 'open-node-site']);
+  bad.state.nodeFails = '';
+  await bad.p.retry();
+  assert.equal(bad.p.step('node').state, 'done');
+});
+
+test('Node.js is left alone where she does not install it, and when you turned it off; the rest goes on either way', async () => {
+  const lin = world({ cfg: { provider: 'anthropic', ttsEngine: 'openai', provisioned: true }, platform: 'linux', state: { hw: pc({ platform: 'linux', ram: 15.9 * GB }), nodeFound: false } });
+  await lin.p.run();
+  assert.equal(lin.p.step('node').state, 'skipped');
+  assert.match(lin.p.step('node').detail, /get it from nodejs\.org/);
+  assert.deepEqual(lin.state.nodeInstalls, []);
+  assert.equal(lin.p.ok, true);
+  const off = world({ cfg: { provider: 'anthropic', ttsEngine: 'openai', provisioned: true, autoNode: false }, state: { hw: pc({ ram: 15.9 * GB }), nodeFound: false } });
+  await off.p.run();
+  assert.equal(off.p.step('node').state, 'skipped');
+  assert.deepEqual(off.state.nodeInstalls, []);
+  assert.equal(off.p.snapshot().plan.node, false);
+  const slow = world({ cfg: { provider: 'ollama', ttsEngine: 'openai', provisioned: true }, state: { hw: pc({ ram: 15.9 * GB }), nodeFound: false, nodeFails: 'down', ollamaRunning: true, models: ['gemma3:4b'] } });
+  await slow.p.run();
+  assert.equal(slow.p.step('ollama-model').state, 'done', 'a Node that cannot be fetched does not hold up her mind');
 });

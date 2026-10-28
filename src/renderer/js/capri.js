@@ -6,11 +6,12 @@
 // ("peek"), and falling ("fall") when the window under her goes away or you drop her.
 
 import { SpriteRenderer, SPRITE } from './sprite.js';
-import { ACTS, NEUTRAL, Player } from './acting.js';
+import { ACTS, FIDGETS, NEUTRAL, Player } from './acting.js';
 import { sleep, rand, pick, clamp, lerp, ease, tween, reducedMotion, today } from './util.js';
 import * as marks from './fx-life.js';
 import { COLORS } from './fx.js';
 import * as ledges from './ledges.js';
+import * as moves from './possession.js';
 
 const COLORS_RED = () => COLORS.red; // her theme's main colour (themes.js changes it)
 
@@ -78,6 +79,12 @@ export class Capri {
     this.dormant = false; // asleep, down to her mask
     this.wander = true;
     this.possessWindows = true; // tray: "Possess my windows"
+    this.moveWindows = true;    // ...and move them (tray: "Move the windows she has")
+    this.mover = null;          // app.js: { grab(id) -> Promise<{ ok }>, move(id, x, y), release(id, restore) }: the host moves the window
+    this.holding = null;        // the id of the window she is moving now
+    this.heldLost = false;      // ...which she cannot hold any more (you took it, it closed, the program said no)
+    this.lastPossession = '';
+    this.onPossessed = null;    // (kind) => void: she has been in a window (app.js: a word about it)
     this.restOn = 'corner'; // where she rests when nothing's going on: her corner, or 'taskbar' (her menu)
     this.lang = 'en';
     this.moodName = 'calm'; // how she feels (mood.js), and how strongly, 0..1
@@ -112,6 +119,8 @@ export class Capri {
     this.nextMove = now + rand(40000, 80000);
     this.nextGaze = now + rand(40000, 90000);
     this.nextShed = now + rand(3000, 8000);
+    this.nextFidget = now + rand(8000, 16000);
+    this.lastFidget = '';
     this.nextNotice = 0;
     this.peekUntil = 0;
     this.lastGlyph = 0;
@@ -505,6 +514,12 @@ export class Capri {
 
     if (now > this.nextMoodBeat) this.moodBeat(now);
 
+    // a little something of her own, now and then: swinging her legs on a ledge, a wave, a shrug
+    if (now > this.nextFidget) {
+      this.nextFidget = now + (this.stance === 'sit' ? rand(6000, 14000) : rand(18000, 40000));
+      this.fidget();
+    }
+
     if (this.mode === 'idle' && this.stance !== 'peek' && now > this.nextGaze) {
       this.nextGaze = now + rand(90000, 180000);
       this.gaze();
@@ -567,6 +582,20 @@ export class Capri {
     else if (r < 0.6) this.peek();
     else if (r < 0.85) this.teleport(this.spot('random'));
     else this.flourish();
+  }
+
+  // The small things she does with herself when nobody needs her (acting.js FIDGETS): sitting on a ledge, on a
+  // window or the taskbar, mostly her legs; floating, a wave, a shrug, her mane. By how she feels, never the
+  // same twice in a row. True if she started one.
+  fidget() {
+    const free = this.mode === 'idle' && !this.act && !this.busy && !this.dragging && !this.pointing && !this.dancing && !this.activityAct
+      && !this.hidden && !this.stowed && !this.dormant && !this.sky && !this.upside && !reducedMotion.matches;
+    if (!free || (this.stance !== 'sit' && this.stance !== 'stand')) return false;
+    const names = (FIDGETS[this.stance][this.moodName] || FIDGETS[this.stance].calm).filter((n) => n !== this.lastFidget);
+    if (!names.length) return false;
+    this.lastFidget = pick(names);
+    this.perform(this.lastFidget);
+    return true;
   }
 
   flourish() {
@@ -1159,6 +1188,11 @@ export class Capri {
         this.voice.play('yawn');
         break;
       }
+      case 'note': { // humming
+        const m = this.markAt(pick([-1, 1]));
+        marks.word(this.fx, m.x, m.y, pick(['♪', '♫']), { size: 20, life: 1500, rise: 46, drift: rand(-16, 16), wobble: 3, color: pick([COLORS_RED(), '#fff4f6']) });
+        break;
+      }
       case 'beat':
         if (Math.random() < 0.22) {
           const m = this.markAt(pick([-1, 1]));
@@ -1520,15 +1554,26 @@ export class Capri {
       && this.windows.wins.some((w) => w.id === this.perch?.id);
   }
 
+  // How she takes the window she sits on: moving it, if she may and it has room for it (possession.js), or
+  // just getting in ('take') or making it glitch ('glitch'). Not the way she did last time.
+  pickPossession(win) {
+    const may = this.mover && this.moveWindows && !win.max;
+    const names = [...(may ? moves.available(moves.roomFor(win, this.view)) : []), 'take', 'glitch'];
+    return pick(names.filter((n) => n !== this.lastPossession));
+  }
+
   // Like in the show, she gets into things: she dives into the window she sits on and takes it
-  // over (fx.possess: its frame crackles, it glitches, it looks at you with her eyes), then comes
-  // out of another window, or further along this one if there's no other.
-  async possess() {
+  // over (fx.possess: its frame crackles, it glitches, it looks at you with her eyes), sometimes shakes it, carries
+  // it about the screen or makes it dance (and puts it back), then comes out of another window, or further along
+  // this one if there's no other. `kind`: one of those, else she picks.
+  async possess(kind) {
     if (!this.canPossess()) return false;
     const s = this.scale;
     const id = this.perch.id;
     const win = this.windows.wins.find((w) => w.id === id);
     const entry = this.pos.x - win.x;
+    kind ||= this.pickPossession(win);
+    this.lastPossession = kind;
     this.busy = true;
     this.wake();
     this.onTeleport?.('start');
@@ -1536,7 +1581,12 @@ export class Capri {
     const head = await this.vanish({ beam: false });
     this.fx.streak(head.x, head.y, this.pos.x, win.y + 40 * s);
 
-    const rect = () => this.windows.wins.find((w) => w.id === id) || null;
+    // the window as it is drawn on: where she has put it (the watcher is a moment behind), else where it is
+    let shift = null;
+    const rect = () => {
+      const now = this.windows.wins.find((w) => w.id === id) || null;
+      return now && shift ? { ...now, x: win.x + shift.dx, y: win.y + shift.dy } : now;
+    };
     const covers = () => {
       const front = [];
       for (const o of this.windows.wins) {
@@ -1545,11 +1595,13 @@ export class Capri {
       }
       return front;
     };
-    const taken = this.fx.possess(rect, { covers, entry, look: () => this.mouse });
+    const taken = this.fx.possess(rect, { covers, entry, look: () => this.mouse, style: kind === 'glitch' ? 'glitch' : 'take' });
     this.voice.play('bolt');
     await sleep(300);
     this.voice.play('possess');
-    await sleep(1600);
+    const move = this.mover && this.moveWindows ? moves.make(kind, moves.roomFor(win, this.view)) : null;
+    if (move) await this.carry(id, win, move, (o) => { shift = o; });
+    else await sleep(kind === 'glitch' ? 2300 : 1600);
     taken.leave();
     await sleep(260);
 
@@ -1569,7 +1621,45 @@ export class Capri {
     if (seat) this.fx.slit(to.x, toHead.top, seat.win.y, { width: 56 * s + 10 }); // the void she climbs out of
     await this.arrive(to, seat ? { stance: 'sit', perch: { id: seat.win.id, dx: seat.dx }, beam: false } : {});
     await this.settle();
+    this.onPossessed?.(kind);
     return true;
+  }
+
+  // Moves a window along `move` (possession.js), frame by frame, and puts it back where it was. `onShift(o)`: where
+  // it is now, for drawing. Ends early if she cannot hold it (the host says no, it closes, you take hold of it:
+  // then she leaves it where you put it). Resolves whether she moved it.
+  async carry(id, win, move, onShift) {
+    const grab = await this.mover.grab(id).catch(() => null);
+    if (!grab?.ok) {
+      await sleep(1600); // nothing to move: she just has it for a while
+      return false;
+    }
+    this.holding = id;
+    this.heldLost = false;
+    this.voice.play('rise');
+    const t0 = performance.now();
+    try {
+      for (let t = 0; t < move.ms; t = performance.now() - t0) {
+        if (this.heldLost || !this.windows.wins.some((w) => w.id === id)) break;
+        const o = move.at(t);
+        onShift(o);
+        this.mover.move(id, win.x + o.dx, win.y + o.dy);
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+    } finally {
+      const kept = !this.heldLost;
+      this.holding = null;
+      onShift(null);
+      if (kept) this.mover.move(id, win.x, win.y);
+      this.mover.release(id, kept);
+    }
+    if (!this.heldLost) this.voice.play('land');
+    return !this.heldLost;
+  }
+
+  // The host says the window she was moving is not hers to move any more.
+  moverLost(id) {
+    if (this.holding === id) this.heldLost = true;
   }
 
   // Lean in from an edge of the screen: vanish, then slide in on twos, three drawings.
@@ -1879,7 +1969,7 @@ export class Capri {
     });
     this.canvas.addEventListener('mousedown', (e) => {
       if (e.button !== 0 || this.busy || !this.hit(e.clientX, e.clientY)) return;
-      down = { x: e.clientX, y: e.clientY, pos: { ...this.pos } };
+      down = { x: e.clientX, y: e.clientY, pos: { ...this.pos }, at: performance.now() };
     });
     window.addEventListener('mousemove', (e) => {
       this.mouse = { x: e.clientX, y: e.clientY }; // a window she's in watches it
@@ -1910,23 +2000,25 @@ export class Capri {
       }
       this.notice(e.clientX, e.clientY);
     });
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('mouseup', (e) => {
       if (!down) return;
       const wasDragging = this.dragging;
+      const { at } = down;
       down = null;
       this.dragging = false;
       if (wasDragging) {
         tween(this.p, { glitch: 0, split: 0 }, 200, ease.out);
         this.onTeleport?.('end');
-        this.drop();
-        this.onDrop?.(); // dragged around too often, she gets dizzy (heart.js)
+        const where = this.drop();
+        this.onDrop?.({ ms: performance.now() - at, where }); // dragged around too often, she gets dizzy; put down, a word about it (heart.js)
       } else {
-        this.onClick?.();
+        this.onClick?.({ zone: this.zone(e.clientX, e.clientY) });
       }
     });
   }
 
-  // Let go of her: onto a ledge if her hips are right at one, otherwise she falls.
+  // Let go of her: onto a ledge if her hips are right at one, otherwise she falls. Says where she ended up:
+  // 'window' (on one, not the taskbar) or 'floor'.
   drop() {
     const onto = ledges.dropOnto(this.pos, this.windows.wins, this.view, this.scale);
     if (onto) {
@@ -1934,10 +2026,26 @@ export class Capri {
       this.setStance('sit', { perch: onto.perch });
       this.perform('plop');
       this.voice.play('land');
-      return;
+      return onto.perch?.id === 'taskbar' ? 'floor' : 'window';
     }
     if (this.pos.y < this.floor - 2) this.fall();
     else this.perform('land');
+    return 'floor';
+  }
+
+  // Where on her a point of the screen is: 'head', 'legs' (below the hips) or 'body'. A click means different
+  // things (heart.js clickLine).
+  zone(x, y) {
+    const s = this.scale;
+    const fy = this.pos.y + this.bob;
+    if (this.upside) {
+      x = 2 * this.pos.x - x;
+      y = 2 * fy - y;
+    }
+    const sx = SPRITE.feet.x + ((x - this.pos.x) / s) * this.facing;
+    const sy = SPRITE.feet.y - (fy - y) / s;
+    if (Math.hypot(sx - SPRITE.head.x, sy - (SPRITE.head.y - 34)) < 62) return 'head';
+    return sy > SPRITE.hip ? 'legs' : 'body';
   }
 
   // When the pointer comes close she turns around to face it and cocks her head;

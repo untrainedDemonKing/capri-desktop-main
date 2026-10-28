@@ -12,7 +12,7 @@
   let seq = 0; // the preview asked last
   let preview = null;
   const open = new Set(); // steps whose log is open
-  const sel = { mind: 'ollama', model: '', voice: 'piper', cloud: null };
+  const sel = { mind: 'ollama', model: '', voice: 'piper', cloud: null, node: true };
 
   const ACTIONS = {
     retry: () => ({ label: ui.retry, run: () => window.hub.retry() }),
@@ -20,6 +20,7 @@
     'choose-chatterbox': () => ({ label: ui.chooseChatterbox, run: () => window.hub.choose('chatterbox') }),
     'choose-piper': () => ({ label: ui.choosePiper, run: () => window.hub.choose('piper') }),
     'open-ollama-site': () => ({ label: ui.openOllamaSite, run: () => window.hub.open('https://ollama.com/download') }),
+    'open-node-site': () => ({ label: ui.openNodeSite, run: () => window.hub.open('https://nodejs.org/en/download') }),
     'open-python-site': () => ({ label: ui.openPythonSite, run: () => window.hub.open('https://www.python.org/downloads/') }),
   };
   const toggleLog = (id) => { if (open.has(id)) open.delete(id); else open.add(id); renderProgress(); };
@@ -80,7 +81,7 @@
     const box = $('models');
     const installed = data.have.models || [];
     const same = (m, name) => m === name || m.startsWith(`${name}-`);
-    const rows = data.models.map((m) => ({ value: m.model, bytes: m.bytes, rec: m.model === data.recommended.mind.model, have: m.have, eyes: m.vision, heavy: m.heavy, name: m.model }));
+    const rows = data.models.map((m) => ({ value: m.model, bytes: m.bytes, rec: m.rank === 'best', alt: m.rank === 'alt', ru: m.ru, have: m.have, eyes: m.vision, heavy: m.heavy, name: m.model }));
     // (the ones she has that are not on the list: kept as they are)
     for (const name of installed) if (!data.models.some((m) => same(name, m.model))) rows.push({ value: name, bytes: 0, rec: false, have: true, eyes: null, heavy: false, name: fill(ui.modelKeep, { name }) });
     box.replaceChildren(...rows.map((r) => {
@@ -94,6 +95,8 @@
       label.append(input, el('span', 'model__name', r.name));
       if (r.bytes) label.append(el('span', 'model__size', fmtBytes(r.bytes)));
       if (r.rec) label.append(el('span', 'model__tag', ui.recommendedTag));
+      if (r.alt) label.append(el('span', 'model__tag', ui.modelAlt));
+      if (r.ru) label.append(el('span', 'model__size', ui[`recWhy-ru-${r.ru}`]));
       if (r.have) label.append(el('span', 'model__tag', ui.modelHave));
       if (r.eyes === true) label.append(el('span', 'model__tag', ui.modelEyes));
       if (r.eyes === false) label.append(el('span', 'model__tag model__tag--warn', ui.modelBlind));
@@ -111,6 +114,19 @@
       input.checked = on;
       input.disabled = running();
     }
+  }
+
+  // what the PC is best at carrying, in words: the model, and the voice (and whether Chatterbox is worth it here)
+  function renderRecs() {
+    const m = data.rec.mind;
+    const why = (keys) => keys.map((k) => ui[`recWhy-${k}`]).filter(Boolean).join(', ');
+    $('recBox').hidden = false;
+    $('recTitle').textContent = ui.recTitle;
+    $('recMind').textContent = fill(ui.recBest, { model: m.best, why: why(m.bestWhy) });
+    $('recAlt').textContent = m.alt ? fill(ui.recAlt, { model: m.alt, why: why(m.altWhy) }) : '';
+    const v = data.rec.voice;
+    const key = v.engine === 'chatterbox' ? `recVoice-chatterbox-${v.device}` : `recVoice-${v.engine}`;
+    $('recVoice').textContent = fill(ui[key] || '', { slow: ui[`recSlow-${v.chatterbox || 'slow'}`] || '' });
   }
 
   function renderOllamaLine() {
@@ -252,7 +268,7 @@
 
   async function refreshPlan() {
     const mine = ++seq;
-    const choice = { mind: sel.mind, model: sel.mind === 'ollama' ? sel.model : '', voice: voiceValue() };
+    const choice = { mind: sel.mind, model: sel.mind === 'ollama' ? sel.model : '', voice: voiceValue(), node: sel.node };
     const res = await window.hub.preview(choice).catch(() => null);
     if (mine !== seq || !res) return;
     preview = res;
@@ -310,6 +326,7 @@
     $('skip').hidden = applied;
     // while it works, the choices are not to be changed
     for (const id of ['mindChoices', 'voiceChoices', 'models']) for (const input of $(id).querySelectorAll('input')) input.disabled = running();
+    $('nodeBox').disabled = running();
     for (const b of $('providers').children) b.disabled = running();
     if (preview) renderPlan();
   }
@@ -335,13 +352,15 @@
       sel.mind = data.recommended.mind.kind === 'cloud' && !data.have.ollama ? 'cloud' : 'ollama';
     }
     const installed = data.have.models || [];
-    sel.model = cur.chatModel && installed.includes(cur.chatModel) ? cur.chatModel : installed[0] || data.recommended.mind.model || 'gemma3:4b';
+    sel.model = cur.chatModel && installed.includes(cur.chatModel) ? cur.chatModel : installed[0] || data.rec.mind.best || data.recommended.mind.model || 'gemma3:4b';
     const eng = cur.ttsEngine;
     if (!data.first && ['piper', 'chatterbox', 'system'].includes(eng)) sel.voice = eng;
     else if (!data.first && ['openai', 'elevenlabs'].includes(eng)) {
       sel.voice = 'cloud';
       $('voiceEngine').value = eng;
     } else sel.voice = data.recommended.voice.engine;
+    sel.node = data.node.auto;
+    $('nodeBox').checked = sel.node;
   }
 
   async function load(fresh) {
@@ -353,6 +372,7 @@
     buildModels();
     buildVoice();
     renderOllamaLine();
+    renderRecs();
     renderProviders();
     renderKeyBox();
     renderVoiceKey();
@@ -394,6 +414,9 @@
     $('voiceSave').textContent = ui.voiceSaveKey;
     numbered($('installTitle'), ui.installTitle);
     $('installSub').textContent = ui.installSub;
+    $('nodeLabel').textContent = ui.nodeLabel;
+    $('nodeWhat').textContent = ui.nodeWhat;
+    $('nodeBox').addEventListener('change', (e) => { sel.node = e.target.checked; refreshPlan(); });
     $('stop').textContent = ui.stop;
     $('retry').textContent = ui.retry;
     $('skip').textContent = ui.skipAll;
@@ -408,7 +431,7 @@
     $('go').addEventListener('click', async () => {
       applied = true;
       $('go').disabled = true;
-      await window.hub.apply({ mind: sel.mind, model: sel.mind === 'ollama' ? sel.model : '', voice: voiceValue() });
+      await window.hub.apply({ mind: sel.mind, model: sel.mind === 'ollama' ? sel.model : '', voice: voiceValue(), node: sel.node });
       renderProgress();
     });
     $('stop').addEventListener('click', () => window.hub.stop());

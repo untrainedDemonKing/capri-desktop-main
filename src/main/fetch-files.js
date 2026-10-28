@@ -14,16 +14,18 @@ const { pipeline } = require('node:stream/promises');
 const PART = '.part';
 
 // Downloads `url` to `dest` (through dest + '.part', so a stopped download leaves no half file under the real
-// name). onProgress({ completed, total }) as it comes (total 0 when the server does not say). md5: the hash the
-// file must have. Resolves { bytes }.
-async function download(url, dest, { onProgress, signal, fetchFn = (...a) => fetch(...a), md5 = '' } = {}) {
+// name). onProgress({ completed, total }) as it comes (total 0 when the server does not say). md5 or sha256: the
+// hash the file must have. Resolves { bytes }.
+async function download(url, dest, { onProgress, signal, fetchFn = (...a) => fetch(...a), md5 = '', sha256 = '' } = {}) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const res = await fetchFn(url, { redirect: 'follow', signal });
   if (!res.ok || !res.body) throw new Error(`${new URL(url).host} answered ${res.status} for ${path.basename(new URL(url).pathname)}`);
   const total = Number(res.headers.get('content-length')) || 0;
   const part = dest + PART;
   const out = fs.createWriteStream(part);
-  const hash = md5 ? crypto.createHash('md5') : null;
+  const algorithm = sha256 ? 'sha256' : md5 ? 'md5' : '';
+  const expected = (sha256 || md5).toLowerCase();
+  const hash = algorithm ? crypto.createHash(algorithm) : null;
   let got = 0;
   let shown = -1;
   try {
@@ -39,7 +41,7 @@ async function download(url, dest, { onProgress, signal, fetchFn = (...a) => fet
     }
     await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
     if (total && got !== total) throw new Error(`the download stopped at ${got} of ${total} bytes`);
-    if (hash && hash.digest('hex') !== md5.toLowerCase()) throw new Error(`${path.basename(dest)} arrived damaged (the checksum differs)`);
+    if (hash && hash.digest('hex') !== expected) throw new Error(`${path.basename(dest)} arrived damaged (the checksum differs)`);
     fs.renameSync(part, dest);
   } catch (err) {
     out.destroy();

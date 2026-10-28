@@ -16,9 +16,9 @@ export const LIFE_LINES = {
         happy: ['Сегодня все мои «я» в духе!', 'Ну что, натворим дел?', 'Я в прекрасном настроении. Подозрительно, да?'],
         bored: ['Скукота… Хоть бы кто-нибудь со мной поговорил.', 'Я пересчитала все пиксели на экране. Дважды.', 'Ты про меня забыл?'],
       },
-      poke: ['Эй! Хватит тыкать!', 'Ещё раз — и я кусаюсь.', 'Я тебе не кнопка!', 'Ты что делаешь?!'],
+      poke: ['Эй! Хватит тыкать!', 'Ещё раз — и я кусаюсь.', 'Я тебе не кнопка!', 'Ты что делаешь?!', 'Тыкай в экран, а не в меня!', 'Я считаю. Это уже пятый раз.', 'Ещё один тык — и я отключу тебе звук.'],
       pokeRage: ['ВСЁ! ДОВЁЛ!', 'Я СКАЗАЛА ХВАТИТ!', 'Ну всё, получай!'],
-      tickle: ['Ай! Щекотно!', 'Хи-хи… прекрати!', 'Не там! Ха-ха!', 'Курсором не щекочут! Ха-ха!'],
+      tickle: ['Ай! Щекотно!', 'Хи-хи… прекрати!', 'Не там! Ха-ха!', 'Курсором не щекочут! Ха-ха!', 'Ой-ой-ой! Я сейчас рассыплюсь на пиксели!', 'Ха-ха! Моя слабость — курсор!'],
       dizzy: ['Голова кружится… все мои «я» в разные стороны.', 'Хватит меня таскать! Меня укачало.', 'Я тебе не игрушка… ой, всё плывёт.'],
       grudge: ['А, это ты. Я всё ещё злюсь, между прочим.', 'Снова ты. Извиняться будешь?'],
       hurt: ['…это было обидно.', 'Нас тут десятки. И всем было неприятно.'],
@@ -36,6 +36,32 @@ export const LIFE_LINES = {
         dreamy: ['Спутник… когда-нибудь мы туда доберёмся.'],
       },
       wrongName: ['Я КАПРИ. Не перепутай больше.', 'Какая ещё Алиса? Я Капри!'],
+      // ----- the pointer, with nobody to answer her (no AI yet is fine: these are her own) -----
+      mouse: {
+        // the pointer rests near her and does nothing
+        linger: ['Ты на меня смотришь. Или это курсор такой задумчивый?', 'Чего завис? Я вся тут.', 'Я заметила, что ты замер. Ты там живой?', 'Курсор остановился. Подозрительно.', 'Если хочешь что-то сказать, правый клик. Я не кусаюсь. Почти.', 'Мы играем в «кто первый моргнёт»? Я не моргаю.', 'Ну? Так и будем смотреть друг на друга?', 'Мышка уснула? Потряси её.', 'Эй, ты тут? Или это просто рука на мышке?'],
+        lingerAngry: ['Убери курсор. Я злюсь.', 'Ты ещё и стоишь над душой!', 'Отойди от меня с этой стрелкой.'],
+        // the pointer comes close
+        near: ['О, курсор. Привет, курсор.', 'Ближе подходить необязательно.', 'Ты что-то хотел?', 'Я тебя вижу, не прячься.', 'Осторожно, я за себя не отвечаю.'],
+        // clicks, by where
+        headClick: ['Не в лицо!', 'Эй, там мозги! Все мои «я»!', 'Ай. Моя грива!', 'Постучи ещё, вдруг кто-нибудь ответит.', 'Там занято: все дома.', 'По голове кликают только по записи.'],
+        bodyClick: ['Что? Что тебе?', 'Кликнул и убежал? Смело.', 'Я тебе не кнопка «Далее».', 'Ага. Я тоже тебя вижу.', 'Хм? Да-да, я тут.', 'Нажимай аккуратнее. Я не из пикселей. Ладно, из пикселей.'],
+        legsClick: ['Ноги не трогать!', 'Это мои ботинки. Они не кнопки.', 'Щекотно!.. то есть нет, прекрати.', 'Куда ты тычешь?'],
+        doubleClick: ['Дважды? Я с первого раза слышу.', 'Тык-тык. Принято.', 'Не мельтеши, я не глухая.', 'Два клика? Я и один заметила.'],
+        // the pointer shaken about
+        shake: ['Что, комара ловишь?', 'Курсор бьётся в истерике. Передай ему, что всё хорошо.', 'Так мышь и сломать недолго.', 'Ты там танцуешь или у тебя судорога?', 'Эй, тише! Меня укачивает.'],
+        // picked up, carried, put down
+        grab: ['Эй! Предупреждай, когда хватаешь.', 'Я сама могу ходить! Ну… летать.', 'Кто разрешал меня хватать?', 'Поймал, значит. Ладно, отпустил, и спасибо.', 'Осторожно с гривой!'],
+        carry: ['Ну и поносил ты меня. Я как кошка за шкирку.', 'Укачало. Давай без таких экскурсий.', 'Вид был неплохой. Но в следующий раз спрашивай.'],
+        dropFloor: ['Приземлилась. Спасибо, что не уронил.', 'Вот так бы сразу.', 'Дом, милый дом. Нижний край экрана.'],
+        dropWindow: ['О, окошко! Тут мне нравится.', 'Мягкая посадка. Зачёт.', 'Отсюда лучше видно.'],
+      },
+      // she has no AI to talk with yet: what she says when you click her or after a while (the button opens her main menu)
+      noAi: {
+        click: ['Я бы поболтала, но мне пока нечем думать. Подключишь меня к нейросети?', 'Пока я только мычу. Дай мне мозги: меню у часов › «Главное меню».', 'Хочешь поговорить? Сначала подключи мне нейросеть, чумба.', 'Без нейросети я как призрак без оболочки: мило, но молчу.', 'Тык-тык. Ага. А отвечать мне нечем. Подключи ИИ?'],
+        chatter: ['Мне тут одиноко без нейросети… Может, подключим?', 'Знаешь, что мне нужно? Мозги. Хотя бы маленькие.', 'Я умею сидеть, падать и дуться. А вот говорить пока не умею. Подключишь?', 'Тихо у нас. Нейросеть бы сюда, а то я сама с собой разговариваю.', 'Подсказка: правый клик по мне › вкладка «ИИ». Я подожду.'],
+        button: 'Подключить',
+      },
     },
     life: {
       corps: ['Арасаки', 'Militech', 'Biotechnica', 'Kang Tao', 'Petrochem', 'Zetatech'],
@@ -56,6 +82,17 @@ export const LIFE_LINES = {
         lose: ['ДА КАК?! Это читеры!', 'Нечестно! Игра сломана!', 'Проиграла… Никому не говори.'],
       },
       graffiti: ['Шедевр. Не благодари.', 'Капри была здесь.', 'Немного искусства на твой экран.', 'Не стирай. Хотя оно само сотрётся.'],
+      // after she has been in one of your windows, by what she did there
+      possessed: {
+        take: ['Погостила в твоём окне. Уютно, кстати.', 'Не бойся, ничего не трогала. Почти.'],
+        glitch: ['Это не глюк. Это я.', 'Мерцает? Это я проходила.', 'Чуть-чуть помех для атмосферы.'],
+        shake: ['Тряхнула окно. Просто проверить, крепко ли держится.', 'Оно дрожало! Ему понравилось. Наверное.'],
+        sway: ['Покачала окно. Оно даже не возражало.', 'Укачивает? Меня тоже.'],
+        dance: ['Окно умеет танцевать. Теперь ты знаешь.', 'Потанцевали. Окно в восторге.'],
+        drag: ['Прокатила твоё окно. Вернула на место, как обещала.', 'Таскать окна — моё хобби. Ничего не потеряла.', 'Окно съездило туда-обратно. Всё на месте, смотри.'],
+        puck: ['Шайба! Ну, то есть окно. Но почти.', 'Хоккей на рабочем столе. Счёт: ноль-ноль.'],
+        bounce: ['Прыг-скок! Окно высоко прыгает.', 'Три прыжка. Мой рекорд в окнах.'],
+      },
       scan: { verb: 'Сканирует', target: 'сеть', done: ['Сеть чистая. Пока что.', 'Никаких нетраннеров. Кроме меня.', 'Нашла твой кэш… шучу. Или нет.'] },
       // the minds in her, arguing: [who, what] one after the other
       minds: [
@@ -267,7 +304,7 @@ export const LIFE_LINES = {
       },
       character: {
         emotions: 'Эмоции', life: 'Свои занятия на экране', musicAware: 'Знать, что играет', dj: 'Режим DJ (сама меняет треки)',
-        learn: 'Узнаёт меня (саморазвитие)', wander: 'Бродить по экрану', possess: 'Захватывать окна',
+        learn: 'Узнаёт меня (саморазвитие)', wander: 'Бродить по экрану', possess: 'Захватывать окна', possessMove: 'Двигать захваченные окна',
         custom: 'Сделать её своей…', report: 'Отчёт о миссии',
       },
       colours: {
@@ -335,6 +372,25 @@ export const LIFE_LINES = {
         dreamy: ["The satellite… one day we'll make it up there."],
       },
       wrongName: ["I'm CAPRI. Don't mix that up again.", "Who's that? I'm Capri!"],
+      mouse: {
+        linger: ['You are looking at me. Or is the cursor just thoughtful?', "Why did you freeze? I'm all here.", "You stopped. Are you alive in there?", 'The cursor stopped. Suspicious.', "If you want to say something, right-click. I don't bite. Much.", "Are we playing who-blinks-first? I don't blink.", 'Well? Are we just going to stare at each other?', 'Did the mouse fall asleep? Shake it.'],
+        lingerAngry: ['Take the cursor away. I am mad.', 'And you are hovering over me, too!', 'Back off with that arrow.'],
+        near: ['Oh, a cursor. Hello, cursor.', "You don't have to come closer.", 'Did you want something?', 'I can see you. No hiding.', "Careful, I'm not responsible for myself."],
+        headClick: ['Not the face!', "Hey, there are brains in there! All of me!", 'Ow. My mane!', 'Knock again, maybe somebody answers.', "It's occupied: everyone's home."],
+        bodyClick: ['What? What do you want?', 'Click and run? Brave.', "I'm not a Next button.", "Yeah. I see you too.", 'Hm? Yes, yes, I am here.'],
+        legsClick: ['Hands off the legs!', "Those are my boots. They're not buttons.", "Tick— no, stop that.", 'Where are you poking?'],
+        doubleClick: ['Twice? I heard you the first time.', 'Click-click. Noted.', "Don't flail, I'm not deaf.", 'Two clicks? I noticed one.'],
+        shake: ['What, chasing a mosquito?', 'The cursor is having a fit. Tell it everything is fine.', 'You can break a mouse like that.', 'Are you dancing or is that a cramp?', 'Hey, easy! It makes me dizzy.'],
+        grab: ['Hey! Warn me before you grab.', 'I can walk myself! Well… float.', 'Who said you could grab me?', 'Caught me, then. Fine, thanks for letting go.', 'Careful with the mane!'],
+        carry: ['That was a long ride. I felt like a cat held by the scruff.', 'Dizzy. No more sightseeing tours, please.', 'The view was not bad. Ask first next time.'],
+        dropFloor: ["Landed. Thanks for not dropping me.", 'That is how it should be done.', 'Home sweet home. The bottom of the screen.'],
+        dropWindow: ['Oh, a window! I like it here.', 'Soft landing. Approved.', 'The view is better from here.'],
+      },
+      noAi: {
+        click: ["I'd chat, but I have nothing to think with yet. Will you connect me to an AI?", "For now I only hum. Give me a brain: the clock's menu › “Main menu”.", 'Want to talk? Connect an AI first, choom.', "Without an AI I'm a ghost without a shell: cute, but silent.", "Poke, poke. Yes. And I can't answer. Connect an AI?"],
+        chatter: ["It's lonely here without an AI… shall we connect one?", 'You know what I need? A brain. Even a small one.', "I can sit, fall and sulk. Talking I can't do yet. Will you connect me?", "It's quiet. An AI would help, I'm talking to myself here.", 'Hint: right-click me › the “AI” tab. I will wait.'],
+        button: 'Connect',
+      },
     },
     life: {
       corps: ['Arasaka', 'Militech', 'Biotechnica', 'Kang Tao', 'Petrochem', 'Zetatech'],
@@ -355,6 +411,16 @@ export const LIFE_LINES = {
         lose: ['HOW?! Cheaters!', 'Unfair! The game is broken!', "Lost… don't tell anyone."],
       },
       graffiti: ["A masterpiece. You're welcome.", 'Capri was here.', 'A little art for your screen.', "Don't wipe it. It'll fade on its own anyway."],
+      possessed: {
+        take: ['Visited your window. Cosy in there, by the way.', "Don't worry, I didn't touch anything. Much."],
+        glitch: ["That's not a glitch. That's me.", 'Flickering? That was me passing through.', 'A little static for the atmosphere.'],
+        shake: ['Shook the window. Just checking it holds.', 'It was trembling! It liked it. Probably.'],
+        sway: ["Rocked the window. It didn't even complain.", 'Seasick? So am I.'],
+        dance: ['The window can dance. Now you know.', 'We danced. The window is thrilled.'],
+        drag: ['Took your window for a ride. Put it back, as promised.', 'Dragging windows is my hobby. Nothing lost.', 'The window went there and back. All in place, look.'],
+        puck: ['Puck! Well, a window. Close enough.', 'Hockey on your desktop. Score: nil-nil.'],
+        bounce: ['Boing! The window jumps high.', 'Three jumps. My window record.'],
+      },
       scan: { verb: 'Scanning', target: 'the network', done: ['Network is clean. For now.', 'No netrunners. Except me.', 'Found your cache… kidding. Or not.'] },
       minds: [
         [['MIND #07', "Let's fly to the satellite."], ['MIND #31', 'You and your satellite again.'], ['CAPRI', "Quiet, all of you! I'm in charge."]],
@@ -556,7 +622,7 @@ export const LIFE_LINES = {
       },
       character: {
         emotions: 'Emotions', life: 'Her own activities', musicAware: "Know what's playing", dj: 'DJ mode (she skips tracks)',
-        learn: 'Learns about me', wander: 'Wander around', possess: 'Possess my windows',
+        learn: 'Learns about me', wander: 'Wander around', possess: 'Possess my windows', possessMove: 'Move the windows she has',
         custom: 'Make her yours…', report: 'Mission report',
       },
       colours: {

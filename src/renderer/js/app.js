@@ -95,6 +95,10 @@ async function boot() {
   });
   capri.wander = config.wander;
   capri.possessWindows = config.possess;
+  capri.moveWindows = config.possessMove !== false;
+  // she can move the windows she has taken over (the host does it: main/mover.js)
+  if (host.windowGrab) capri.mover = { grab: (id) => host.windowGrab(id), move: (id, x, y) => host.windowMove(id, x, y), release: (id, restore) => host.windowRelease(id, restore) };
+  host.onWindowLost?.(({ id }) => capri.moverLost(id));
   capri.restOn = config.rest || 'corner';
   capri.lang = config.lang;
   capri.setView(innerWidth, innerHeight, innerHeight - floorGap);
@@ -183,7 +187,8 @@ async function boot() {
     mouse = { x: e.clientX, y: e.clientY };
     refreshHit();
     hoverChip();
-    // tickling her, patting her head (heart.js)
+    // tickling her, patting her head, shaking the pointer about, resting it by her (heart.js)
+    heart.moved(mouse.x, mouse.y);
     if (!capri.hidden && capri.stance !== 'fall') {
       const h = onHer && capri.head();
       const onHead = onHer && Math.hypot(mouse.x - h.x, mouse.y - (h.y - 34 * capri.scale)) < 62 * capri.scale;
@@ -259,12 +264,20 @@ async function boot() {
     const lines = when === 'end' ? brain.t.uplink : brain.t.gaze;
     if (!panel.visible && Math.random() < (when === 'end' ? 0.6 : 0.4)) panel.say({ kind: 'info', line: pick(lines), hold: 3800 });
   };
-  capri.onClick = () => {
+  capri.onClick = (click) => {
     if (heart.poke()) return; // poked too many times: she's had it
-    if (panel.visible) panel.hide();
-    else brain.status();
+    const double = heart.tapped(); // the second click of two: she has a word about it, instead of putting her line away
+    if (panel.visible && !(double && panel.current?.kind === 'idle')) panel.hide();
+    else brain.status({ ...click, double });
   };
-  capri.onDrop = () => heart.dragged();
+  capri.onDrop = (drop) => heart.dragged(drop);
+  // With no AI to answer her she says so, with a button for her main menu; asked now and then (not while she is being set up)
+  heart.onConnect = () => host.hubShow?.();
+  const checkAi = async () => {
+    heart.aiReady = (await host.chatReady?.().catch(() => 'ready')) !== 'none';
+  };
+  setTimeout(checkAi, 8000);
+  setInterval(checkAi, 90000);
   panel.onChar = (kind) => voice.play('blip', { mood: kind });
   panel.onTalk = (talking) => talking && capri.perform('talk');
   capri.onMenu = () => (ring ? ring.toggle() : host.openMenu()); // right-click: her circular menu
@@ -285,6 +298,11 @@ async function boot() {
   life.configure(config);
   life.start();
   chat.life = life;
+  // she has been in one of your windows: a word about what she did there, now and then
+  capri.onPossessed = (kind) => {
+    const lines = life.t.possessed?.[kind];
+    if (lines && Math.random() < 0.55 && life.free()) life.say(pick(lines), { face: 'smug', hold: 4200 });
+  };
 
   // Her senses and her hands, all off until you turn them on (each in her menu).
   // Eyes: she takes a look at your screen and reacts (eyes.js, screen.js).
@@ -501,6 +519,7 @@ async function boot() {
   });
 
   host.onConfig((cfg) => {
+    setTimeout(checkAi, 2500); // (a new AI is connected, or taken away)
     voice.configure(cfg);
     heart.configure(cfg);
     bond.configure(cfg);
@@ -529,6 +548,7 @@ async function boot() {
     }
     capri.wander = cfg.wander;
     capri.possessWindows = cfg.possess;
+    capri.moveWindows = cfg.possessMove !== false;
     capri.restOn = cfg.rest || 'corner';
     applyMotion(cfg.motion);
     if ((cfg.claude === false && brain.watching) || cfg.assistant !== brain.assistant) {

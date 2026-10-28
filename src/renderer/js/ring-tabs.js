@@ -516,6 +516,7 @@ const character = {
     root.append(heading(''));
     root.append(toggle(k.wander, cfg.wander === true, (v) => c.set({ wander: v })));
     root.append(toggle(k.possess, cfg.possess === true, (v) => c.set({ possess: v })));
+    root.append(toggle(k.possessMove, cfg.possess === true && cfg.possessMove !== false, (v) => c.set({ possessMove: v }), { disabled: cfg.possess !== true || !win }));
     root.append(buttons(go(c, k.custom, 'customize'), cfg.claude ? go(c, k.report, 'report') : null));
     return root;
   },

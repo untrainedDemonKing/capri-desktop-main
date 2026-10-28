@@ -174,3 +174,51 @@ test('whether a model runs well here: whole on the card after the voice, or smal
   assert.equal(profiles.runsWell(card, profiles.LADDER[3].bytes, { voiceOnCard: false }), true, 'without it all of the card is the model\'s');
   assert.equal(profiles.runsWell(pc({ ram: 4 * GB }), profiles.LADDER[1].bytes), false, 'a 4B model on 4 GB of memory');
 });
+
+// [what it is, the PC, the best model, an alternative (or null), the voice engine/device, Chatterbox's speed if it is not the voice]
+const RECS = [
+  ['a plain 16 GB PC', { ram: 15.9 * GB }, 'gemma3:4b', null, 'piper/cpu', 'veryslow'],
+  ['a strong processor with 32 GB', { ram: 31 * GB, cpu: { name: 'Ryzen 9', threads: 24 } }, 'gemma3:4b', null, 'piper/cpu', 'slow'],
+  ['a small PC with 4 GB', { ram: 3.9 * GB }, 'gemma3:1b', null, 'piper/cpu', 'veryslow'],
+  ['a GTX 1660 (6 GB): the model fits the card, the voice goes to the processor', { ram: 15.9 * GB, gpus: [nvidia('GTX 1660', 6)] }, 'gemma3:4b', null, 'piper/cpu', 'veryslow'],
+  ['an RTX 3060 (12 GB)', { ram: 15.9 * GB, gpus: [nvidia('RTX 3060', 12)] }, 'gemma3:4b', null, 'chatterbox/cuda'],
+  ['an RTX 4090 (24 GB)', { ram: 63 * GB, gpus: [nvidia('RTX 4090', 24)] }, 'gemma3:12b', 'qwen2.5:14b', 'chatterbox/cuda'],
+  ['an RTX 5090 (32 GB)', { ram: 63 * GB, gpus: [nvidia('RTX 5090', 32, { compute: 12 })] }, 'gemma3:27b', 'qwen2.5:32b', 'chatterbox/cuda'],
+  ['a Mac with an M2 and 16 GB', { platform: 'darwin', arch: 'arm64', ram: 16 * GB, gpus: [{ name: 'Apple M2', vram: 16 * GB * 0.66, unified: true }] }, 'gemma3:4b', null, 'chatterbox/mps'],
+  ['a 32-bit Windows', { arch: 'ia32', env: { PROCESSOR_ARCHITECTURE: 'x86' }, ram: 3 * GB }, 'gemma3:1b', null, 'system/', 'none'],
+];
+for (const [what, o, best, alt, voice, slow] of RECS) {
+  test(`what to put on ${what}`, () => {
+    const hw = pc(o);
+    const v = profiles.recommendVoice(hw);
+    const r = profiles.recommend(hw, { voiceOnCard: profiles.chatterboxDevice(hw) !== 'cpu' });
+    assert.equal(r.best, best, `${what}: the model`);
+    assert.equal(r.alt, alt, `${what}: the alternative`);
+    assert.equal(`${v.engine}/${v.device}`, voice, `${what}: the voice`);
+    if (slow) assert.equal(v.chatterbox, slow, `${what}: Chatterbox there`);
+    assert.equal(r.rows.length, profiles.CATALOG.length);
+    assert.equal(r.rows.filter((x) => x.rank === 'best').length, 1, 'one best');
+    assert.ok(r.rows.find((x) => x.model === best).fits !== false || best === 'gemma3:1b', 'what she recommends runs well here');
+  });
+}
+
+test('the reasons for a recommendation: what it can do (see the screen), how it speaks Russian, where it runs', () => {
+  const card = pc({ ram: 15.9 * GB, gpus: [nvidia('RTX 3060', 12)] });
+  const r = profiles.recommend(card, { voiceOnCard: true });
+  assert.deepEqual(r.bestWhy, ['vision', 'ru-good', 'fitsCardVoice']);
+  const plain = profiles.recommend(pc({ ram: 15.9 * GB }));
+  assert.deepEqual(plain.bestWhy, ['vision', 'ru-good', 'fitsRam']);
+  const tiny = profiles.recommend(pc({ ram: 3.9 * GB }));
+  assert.deepEqual(tiny.bestWhy, ['noVision', 'ru-ok', 'small']);
+  const big = profiles.recommend(pc({ ram: 63 * GB, gpus: [nvidia('RTX 4090', 24)] }), { voiceOnCard: true });
+  assert.deepEqual(big.altWhy, ['noVision', 'ru-great', 'fitsCardVoice']);
+  const alone = profiles.recommend(pc({ ram: 63 * GB, gpus: [nvidia('RTX 4090', 24)] }), { voiceOnCard: false });
+  assert.equal(alone.best, 'gemma3:27b', 'no voice on the card: all of it is the model\'s');
+});
+
+test('every model of the catalog is told apart by name, with a size, and is one the preparation can fetch', () => {
+  const names = profiles.CATALOG.map((m) => m.model);
+  assert.equal(new Set(names).size, names.length);
+  for (const m of profiles.CATALOG) assert.ok(/^[a-z0-9.]+:[a-z0-9.]+$/.test(m.model) && m.bytes > 0 && ['ok', 'good', 'great', 'best'].includes(m.ru), m.model);
+  for (const m of profiles.LADDER) assert.ok(names.includes(m.model), `the gemma3 ladder is in the catalog: ${m.model}`);
+});

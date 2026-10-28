@@ -9,7 +9,7 @@
 // told to the preparation window (prepare.js) with how far it is, and what fails says why, with the buttons
 // that may help.
 //
-//   steps: scan  |  ollama-find, ollama-run, ollama-model  |  cb-find, cb-python, cb-package, cb-model  |
+//   steps: scan  |  node  |  ollama-find, ollama-run, ollama-model  |  cb-find, cb-python, cb-package, cb-model  |
 //          pp-find, pp-voice, pp-run
 //   a step is { id, group, state: 'pending' | 'running' | 'done' | 'failed' | 'skipped', progress (0..1 or
 //   null), detail (what she says about it), error, heavy (a long job: worth showing), actions, log }
@@ -20,6 +20,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { findFolder, findPython, pythonCandidates } = require('./chatterbox');
 const tools = require('./chatterbox-setup');
+const nodeTools = require('./node-check');
 const hardwareLib = require('./hardware');
 const profiles = require('./profiles');
 const { text } = require('./prepare-lines');
@@ -27,6 +28,7 @@ const { text } = require('./prepare-lines');
 const GB = 1024 ** 3;
 const STEPS = [
   ['scan', 'pc'],
+  ['node', 'tools'],
   ['ollama-find', 'ollama'], ['ollama-run', 'ollama'], ['ollama-model', 'ollama'],
   ['cb-find', 'voice'], ['cb-python', 'voice'], ['cb-package', 'voice'], ['cb-model', 'voice'],
   ['pp-find', 'voice'], ['pp-voice', 'voice'], ['pp-run', 'voice'],
@@ -64,11 +66,12 @@ const bytes = (n, lang) => {
 class Provision extends EventEmitter {
   // deps: cfg() the config, save(patch) change it, lang(), ollamaHost, chatterbox, piper, ollamaApi { models, pull },
   //       installOllama(onLine), downloadOllama(onLine), installPython(onLine), roots(), defaultDir(), onModelsChanged(),
-  //       hardware({ force }) a look at this PC, tune(tuning) what the profile says Ollama is told, tools
+  //       hardware({ force }) a look at this PC, tune(tuning) what the profile says Ollama is told, tools,
+  //       nodeTools, nodeDir() where she fetches Node.js to, platform
   constructor(deps) {
     super();
-    this.d = { hardware: () => hardwareLib.scan(), tools, installOllama: null, downloadOllama: null, installPython: null, tune: null, piper: null, onModelsChanged: async () => {}, ...deps };
-    this.plan = { ollama: false, chatterbox: false, piper: false, adopt: false };
+    this.d = { hardware: () => hardwareLib.scan(), tools, nodeTools, nodeDir: () => '', platform: process.platform, installOllama: null, downloadOllama: null, installPython: null, tune: null, piper: null, onModelsChanged: async () => {}, ...deps };
+    this.plan = { ollama: false, chatterbox: false, piper: false, node: false, adopt: false };
     this.hw = null; // the picture of this PC (hardware.js)
     this.have = {}; // what is on it already
     this.profile = null; // what it gets (profiles.js)
@@ -135,7 +138,7 @@ class Provision extends EventEmitter {
   // what is on this PC already, so the plan counts only what is missing
   async inventory(cfg) {
     const { ollamaHost, ollamaApi, piper } = this.d;
-    const have = { ollama: false, models: [], chatterbox: false, piper: false };
+    const have = { ollama: false, models: [], chatterbox: false, piper: false, node: false };
     try {
       have.ollama = Boolean(await ollamaHost.versionFn?.()) || Boolean(await ollamaHost.locate(cfg));
     } catch { /* not there */ }
@@ -148,6 +151,10 @@ class Provision extends EventEmitter {
     try {
       const dir = findFolder(cfg, this.d.roots());
       have.chatterbox = Boolean(dir && findPython(dir));
+    } catch { /* not there */ }
+    try {
+      const found = await this.d.nodeTools.findNode({ ours: this.d.nodeDir(), platform: this.d.platform });
+      have.node = Boolean(found && !found.tooOld);
     } catch { /* not there */ }
     return have;
   }
@@ -165,7 +172,7 @@ class Provision extends EventEmitter {
     // (an Ollama that is already there stays her mind on a PC that would have taken a cloud one, unless you asked for the cloud)
     // (and the model you picked in her main menu is Ollama's whatever the PC would have taken)
     const ollama = (cfg.provider || 'ollama') === 'ollama' && (prof.mind.kind === 'ollama' || (prof.auto && Boolean(have.ollama)) || Boolean(cfg.wantModel));
-    return { ollama, chatterbox: engine === 'chatterbox', piper: engine === 'piper', adopt, engine };
+    return { ollama, chatterbox: engine === 'chatterbox', piper: engine === 'piper', node: cfg.autoNode !== false, adopt, engine };
   }
 
   // The look at the PC and what is on it, with the plan for it, and nothing started or fetched (her main menu
@@ -213,6 +220,7 @@ class Provision extends EventEmitter {
       }
       this.emit('change', this.snapshot());
       const jobs = [];
+      if (this.plan.node) jobs.push(this.group(() => this.runNode()));
       if (this.plan.ollama) jobs.push(this.group(() => this.runOllama()));
       if (this.plan.chatterbox) jobs.push(this.group(() => this.runChatterbox()));
       if (this.plan.piper) jobs.push(this.group(() => this.runPiper()));
@@ -238,6 +246,7 @@ class Provision extends EventEmitter {
   }
 
   wanted(step) {
+    if (step.group === 'tools') return this.plan.node;
     if (step.group === 'ollama') return this.plan.ollama;
     if (step.id.startsWith('cb-')) return this.plan.chatterbox;
     if (step.id.startsWith('pp-')) return this.plan.piper;
@@ -292,6 +301,39 @@ class Provision extends EventEmitter {
 
   retry() {
     return this.run();
+  }
+
+  // ---- Node.js ----
+
+  // Node.js is not needed by the installed Capri, but by what she sets up beside herself (the hooks of Codex, running
+  // from the sources). Looked for; if it is not there, the portable one is fetched into her folder and put on your PATH.
+  async runNode() {
+    const { nodeTools } = this.d;
+    const lang = this.d.lang();
+    this.begin('node');
+    const found = await nodeTools.findNode({ ours: this.d.nodeDir(), platform: this.d.platform });
+    if (found && !found.tooOld) {
+      this.done('node', this.t('nodeHave', { version: found.version, path: found.exe }));
+      return;
+    }
+    if (this.d.platform !== 'win32') {
+      this.skip('node', this.t('nodeManual'));
+      return;
+    }
+    const os64 = this.hw?.os.is64 !== false;
+    const arch = this.hw?.os.arch === 'arm64' ? 'arm64' : os64 ? 'x64' : 'ia32';
+    this.begin('node', { heavy: true, progress: 0, detail: this.t('nodeFetching') });
+    let got;
+    try {
+      got = await nodeTools.install({
+        dir: this.d.nodeDir(), arch, signal: this.abort.signal,
+        onProgress: ({ completed, total }) => this.update('node', { heavy: true, progress: total ? Math.min(1, completed / total) : null, detail: this.t('nodeFetchingOf', { done: bytes(completed, lang), total: total ? bytes(total, lang) : '?' }) }),
+      });
+    } catch (err) {
+      this.fail('node', this.t('nodeFailed', { error: this.cancelled ? 'cancelled' : err.message }), ['retry', 'open-node-site']);
+    }
+    const onPath = nodeTools.addToUserPath(got.dir);
+    this.done('node', this.t(onPath.ok ? 'nodeInstalled' : 'nodeInstalledNoPath', { version: got.version, dir: got.dir }));
   }
 
   // ---- her mind ----

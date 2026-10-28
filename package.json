@@ -39,6 +39,11 @@
     "test:piper": "node --test tests/piper.test.js",
     "test:hub": "node --test tests/hub.test.js",
     "test:ledges": "node --test tests/ledges.test.js",
+    "test:heart": "node --test tests/heart.test.js",
+    "test:acting": "node --test tests/acting.test.js",
+    "test:possession": "node --test tests/possession.test.js",
+    "test:mover": "node --test tests/mover.test.js",
+    "test:node": "node --test tests/node-check.test.js",
     "test:stacking": "node --test tests/stacking.test.js",
     "test": "node --test tests/*.test.js"
   },
@@ -83,6 +88,7 @@
     "asarUnpack": [
       "hooks/**",
       "src/main/windows.ps1",
+      "src/main/mover.ps1",
       "src/main/media.ps1"
     ],
     "win": {

@@ -184,6 +184,16 @@ test('the window: opened once, brought forward when asked again; its progress is
   assert.equal(w.prov.cancels, 1);
 });
 
+test('her "Connect" button on the overlay (hub:show) opens the window, once', () => {
+  const w = world();
+  assert.equal(w.hub.isOpen(), false);
+  w.fire('hub:show');
+  assert.equal(w.hub.isOpen(), true);
+  const win = FakeWindow.last;
+  w.fire('hub:show');
+  assert.equal(FakeWindow.last, win);
+});
+
 test('closing the main menu the first time without pressing anything is "not now": nothing is fetched behind your back from then on', () => {
   const closed = world();
   closed.hub.show();
@@ -210,4 +220,41 @@ test('after the button the window may be closed without it counting as "not now"
   FakeWindow.last.close();
   assert.deepEqual(w.updates, [], 'nothing more is written');
   assert.equal(w.config.value.autoSetup, true);
+});
+
+test('Node.js in the main menu: a row in the plan when asked for, with whether it is there, and the choice kept in her config', async () => {
+  const w = world({ have: { ollama: true, models: [], chatterbox: false, piper: false, node: false } });
+  const p = await w.hub.preview({ mind: 'skip', voice: 'system', node: true });
+  assert.deepEqual(p.items.map((i) => [i.id, i.have]), [['node', false]]);
+  assert.ok(p.total > 0 && p.total < 100 * 1024 ** 2, 'a zip of some 30 MB');
+  const without = await w.hub.preview({ mind: 'skip', voice: 'system', node: false });
+  assert.deepEqual(without.items, []);
+  const there = world({ have: { ollama: true, models: [], chatterbox: false, piper: false, node: true } });
+  assert.equal((await there.hub.preview({ mind: 'skip', voice: 'system', node: true })).total, 0);
+  assert.equal((await w.call('hub:state')).node.auto, true);
+  await w.call('hub:apply', { mind: 'skip', voice: 'system', node: false });
+  assert.equal(w.updates[0].autoNode, false);
+  const on = world();
+  await on.call('hub:apply', { mind: 'skip', voice: 'system', node: true });
+  assert.equal(on.updates[0].autoNode, true);
+  const none = world();
+  await none.call('hub:apply', { mind: 'skip', voice: 'system' });
+  assert.equal('autoNode' in none.updates[0], false, 'not told: left as it is');
+});
+
+test('the recommendations the page shows: the best model and its reasons, an alternative, the voice, and every model graded for this PC', async () => {
+  const plain = await world().call('hub:state');
+  assert.equal(plain.rec.mind.best, 'gemma3:4b');
+  assert.deepEqual(plain.rec.mind.bestWhy, ['vision', 'ru-good', 'fitsRam']);
+  assert.equal(plain.rec.mind.alt, null);
+  assert.deepEqual([plain.rec.voice.engine, plain.rec.voice.chatterbox], ['piper', 'veryslow']);
+  assert.equal(plain.models.length, 8, 'the gemma3 and the qwen2.5 ones');
+  const rank = Object.fromEntries(plain.models.map((m) => [m.model, m.rank]));
+  assert.deepEqual([rank['gemma3:4b'], rank['gemma3:1b'], rank['qwen2.5:7b'], rank['gemma3:27b']], ['best', 'ok', 'heavy', 'heavy']);
+  assert.ok(plain.ui['recWhy-vision'] && plain.ui['recVoice-piper'] && plain.ui.recTitle, 'the words for them are sent too');
+  const big = await world({ hw: hardware.make({ ram: 63 * GB, gpus: [{ name: 'NVIDIA GeForce RTX 4090', vram: 24 * GB }], disk: { path: '', free: 500 * GB, total: 1000 * GB } }) }).call('hub:state');
+  assert.equal(big.rec.mind.best, 'gemma3:12b');
+  assert.equal(big.rec.mind.alt, 'qwen2.5:14b');
+  assert.deepEqual([big.rec.voice.engine, big.rec.voice.device], ['chatterbox', 'cuda']);
+  assert.equal(big.models.find((m) => m.model === 'qwen2.5:14b').rank, 'alt');
 });

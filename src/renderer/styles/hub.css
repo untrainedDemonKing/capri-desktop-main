@@ -69,3 +69,15 @@ body { overflow-y: auto; }
 #groups .group { background: var(--ink); }
 
 #voiceChoices { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+
+.check { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; cursor: pointer; margin-bottom: 2px; }
+.check input { accent-color: var(--green); width: 16px; height: 16px; }
+.check:focus-within { outline: 2px solid var(--amber); outline-offset: 2px; }
+.check__what { margin: 0 0 10px 24px; color: var(--dim); font-size: 11.5px; }
+
+.rec { background: var(--ink); border-left: 3px solid var(--amber); padding: 9px 12px; margin: 0 0 12px; }
+.rec .panel__title { margin: 0 0 4px; color: var(--amber); }
+.rec__line { margin: 0; font-size: 12px; line-height: 1.5; }
+.rec__line--alt { color: var(--dim); margin-top: 3px; }
+.rec__line--voice { margin: 12px 0 0; padding: 9px 12px; background: var(--ink); border-left: 3px solid var(--amber); }
+.rec__line:empty { display: none; }

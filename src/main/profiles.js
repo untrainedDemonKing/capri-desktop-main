@@ -26,12 +26,28 @@ const LADDER = [
 ];
 const modelInfo = (name) => LADDER.find((m) => m.model === name) || { model: name, bytes: 4 * GB, vision: true };
 
+// All the models she can talk with, with what is known of them (sizes as Ollama lists them; how well they speak
+// Russian is a rough grade, from "ok" to "best"; the gemma3 ones from 4B on see pictures, so they can look at
+// your screen). The ladder above is the gemma3 part of it, which she takes by herself.
+const CATALOG = [
+  { model: 'gemma3:1b', bytes: 0.8 * GB, vision: false, ru: 'ok' },
+  { model: 'qwen2.5:3b', bytes: 1.9 * GB, vision: false, ru: 'ok' },
+  { model: 'gemma3:4b', bytes: 3.3 * GB, vision: true, ru: 'good' },
+  { model: 'qwen2.5:7b', bytes: 4.7 * GB, vision: false, ru: 'good' },
+  { model: 'gemma3:12b', bytes: 8.1 * GB, vision: true, ru: 'great' },
+  { model: 'qwen2.5:14b', bytes: 9.0 * GB, vision: false, ru: 'great' },
+  { model: 'gemma3:27b', bytes: 17 * GB, vision: true, ru: 'best' },
+  { model: 'qwen2.5:32b', bytes: 20 * GB, vision: false, ru: 'best' },
+];
+const RU_GRADE = { ok: 1, good: 2, great: 3, best: 4 };
+
 // what is fetched for the pieces, and what the memory of the card must hold for them (rough, rounded up)
 const SIZE = {
   ollama: 1.6 * GB, // its own program (the zip of its releases)
   piper: 0.03 * GB + 0.08 * GB, // the program and one voice
   chatterboxCpu: 6 * GB, // the Python environment with torch (the plain one) and the model
   chatterboxCuda: 10 * GB, // and torch with the card's libraries
+  node: 0.04 * GB, // the portable Node.js (a zip of about 30 MB)
 };
 const VOICE_VRAM = 6.5 * GB; // Chatterbox on a card
 const CHATTERBOX_MIN_VRAM = 8 * GB;
@@ -73,6 +89,40 @@ function runsWell(hw, bytes, { voiceOnCard = false } = {}) {
   const g = hw.gpu;
   if (g && (g.vendor === 'nvidia' || g.unified) && g.vram >= 4 * GB && need <= g.vram - (voiceOnCard ? VOICE_VRAM : 0.5 * GB) - 0.5 * GB) return true;
   return bytes <= LADDER[1].bytes && need <= hw.ram * 0.45;
+}
+
+// Which models to put on this PC, best first, and why: every model of the catalog with whether it runs well here,
+// the best one for this PC (what she would take by herself), and an alternative of another family that is as good in
+// Russian but does not see the screen, if one also fits. `voiceOnCard`: the voice shares the card.
+function recommend(hw, { voiceOnCard = false } = {}) {
+  const best = mindFor(hw, { voiceOnCard, floor: hw.ram >= 7 * GB ? 1 : 0 });
+  const g = hw.gpu;
+  const onCard = Boolean(g && (g.vendor === 'nvidia' || g.unified) && g.vram >= 4 * GB);
+  const rows = CATALOG.map((m) => {
+    const fits = runsWell(hw, m.bytes, { voiceOnCard });
+    return { model: m.model, bytes: m.bytes, vision: m.vision, ru: m.ru, fits, rank: m.model === best.model ? 'best' : fits ? 'ok' : 'heavy' };
+  });
+  const bestRow = rows.find((r) => r.rank === 'best') || rows[0];
+  const alt = rows.filter((r) => r.rank === 'ok' && r.model !== bestRow.model && !r.vision && RU_GRADE[r.ru] >= RU_GRADE[bestRow.ru] && r.bytes >= bestRow.bytes)
+    .sort((a, b) => b.bytes - a.bytes)[0] || null;
+  if (alt) alt.rank = 'alt';
+  const why = (r) => [
+    r.vision ? 'vision' : 'noVision',
+    `ru-${r.ru}`,
+    r.bytes <= 1 * GB ? 'small' : onCard && runsWell({ ...hw, ram: 0 }, r.bytes, { voiceOnCard }) ? (voiceOnCard ? 'fitsCardVoice' : 'fitsCard') : 'fitsRam',
+  ];
+  return { best: bestRow.model, alt: alt ? alt.model : null, rows, bestWhy: why(bestRow), altWhy: alt ? why(alt) : [] };
+}
+
+// The voice for this PC and how it will go: Chatterbox on a card that can carry it (fast) or an Apple chip (so-so),
+// else Piper; Chatterbox on the processor is possible but slow (a little less on a strong one).
+function recommendVoice(hw) {
+  const device = chatterboxDevice(hw);
+  if (device === 'cuda') return { engine: 'chatterbox', device, speed: 'fast', torch: 'cuda', alsoPiper: true };
+  if (device === 'mps') return { engine: 'chatterbox', device, speed: 'ok', torch: 'mps', alsoPiper: true };
+  const strong = hw.cpu.threads >= 12 && hw.ram >= 24 * GB;
+  if (piperWorks(hw)) return { engine: 'piper', device: 'cpu', speed: 'fast', torch: '', alsoPiper: false, chatterbox: strong ? 'slow' : 'veryslow' };
+  return { engine: 'system', device: '', speed: 'fast', torch: '', alsoPiper: false, chatterbox: 'none' };
 }
 
 // Her own settings for the profile, so a small PC is not choked: how much she remembers of the talk at once (the
@@ -160,8 +210,9 @@ function plan(hw, { choice = 'auto', have = {}, voice = '' } = {}) {
 
 // The pieces of a set-up, each with its size and whether it is there already (what you pick in her main menu:
 // a mind, a model, a voice): [{ id, name?, bytes, have }]. The total to fetch is that of the ones that are not.
-function components({ mind, model = '', voice, device = 'cpu', have = {} }) {
+function components({ mind, model = '', voice, device = 'cpu', node = false, have = {} }) {
   const out = [];
+  if (node) out.push({ id: 'node', bytes: SIZE.node, have: Boolean(have.node) });
   if (mind === 'ollama') {
     out.push({ id: 'ollama', bytes: SIZE.ollama, have: Boolean(have.ollama) });
     if (model) out.push({ id: 'model', name: model, bytes: modelInfo(model).bytes, have: (have.models || []).some((m) => m === model || m.startsWith(`${model}-`) || (!model.includes(':') && m === `${model}:latest`)) });
@@ -193,4 +244,4 @@ function describe(hw) {
   };
 }
 
-module.exports = { plan, refresh, components, runsWell, classify, build, mindFor, tuningFor, chatterboxDevice, piperWorks, describe, downloads, modelInfo, IDS, LADDER, SIZE, VOICE_VRAM };
+module.exports = { plan, refresh, components, runsWell, recommend, recommendVoice, CATALOG, classify, build, mindFor, tuningFor, chatterboxDevice, piperWorks, describe, downloads, modelInfo, IDS, LADDER, SIZE, VOICE_VRAM };

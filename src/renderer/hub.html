@@ -31,6 +31,11 @@
       <div id="mindChoices" class="choices" role="radiogroup" aria-labelledby="mindTitle"></div>
       <div id="mindOllama" class="panel" hidden>
         <p id="ollamaLine" class="panel__line"></p>
+        <div id="recBox" class="rec" hidden>
+          <h3 id="recTitle" class="panel__title"></h3>
+          <p id="recMind" class="rec__line"></p>
+          <p id="recAlt" class="rec__line rec__line--alt"></p>
+        </div>
         <h3 id="modelTitle" class="panel__title"></h3>
         <div id="models" class="models" role="radiogroup" aria-labelledby="modelTitle"></div>
       </div>
@@ -49,6 +54,7 @@
       <h2 id="voiceTitle" class="card__title"></h2>
       <p id="voiceSub" class="card__sub"></p>
       <div id="voiceChoices" class="choices" role="radiogroup" aria-labelledby="voiceTitle"></div>
+      <p id="recVoice" class="rec__line rec__line--voice"></p>
       <div id="voiceCloud" class="panel" hidden>
         <div class="keybox__row">
           <label id="voiceEngineLabel" for="voiceEngine"></label>
@@ -66,6 +72,8 @@
     <section id="install" class="card" aria-labelledby="installTitle">
       <h2 id="installTitle" class="card__title"></h2>
       <p id="installSub" class="card__sub"></p>
+      <label class="check" for="nodeBox"><input id="nodeBox" type="checkbox"> <span id="nodeLabel"></span></label>
+      <p id="nodeWhat" class="check__what"></p>
       <table id="plan" class="plan"><tbody></tbody></table>
       <p id="totals" class="totals"></p>
       <ul id="warns" class="pc__notes"></ul>

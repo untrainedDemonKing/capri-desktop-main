@@ -68,13 +68,13 @@
   // the groups of a snapshot ("the mind", "the voice") into `container`; returns how many there are
   function renderGroups(snap, container, opts) {
     container.replaceChildren();
-    for (const id of ['ollama', 'voice']) {
+    for (const id of ['tools', 'ollama', 'voice']) {
       const steps = snap.steps.filter((s) => s.group === id && s.state !== 'skipped');
       if (!steps.length) continue;
       const box = el('section', 'group');
       box.dataset.state = groupState(steps);
       box.dataset.group = id;
-      const title = id === 'ollama' ? opts.ui.groupOllama : snap.plan.piper ? opts.ui.groupPiper : opts.ui.groupChatterbox;
+      const title = id === 'tools' ? opts.ui.groupTools : id === 'ollama' ? opts.ui.groupOllama : snap.plan.piper ? opts.ui.groupPiper : opts.ui.groupChatterbox;
       box.append(el('h2', 'group__title', title));
       for (const s of steps) box.append(stepRow(s, opts));
       container.append(box);

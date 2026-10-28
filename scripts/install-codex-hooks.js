@@ -48,7 +48,8 @@ function configure(uninstall = false) {
   }
   const script = path.resolve(__dirname, '..', 'hooks', MARK)
     .replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`).replace(/\\/g, '/');
-  const command = `node "${script}"`;
+  // (`node` when it is on the PATH; else the one she found or fetched, by its path)
+  const command = `${require('../src/main/node-check').nodeCommand() || 'node'} "${script}"`;
   if (!uninstall) {
     for (const event of EVENTS) {
       settings.hooks[event] ||= [];

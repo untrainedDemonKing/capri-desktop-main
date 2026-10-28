@@ -8,7 +8,7 @@
 const path = require('node:path');
 const { table } = require('./prepare-lines');
 
-const SITES = /^https:\/\/(www\.)?(ollama\.com|python\.org)(\/|$)/;
+const SITES = /^https:\/\/(www\.)?(ollama\.com|python\.org|nodejs\.org)(\/|$)/;
 const AUTO_CLOSE = 6000;
 
 function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, lang, ollamaHost, chatterbox, piper, openAiTab, isHubOpen, protocolUrl }) {
