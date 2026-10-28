@@ -70,7 +70,8 @@ class Provision extends EventEmitter {
   //       nodeTools, nodeDir() where she fetches Node.js to, platform, record(kind, value) writes down what she put on
   //       this PC (installed.js), so that she can take it off again (cleanup.js), tempDir() where downloads and pip work
   //       while they are on their way ('' the system's), cleanTemp() empties it, preferZip() Ollama comes first as the zip
-  //       into her folder (when you picked a folder for everything she fetches), ensureRoot() makes that folder.
+  //       into her folder (when you picked a folder for everything she fetches), ensureRoot() makes that folder,
+  //       blocked() whether nothing is to be fetched just now (it is being moved).
   //       The installers get (onLine, signal): "Stop" ends them at once.
   constructor(deps) {
     super();
@@ -231,6 +232,7 @@ class Provision extends EventEmitter {
   // the PC again (the window's button), not at the last look.
   run(opts = {}) {
     if (this.job) return this.job;
+    if (this.d.blocked?.()) return Promise.resolve(); // (what she fetched is being moved: nothing is fetched now)
     this.job = this.go(opts).finally(() => { this.job = null; });
     return this.job;
   }

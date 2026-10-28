@@ -21,7 +21,8 @@ const setup = require('./setup');
 const apps = require('./apps');
 const launch = require('./launch');
 const tts = require('./tts');
-const { Chatterbox } = require('./chatterbox');
+const { Chatterbox, findPython } = require('./chatterbox');
+const chatterboxSetup = require('./chatterbox-setup');
 const { Piper } = require('./piper');
 const hardware = require('./hardware');
 const { needsRaise } = require('./stacking');
@@ -32,6 +33,7 @@ const { createSample } = require('./voice-sample');
 const { Provision } = require('./provision');
 const { createInstalled } = require('./installed');
 const { createFolder } = require('./downloads');
+const { Relocate } = require('./relocate');
 const { Cleanup } = require('./cleanup');
 const nodeCheck = require('./node-check');
 const { createPrepare } = require('./prepare');
@@ -142,7 +144,8 @@ const provision = new Provision({
 });
 // Taking off what she put on this PC (cleanup.js), made once the app is ready
 let cleanupTool = null;
-somethingRunning = () => Boolean(provision.running || cleanupTool?.busy);
+let relocateTool = null; // moving what she fetched to another folder (relocate.js), made with the main menu
+somethingRunning = () => Boolean(provision.running || cleanupTool?.busy || relocateTool?.busy);
 const theCleanup = () => (cleanupTool ||= new Cleanup({
   userData: app.getPath('userData'),
   home: app.getPath('home'),
@@ -155,7 +158,29 @@ const theCleanup = () => (cleanupTool ||= new Cleanup({
   piper,
   nodeTools: nodeCheck,
   provision,
+  blocked: () => Boolean(relocateTool?.busy),
   onModelsChanged: () => refreshModels(),
+}));
+const theRelocate = () => (relocateTool ||= new Relocate({
+  cleanup: theCleanup(),
+  folder,
+  cfg: () => config.load(),
+  save: (patch) => updateConfig(patch),
+  installed,
+  // her programs let go of their files, then start again by themselves once it is over
+  stop: () => {
+    for (const stop of [() => chatterbox.stop(), () => piper.stop(), () => ollamaHost.stop()]) {
+      try { stop(); } catch (err) { console.error('[capri] stopping before a move:', err.message); }
+    }
+  },
+  after: () => {
+    if (config.load().autoSetup !== false) provision.run();
+    else chatterbox.sync(config.load()).catch(() => {});
+  },
+  nodeTools: nodeCheck,
+  tools: { findPython, hasChatterbox: (python) => chatterboxSetup.hasChatterbox(python) },
+  diskOf: (dir) => hardware.diskOf(dir),
+  busy: () => (provision.running ? 'preparing' : cleanupTool?.busy ? 'removing' : ''),
 }));
 let prepare = null; // her preparation window (prepare.js), made once the app is ready
 let hub = null; // her main menu (hub.js), the same
@@ -1535,6 +1560,7 @@ function main() {
       keyPages: setup.KEY_PAGES,
       voiceKeyPages: tts.KEY_PAGES,
       cleanup: theCleanup(),
+      relocate: theRelocate(),
       uninstall: uninstallCapri,
       mind: { status: tuneStatus, measure: () => tuneMind({ force: true }) },
       folder,
@@ -1566,7 +1592,7 @@ function main() {
   app.on('will-quit', () => {
     config.flush(); // the last changes, written now
     // what she started goes with her (each on its own: one failing must not leave the other running)
-    for (const stop of [() => provision.cancel(), () => chatterbox.stop(), () => piper.stop(), () => ollamaHost.stop()]) {
+    for (const stop of [() => relocateTool?.cancel(), () => provision.cancel(), () => chatterbox.stop(), () => piper.stop(), () => ollamaHost.stop()]) {
       try { stop(); } catch (err) { console.error('[capri] stopping what she started:', err.message); }
     }
     clearTimeout(trayTimer);

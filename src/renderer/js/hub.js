@@ -25,6 +25,15 @@
   };
   const toggleLog = (id) => { if (open.has(id)) open.delete(id); else open.add(id); renderProgress(); };
   const running = () => Boolean(snap && snap.running);
+  // (moving what is fetched already into the folder in use: further down)
+  let move = null; // the last the main process said of a move
+  let moveArmed = false; // the plan is shown, and waits for the second press
+  let moveTimer = 0;
+  let moveSaid = '';
+  let moveKind = ''; // '', 'ok' or 'bad'
+  const moving = () => Boolean(move && move.running);
+  const kindName = (kind) => ui[`moveKind-${kind}`] || kind;
+  const kinds = (list) => list.map(kindName).join(', ');
   const voiceValue = () => (sel.voice === 'cloud' ? $('voiceEngine').value : sel.voice);
 
   // ---- cards to choose from ----
@@ -296,7 +305,7 @@
     $('warns').replaceChildren(...warns.filter(Boolean).map((w) => el('li', '', w)));
     const blocked = (sel.mind === 'cloud' && !cloudOk) || (sel.voice === 'cloud' && !data.voiceKeys[$('voiceEngine').value]) || (sel.mind === 'ollama' && !sel.model);
     $('go').textContent = p.total > 0 ? ui.install : ui.installDone;
-    $('go').disabled = running() || blocked;
+    $('go').disabled = running() || blocked || moving();
   }
 
   // ---- what is on this PC, and taking it off ----
@@ -402,7 +411,7 @@
     await load(fresh, { keepInventory: true });
   }
 
-  const reason = (error) => (error === 'preparing' ? ui.invBusyPreparing : error === 'missing' ? ui.invMissing : error === 'not hers' ? ui.invNotHers : error);
+  const reason = (error) => (error === 'preparing' ? ui.invBusyPreparing : error === 'moving' ? ui.invBusyMoving : error === 'missing' ? ui.invMissing : error === 'not hers' ? ui.invNotHers : error);
 
   async function removeOne(item) {
     working = true;
@@ -466,18 +475,107 @@
     $('folderPath').textContent = fill(f.custom ? ui.folderNow : ui.folderNowDefault, { dir: f.dir });
     $('folderFree').textContent = f.free ? fill(ui.folderFree, { size: fmtBytes(f.free) }) : '';
     $('folderReset').hidden = !f.custom;
-    for (const id of ['folderChoose', 'folderReset']) $(id).disabled = running() || working;
+    for (const id of ['folderChoose', 'folderReset']) $(id).disabled = running() || working || moving();
     const out = $('folderResult');
     out.textContent = said;
     out.dataset.kind = said ? (bad ? 'bad' : 'ok') : '';
+    renderMove();
   }
 
   // the answer to picking the place (or putting the default back): the folder as it is now, and the plan counted again for the disk it is on
   async function folderChanged(res, doneLine) {
     if (res.error === 'canceled') return;
     if (res.folder) data.folder = res.folder;
-    renderFolder(res.ok ? fill(doneLine, { dir: res.folder?.dir || '' }) : ui[`folderErr-${res.error}`] || ui['folderErr-missing'], !res.ok);
+    const said = res.ok
+      ? [fill(doneLine, { dir: res.folder?.dir || '' }), res.adopted?.length ? fill(ui.moveAdopted, { list: kinds(res.adopted) }) : ''].filter(Boolean).join(' ')
+      : ui[`folderErr-${res.error}`] || ui['folderErr-missing'];
+    renderFolder(said, !res.ok);
     if (res.ok) await refreshPlan();
+  }
+
+  // ---- moving what is fetched already into it (relocate.js) ----
+
+
+  function sayMove(text, kind = '') {
+    moveSaid = text;
+    moveKind = text ? kind : '';
+    renderMove();
+  }
+
+  function renderMove() {
+    const f = data?.folder;
+    const going = moving();
+    const movable = f?.movable || [];
+    $('moveBox').hidden = !f || !(going || movable.length || moveSaid);
+    if ($('moveBox').hidden) return;
+    const note = movable.length && !going ? fill(ui.moveNote, { list: kinds(movable) }) : '';
+    $('moveNote').textContent = note;
+    $('moveNote').hidden = !note;
+    $('moveGo').hidden = going || !movable.length;
+    $('moveGo').textContent = moveArmed ? ui.moveSure : ui.moveGo;
+    $('moveGo').disabled = running() || working;
+    $('moveStop').hidden = !going;
+    $('moveStop').disabled = move?.stopping === true;
+    $('moveStop').textContent = move?.stopping ? ui.stopping : ui.moveStop;
+    $('moveBar').hidden = !going;
+    if (going) $('moveBar').firstElementChild.style.width = `${move.total ? Math.min(100, Math.round((move.done / move.total) * 100)) : 0}%`;
+    const line = $('moveLine');
+    if (going) {
+      line.textContent = move.stopping ? ui.stopping : fill(ui.moveNow, { what: kindName(move.kind), index: move.index, count: move.count, done: fmtBytes(move.done), total: fmtBytes(move.total) });
+      line.dataset.kind = '';
+    } else {
+      line.textContent = moveSaid;
+      line.dataset.kind = moveKind;
+    }
+  }
+
+  // the first press shows what would be moved and what it takes; the second one moves
+  async function pressMove() {
+    if (moving()) return;
+    if (!moveArmed) {
+      const plan = await window.hub.folderPlan().catch(() => null);
+      if (!plan || !plan.items.length) return sayMove(ui[plan?.conflicts?.length ? 'moveErr-taken' : 'moveErr-nothing'], 'bad');
+      if (!plan.enough) return sayMove(fill(ui.moveShort, { need: fmtBytes(plan.need), free: fmtBytes(plan.free) }), 'bad');
+      const lines = [fill(ui.movePlan, { list: kinds(plan.items.map((i) => i.kind)), size: fmtBytes(plan.bytes), free: plan.free ? fmtBytes(plan.free) : '?' })];
+      if (plan.conflicts.length) lines.push(fill(ui.moveTaken, { list: kinds(plan.conflicts) }));
+      moveArmed = true;
+      clearTimeout(moveTimer);
+      moveTimer = setTimeout(() => { moveArmed = false; sayMove(''); }, 12000);
+      return sayMove(lines.join(' '));
+    }
+    moveArmed = false;
+    clearTimeout(moveTimer);
+    const res = await window.hub.folderMove().catch(() => ({ ok: false, error: 'missing' }));
+    sayMove(res.ok ? '' : ui[`moveErr-${res.error}`] || ui['moveErr-missing'], 'bad');
+  }
+
+  // what the main process says: how far it is, and how it ended
+  async function moveChanged(next) {
+    const was = moving();
+    move = next;
+    if (next.running) moveArmed = false;
+    if (was && !next.running) {
+      const parts = [];
+      if (next.cancelled) parts.push(next.moved.length ? fill(ui.moveCancelled, { list: kinds(next.moved) }) : ui.moveCancelledNone);
+      else if (next.moved.length) parts.push(fill(ui.moveDone, { list: kinds(next.moved) }));
+      if (next.failed.length) parts.push(fill(ui.moveFailed, { list: next.failed.map((f) => `${kindName(f.kind)} (${f.error})`).join('; ') }));
+      if (next.skipped.length) parts.push(fill(ui.moveSkipped, { list: kinds(next.skipped) }));
+      if (next.left.length) parts.push(fill(ui.moveLeft, { dirs: next.left.join(', ') }));
+      sayMove(parts.join(' '), next.failed.length || next.left.length ? 'bad' : 'ok');
+      // (what is where has changed)
+      const fresh = await window.hub.state().catch(() => null);
+      if (fresh) {
+        data.folder = fresh.folder;
+        data.have = fresh.have;
+        data.models = fresh.models;
+        buildModels();
+        renderOllamaLine();
+        refreshPlan();
+        refreshInventory();
+      }
+    }
+    renderFolder(document.getElementById('folderResult').textContent, $('folderResult').dataset.kind === 'bad');
+    if (preview) renderPlan();
   }
 
   // ---- how it is going ----
@@ -628,6 +726,7 @@
     renderVoiceKey();
     showPanels();
     renderTune();
+    move = data.move;
     renderFolder();
     window.hub.sample().then((st) => renderSample(st)).catch(() => {});
     snap = data.snapshot;
@@ -708,6 +807,13 @@
     $('folderChoose').addEventListener('click', async () => folderChanged(await window.hub.folderChoose().catch(() => ({ ok: false, error: 'missing' })), ui.folderSet));
     $('folderReset').addEventListener('click', async () => folderChanged(await window.hub.folderReset().catch(() => ({ ok: false, error: 'missing' })), ui.folderResetDone));
     $('folderOpen').addEventListener('click', () => window.hub.folderOpen());
+    $('moveGo').addEventListener('click', pressMove);
+    $('moveStop').addEventListener('click', () => {
+      $('moveStop').disabled = true; // (at once: it was pressed)
+      $('moveStop').textContent = ui.stopping;
+      window.hub.folderMoveStop();
+    });
+    window.hub.onMove(moveChanged);
     $('sampleChoose').addEventListener('click', chooseSample);
     $('sampleRemove').addEventListener('click', async () => renderSample(await window.hub.sampleRemove()));
     window.hub.onTune((next) => {

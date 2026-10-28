@@ -54,6 +54,8 @@ body { overflow-y: auto; }
 .keybox__result { margin: 0; min-height: 18px; font-size: 12px; font-weight: 600; }
 .folder { margin-bottom: 12px; }
 .folder__path { margin: 0 0 6px; padding: 6px 8px; background: var(--ink); border: 1px solid var(--ink-3); font: 600 12px/1.4 'JetBrains Mono', monospace; color: var(--paper); word-break: break-all; }
+.move { margin: 8px 0 4px; padding-top: 8px; border-top: 1px dashed var(--ink-3); }
+.move .bar { margin: 6px 0; }
 .folder__btns { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 6px; }
 .keybox__result[data-kind='ok'] { color: var(--green); }
 .keybox__result[data-kind='bad'] { color: oklch(0.8 0.14 20); }

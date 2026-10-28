@@ -33,7 +33,7 @@ const MINDS = ['ollama', 'cloud', 'skip'];
 
 const SECTIONS = new Set(['manage', 'folder']); // the places of the page a button elsewhere can open it at
 
-function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config, updateConfig, lang, connect, saveVoiceKey, keyPages, voiceKeyPages = {}, cleanup = null, uninstall = null, mind = null, folder = null, protocolUrl, onClosed }) {
+function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config, updateConfig, lang, connect, saveVoiceKey, keyPages, voiceKeyPages = {}, cleanup = null, uninstall = null, mind = null, folder = null, relocate = null, protocolUrl, onClosed }) {
   let win = null;
   let applied = false; // the button was pressed in this window: closing it is not "skip"
   let last = null; // the last look at the PC, for the previews (a look takes a second or two)
@@ -53,6 +53,9 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
     keyPage: Boolean(keyPages[c.id]),
   }));
 
+  // the folder in use, and what of hers is lying somewhere else (it can be moved there)
+  const folderInfo = () => (folder ? { ...folder.info(), movable: relocate ? relocate.candidates() : [] } : null);
+
   async function state({ rescan = false } = {}) {
     const cfg = config.load();
     const { hw, have, profile } = await look({ rescan });
@@ -70,7 +73,8 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
       cloud: cloudState(cfg),
       voiceKeys: { openai: Boolean(cfg.apiKeys?.openai), elevenlabs: Boolean(cfg.apiKeys?.elevenlabs) },
       node: { auto: cfg.autoNode !== false },
-      folder: folder ? folder.info() : null,
+      folder: folderInfo(),
+      move: relocate ? relocate.snapshot() : null,
       tune: mind ? mind.status() : null,
       current: { provider: cfg.provider, chatModel: cfg.chatModel, ttsEngine: cfg.ttsEngine || 'system', customUrl: cfg.customUrl || '' },
       snapshot: provision.snapshot(),
@@ -113,6 +117,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
 
   async function apply(choice = {}) {
     if (cleanup?.busy) return { ok: false, error: 'removing' }; // (something is being taken off: not a moment to fetch)
+    if (relocate?.busy) return { ok: false, error: 'moving' }; // (and not while it is being moved)
     const cfg = config.load();
     const { have } = await look();
     if (provision.running) {
@@ -194,11 +199,28 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
   // the folder everything she fetches goes in (downloads.js): the place picked, put back, looked at
   const placed = (res) => {
     if (res.ok) last = null; // (the room on the disk is another one now: the next look at the PC is a new one)
-    return { ...res, folder: folder ? folder.info() : null };
+    // (a folder that was moved by hand: her settings are pointed at it where it is now)
+    const adopted = res.ok && relocate ? relocate.adopt() : [];
+    return { ...res, adopted, folder: folderInfo() };
   };
   ipcMain.handle('hub:folderChoose', async () => (folder ? placed(await folder.choose(win)) : { ok: false, error: 'missing' }));
   ipcMain.handle('hub:folderReset', () => (folder ? placed(folder.reset()) : { ok: false, error: 'missing' }));
   ipcMain.handle('hub:folderOpen', () => (folder ? folder.open() : ''));
+  // moving what she fetched earlier into it (relocate.js): what would go and what it takes, then the move, which can be stopped
+  ipcMain.handle('hub:folderPlan', async () => {
+    if (!relocate) return { items: [], conflicts: [], bytes: 0, need: 0, free: 0, enough: true };
+    const plan = await relocate.plan();
+    return { ...plan, items: plan.items.map(({ kind, bytes, sameDisk }) => ({ kind, bytes, sameDisk })), conflicts: plan.conflicts.map(({ kind }) => kind) };
+  });
+  ipcMain.handle('hub:folderMove', async () => (relocate ? relocate.start() : { ok: false, error: 'missing' }));
+  ipcMain.handle('hub:folderMoveStop', () => {
+    relocate?.cancel();
+    return true;
+  });
+  relocate?.on('change', (snapshot) => {
+    send('hub:move', snapshot);
+    if (snapshot.finished && !snapshot.running) last = null; // (what is where has changed)
+  });
   // what is on this PC because of her, and taking it off (cleanup.js)
   const inventory = async () => (cleanup ? cleanup.inventory({ fresh: true }) : { items: [], ollamaUp: true, total: 0, count: 0 });
   ipcMain.handle('hub:inventory', () => inventory());

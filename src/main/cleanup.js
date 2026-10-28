@@ -63,7 +63,8 @@ const SEEN_MS = 30 * 1000;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class Cleanup {
-  // deps: userData (her data folder), home (the user's home folder), cfg(), save(patch), installed (installed.js),
+  // deps: userData (her data folder), home (the user's home folder), cfg(), save(patch), installed (installed.js), blocked()
+  //       (a move of what she fetched is going on: nothing is taken off then),
   //       ollamaApi { list(), remove(name) }, ollamaHost, chatterbox, piper, nodeTools { removeFromUserPath },
   //       provision (to see whether something is being fetched), onModelsChanged(), run(cmd, args) -> { ok, code },
   //       platform, env, fsx, settle (ms to let a stopped program let go of its files)
@@ -121,10 +122,11 @@ class Cleanup {
 
   piperPlace() {
     const { fsx } = this.d;
-    const dir = this.d.piper?.defaultDir?.();
-    if (dir && this.mine(dir) && fsx.existsSync(dir)) return { dir, ours: true };
+    // (the folder named in her settings is the one in use, as for piper.js; hers when it lies in a folder of hers)
     const named = String(this.d.cfg().piperDir || '').trim();
-    return named && fsx.existsSync(named) ? { dir: named, ours: this.mine(named) } : null;
+    if (named && fsx.existsSync(named)) return { dir: named, ours: this.mine(named) };
+    const dir = this.d.piper?.defaultDir?.();
+    return dir && this.mine(dir) && fsx.existsSync(dir) ? { dir, ours: true } : null;
   }
 
   chatterboxPlace() {
@@ -340,6 +342,7 @@ class Cleanup {
   async remove(id) {
     if (this.busy) return { ok: false, id, error: 'busy' };
     if (this.d.provision?.running) return { ok: false, id, error: 'preparing' };
+    if (this.d.blocked?.()) return { ok: false, id, error: 'moving' };
     this.busy = true;
     try {
       const list = await this.inventory();
@@ -358,11 +361,10 @@ class Cleanup {
 
   // The Capri folder you picked, when nothing else is left in it (her mark and the work folder only): it goes too, so
   // that no empty folder is left on the disk. It is made again when she fetches something again.
-  removeEmptyRoot() {
+  removeEmptyRoot(root = String(this.d.cfg().dataDir || '').trim()) {
     const { fsx } = this.d;
-    const root = String(this.d.cfg().dataDir || '').trim();
     try {
-      if (!root || !fsx.existsSync(path.join(root, MARK))) return false;
+      if (!root || path.resolve(root) === path.resolve(this.d.userData) || !fsx.existsSync(path.join(root, MARK))) return false;
       if (fsx.readdirSync(root).some((n) => n !== MARK && n !== TEMP)) return false;
       fsx.rmSync(root, { recursive: true, force: true });
       return true;
@@ -376,6 +378,7 @@ class Cleanup {
   async removeAll() {
     if (this.busy) return { ok: false, freed: 0, removed: [], failed: [], error: 'busy' };
     if (this.d.provision?.running) return { ok: false, freed: 0, removed: [], failed: [], error: 'preparing' };
+    if (this.d.blocked?.()) return { ok: false, freed: 0, removed: [], failed: [], error: 'moving' };
     this.busy = true;
     const removed = [];
     const failed = [];

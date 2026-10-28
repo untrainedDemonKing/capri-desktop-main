@@ -26,7 +26,7 @@ class FakeWindow extends EventEmitter {
   close() { this.destroyed = true; this.emit('closed'); }
 }
 
-function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', threads: 8 }, disk: { path: '', free: 200 * GB, total: 500 * GB } }), have = { ollama: false, models: [], chatterbox: false, piper: false }, cfg = {}, connect, cleanup, uninstall, mind, folder } = {}) {
+function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', threads: 8 }, disk: { path: '', free: 200 * GB, total: 500 * GB } }), have = { ollama: false, models: [], chatterbox: false, piper: false }, cfg = {}, connect, cleanup, uninstall, mind, folder, relocate } = {}) {
   const handlers = new Map();
   const listeners = new Map();
   const ipcMain = { handle: (c, fn) => handlers.set(c, fn), on: (c, fn) => listeners.set(c, fn) };
@@ -51,7 +51,7 @@ function world({ hw = hardware.make({ ram: 15.9 * GB, cpu: { name: 'Intel i5', t
     saveVoiceKey: ({ engine, key }) => { updateConfig({ ttsEngine: engine, apiKeys: { ...config.value.apiKeys, [engine]: `enc:${key}` } }); return { ok: true }; },
     keyPages: { groq: 'https://console.groq.com/keys', gemini: 'https://aistudio.google.com/apikey' },
     voiceKeyPages: { openai: 'https://platform.openai.com/api-keys' },
-    cleanup, uninstall, mind, folder,
+    cleanup, uninstall, mind, folder, relocate,
     protocolUrl: 'capri://app/src/renderer/hub.html',
   });
   return { hub, handlers, listeners, config, updates, prov, opened, clipboard, call: (c, ...a) => handlers.get(c)({}, ...a), fire: (c, ...a) => listeners.get(c)({}, ...a) };
@@ -363,11 +363,11 @@ test('the folder everything is fetched into: told to the page, picked, put back;
   };
   const w = world({ folder });
   const st = await w.call('hub:state');
-  assert.deepEqual(st.folder, info);
+  assert.deepEqual(st.folder, { ...info, movable: [] }, 'and nothing of hers lying elsewhere');
   const before = w.prov.previews;
   const picked = await w.call('hub:folderChoose');
   assert.equal(picked.ok, true);
-  assert.deepEqual(picked.folder, info, 'the page is told how it stands now');
+  assert.deepEqual(picked.folder, { ...info, movable: [] }, 'the page is told how it stands now');
   await w.call('hub:state');
   assert.equal(w.prov.previews, before + 1, 'the PC is looked at again');
   const back = await w.call('hub:folderReset');
@@ -389,4 +389,46 @@ test('what a run leaves behind is looked at again: the look at the PC is dropped
   w.prov.emit('finish', { ok: true });
   await w.call('hub:state');
   assert.equal(w.prov.previews, n + 1);
+});
+
+test('moving what is fetched already into the folder in use: what can go is told with the folder, the plan and the move are asked for, progress is passed on, "Stop" stops it', async () => {
+  const calls = [];
+  const info = { dir: 'D:\\Capri', custom: true, standard: 'C:\\data', free: 10 * GB };
+  const relocate = Object.assign(new EventEmitter(), {
+    busy: false,
+    candidates: () => ['piper', 'ollama'],
+    snapshot: () => ({ running: false, finished: false }),
+    adopt: () => { calls.push('adopt'); return ['chatterbox']; },
+    plan: async () => ({ items: [{ kind: 'piper', from: 'x', to: 'y', bytes: 5, sameDisk: true }], conflicts: [{ kind: 'ollama' }], bytes: 5, need: 0, free: GB, enough: true }),
+    start: async () => { calls.push('start'); return { ok: true }; },
+    cancel: () => calls.push('cancel'),
+  });
+  const folder = { info: () => info, choose: async () => ({ ok: true, ...info }), reset: () => ({ ok: true, ...info }), open: () => '' };
+  const w = world({ folder, relocate });
+  const st = await w.call('hub:state');
+  assert.deepEqual(st.folder.movable, ['piper', 'ollama']);
+  assert.equal(st.move.running, false);
+  const plan = await w.call('hub:folderPlan');
+  assert.deepEqual(plan.items, [{ kind: 'piper', bytes: 5, sameDisk: true }], 'no paths go to the page');
+  assert.deepEqual(plan.conflicts, ['ollama']);
+  assert.deepEqual(await w.call('hub:folderMove'), { ok: true });
+  await w.call('hub:folderMoveStop');
+  assert.deepEqual(calls, ['start', 'cancel']);
+  // picking a place: a folder that was moved by hand is taken up again, and the page is told
+  const picked = await w.call('hub:folderChoose');
+  assert.deepEqual(picked.adopted, ['chatterbox']);
+  assert.deepEqual(picked.folder.movable, ['piper', 'ollama']);
+  // the progress goes to the window
+  w.hub.show();
+  const win = FakeWindow.last;
+  relocate.emit('change', { running: true, done: 1, total: 4 });
+  assert.deepEqual(win.sent.pop(), ['hub:move', { running: true, done: 1, total: 4 }]);
+  // nothing is fetched while it moves
+  relocate.busy = true;
+  assert.deepEqual(await w.call('hub:apply', { mind: 'skip', voice: 'system' }), { ok: false, error: 'moving' });
+  assert.equal(w.prov.runs, 0);
+  // without it: nothing to move
+  const none = world({ folder });
+  assert.deepEqual((await none.call('hub:state')).folder.movable, []);
+  assert.deepEqual(await none.call('hub:folderMove'), { ok: false, error: 'missing' });
 });

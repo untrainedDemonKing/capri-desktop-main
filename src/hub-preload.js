@@ -1,7 +1,7 @@
 'use strict';
 
 // What her main menu (renderer/hub.html) may ask of her: how things stand, a preview of a choice, a key tried,
-// the choice applied, the report, the folder everything is fetched into, how her mind was fitted to this PC, the recording she has as her voice, what is on this PC
+// the choice applied, the report, the folder everything is fetched into (and moving what is fetched already there), how her mind was fitted to this PC, the recording she has as her voice, what is on this PC
 // because of her and taking it off. Nothing else of her is
 // reachable from that page.
 
@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('hub', {
   folderChoose: () => ipcRenderer.invoke('hub:folderChoose'),
   folderReset: () => ipcRenderer.invoke('hub:folderReset'),
   folderOpen: () => ipcRenderer.invoke('hub:folderOpen'),
+  folderPlan: () => ipcRenderer.invoke('hub:folderPlan'),
+  folderMove: () => ipcRenderer.invoke('hub:folderMove'),
+  folderMoveStop: () => ipcRenderer.invoke('hub:folderMoveStop'),
   inventory: () => ipcRenderer.invoke('hub:inventory'),
   remove: (id) => ipcRenderer.invoke('hub:remove', String(id)),
   removeAll: () => ipcRenderer.invoke('hub:removeAll'),
@@ -39,6 +42,11 @@ contextBridge.exposeInMainWorld('hub', {
     const listener = (_e, section) => fn(section);
     ipcRenderer.on('hub:focus', listener);
     return () => ipcRenderer.removeListener('hub:focus', listener);
+  },
+  onMove: (fn) => {
+    const listener = (_e, payload) => fn(payload);
+    ipcRenderer.on('hub:move', listener);
+    return () => ipcRenderer.removeListener('hub:move', listener);
   },
   onTune: (fn) => {
     const listener = (_e, payload) => fn(payload);

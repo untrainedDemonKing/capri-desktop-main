@@ -92,6 +92,15 @@
           <button id="folderOpen" type="button" class="btn btn--small"></button>
           <button id="folderReset" type="button" class="btn btn--small" hidden></button>
         </div>
+        <div id="moveBox" class="move" hidden>
+          <p id="moveNote" class="panel__line"></p>
+          <div class="folder__btns">
+            <button id="moveGo" type="button" class="btn btn--small"></button>
+            <button id="moveStop" type="button" class="btn btn--small" hidden></button>
+          </div>
+          <div id="moveBar" class="bar" hidden><i></i></div>
+          <p id="moveLine" class="keybox__result" role="status" aria-live="polite"></p>
+        </div>
         <p id="folderResult" class="keybox__result" role="status" aria-live="polite"></p>
       </div>
       <label class="check" for="nodeBox"><input id="nodeBox" type="checkbox"> <span id="nodeLabel"></span></label>
