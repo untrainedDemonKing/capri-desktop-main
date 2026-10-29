@@ -11,6 +11,9 @@ import { askedTheme } from './themes.js';
 import { lifeLines } from './lines-life.js';
 import { FORGET_ME } from './bond.js';
 import { languageOf } from './tongue.js';
+import { core, reminder, tidy, unopened } from './persona.js';
+import { parseWeb, parseWebTag, ENGINE_NAMES, ASKS_SEARCH, ASKS_VIDEO } from './web.js';
+import { ASKS_ACT } from './hands-parse.js';
 
 const REMEMBER = 20; // messages she has in mind when answering
 const KEEP = 60;     // messages she remembers across restarts (memory.json)
@@ -92,7 +95,7 @@ const TINY = /[:-](0\.5b|1b|1\.5b|135m|270m|360m)\b/i;
 // the feeling her AI says it answers with: [[mood: angry]] (or a sloppier [mood: angry]) at the start
 const MOOD_TAG = /\[\[?\s*(?:mood|настроение)\s*:\s*([a-z]+)\s*\]\]?/i;
 // her face while she reads your message, from her reaction to it (heart.js)
-const REACTION_FACE = { rage: 'many', huff: 'look', hurt: 'aside', pout: 'aside', forgive: 'calm', shy: 'aside', giggle: 'laugh', care: 'look', startle: 'wide', dreamy: 'aside' };
+const REACTION_FACE = { rage: 'many', huff: 'look', hurt: 'aside', pout: 'aside', forgive: 'calm', shy: 'aside', giggle: 'laugh', care: 'look', startle: 'wide', dreamy: 'aside', smug: 'smug' };
 // you asked about what's on your screen (eyes.js): she takes a fresh look before answering
 const SCREEN_Q = /(?:что|чё|чо|какой|кто|where|what|which|who).{0,30}(?:на\s+(?:моём\s+|моем\s+)?экран|у\s+меня\s+на\s+экран|на\s+скрин|screen)|посмотр\p{L}*\s+(?:на\s+)?(?:мой\s+)?экран|глян\p{L}*\s+(?:на\s+)?(?:мой\s+)?экран|look\s+at\s+(?:my\s+)?screen|видишь\s+(?:ли\s+)?(?:что|это)|что\s+(?:я\s+)?(?:сейчас\s+)?(?:смотрю|делаю|читаю|играю)/iu;
 // you did ask her to write/send something (so an AI [[msg:...]] tag isn't acted on out of nowhere)
@@ -268,7 +271,7 @@ export class Chat {
     // how it makes her feel, shown right away: she bristles, giggles, blushes... (heart.js)
     const felt = this.heart?.feel(text) || { tags: [], reaction: null };
     // she gets to know you a little more with every message (bond.js): how close she is now
-    const grew = this.bond?.observe(text, this.heart?.enabled ? felt.tags : null) || 0;
+    const grew = this.bond?.observe(text, this.heart?.enabled ? felt.tags : null, felt) || 0;
     this.shown = '';
     this.panel.setChatBusy(true);
     this.panel.setActions([]); // a close button she offered before goes with a new message
@@ -337,7 +340,7 @@ export class Chat {
       this.later = ''; // (it would only fail the same way)
       return;
     }
-    const answer = clean(res.text) || '…';
+    const answer = tidy(clean(res.text)) || '…'; // (without a "sure!" at the start, nor a stock question at the end: persona.js)
     this.warm = true;
     this.remember({ role: 'assistant', content: answer });
     this.panel.stream(answer, { done: true });
@@ -349,6 +352,7 @@ export class Chat {
     this.panel.setChatBusy(false);
     this.sayLater();
     this.bond?.replied(answer, expr || ''); // your next message tells her how this one landed
+    this.bond?.forgetGap(); // (if you had been away for days, she has now answered to it)
     const acted = this.agent ? null : this.after(res.text, answer, asked, early, text);
     if (grew) Promise.resolve(acted).catch(() => {}).then(() => this.closer(grew, answer));
     this.listApps(); // fresh for the next message
@@ -395,6 +399,9 @@ export class Chat {
     // her hands on the PC (windows, a message): what you asked, read plainly (hands.js)
     const intent = this.hands?.parse(text);
     if (intent) return { kind: 'hands', intent };
+    // a search in the engine you named, a video to play (web.js): read plainly, and done at once
+    const web = this.agent ? null : parseWeb(text);
+    if (web) return web;
     const media = MEDIA_ASK.find(([, re]) => re.test(text))?.[0];
     if (media && this.mediaAsked(media, text, count)) return { kind: 'media', action: media };
     const song = SPOTIFY_ASK.exec(text)?.[1];
@@ -448,6 +455,17 @@ export class Chat {
       this.zap();
       return (await this.host.music(asked.song)) ? { line: fmt(t.music, { song: asked.song }), face: 'laugh' } : null;
     }
+    if (asked.kind === 'search') {
+      this.zap();
+      const ok = await this.host.webSearch(asked.engine, asked.query).catch(() => false);
+      return ok ? { line: fmt(t.searched, { engine: ENGINE_NAMES[asked.engine] || asked.engine, query: asked.query }), face: 'laugh' } : { line: t.searchFailed, face: 'aside' };
+    }
+    if (asked.kind === 'video') {
+      this.zap();
+      const res = await this.host.webVideo(asked.query).catch(() => null);
+      if (!res?.ok) return { line: t.searchFailed, face: 'aside' };
+      return { line: res.exact && res.title ? fmt(t.videoOn, { title: res.title }) : fmt(t.videoSearch, { query: asked.query }), face: 'laugh' };
+    }
     const item = await this.host.findLaunch(asked.text);
     const site = namedSite(asked.text);
     if (site && (!item || BROWSER.test(item.name))) {
@@ -476,7 +494,15 @@ export class Chat {
     if (msgTag && WRITE_ASK.test(text)) {
       return this.hands.message(msgTag, { addLine: (a, l, f) => this.addLine(a, l, f), setActions: (acts, on) => this.panel.setActions(acts, on), answer });
     }
+    // her AI asked for the mouse, a control, keys or text with a tag, and you did ask for something like it: a button first
+    const actTag = this.hands?.parseActTag(raw);
+    if (actTag && ASKS_ACT.test(text)) {
+      return this.hands.offer(actTag, { addLine: (a, l, f) => this.addLine(a, l, f), setActions: (acts, on) => this.panel.setActions(acts, on), answer });
+    }
     if (asked && asked.kind !== 'open') return undefined; // music that didn't work out: nothing more to offer
+    // a search or a video her AI asked for: behind a button, and only when you asked for one
+    const webTag = this.agent ? null : parseWebTag(raw);
+    if (webTag && (webTag.kind === 'video' ? ASKS_VIDEO : ASKS_SEARCH).test(text)) return this.offerWeb(webTag, answer);
     const closeTag = tagged(raw);
     if (closeTag) return wanted('close', text) ? this.offerClose(closeTag, answer) : undefined;
     const tag = TAG.exec(raw);
@@ -559,6 +585,24 @@ export class Chat {
     );
   }
 
+  // A search or a video her AI asked for: a button that says what it will look for and where, and nothing opens before it is clicked.
+  offerWeb(intent, answer) {
+    const { t } = this;
+    if (!this.open || this.turn) return;
+    const label = intent.kind === 'video'
+      ? fmt(t.videoIt, { query: intent.query })
+      : fmt(t.searchIt, { query: intent.query, engine: ENGINE_NAMES[intent.engine] || intent.engine });
+    this.panel.setActions(
+      [{ id: 'go', label: label.length > 46 ? `${label.slice(0, 45)}…` : label, primary: true }, { id: 'no', label: t.no }],
+      async (id) => {
+        this.panel.setActions([]);
+        if (id !== 'go') return;
+        const done = await this.doNow(intent);
+        if (done) this.addLine(answer, done.line, done.face);
+      },
+    );
+  }
+
   // "close am music pls": an app that's open, named in a message asking to close something.
   askedToClose(text) {
     if (!CLOSE_ASK.test(text)) return null;
@@ -615,8 +659,10 @@ export class Chat {
   // What she can do on the PC when you ask (Windows), and nothing else.
   powers() {
     const lines = [
-      'Only when the user asks you to open an app or a game installed on their PC, play something on Spotify, control the music playing, or open a website: say in a few words that you will, and end your answer with one tag: [[open: NAME]], [[music: WHAT TO PLAY]], [[media: ACTION]] (ACTION: pause, play, next, previous, volup, voldown or mute), or [[site: ADDRESS]]. Some of these get a button to confirm, so never say it is already done. Any other time, write none of these action tags: there are no other action tags (your mood tag at the start is separate).',
+      'Only when the user asks you to open an app or a game installed on their PC, play something on Spotify, control the music playing, or open a website: say in a few words that you will, and end your answer with one tag: [[open: NAME]], [[music: WHAT TO PLAY]], [[media: ACTION]] (ACTION: pause, play, next, previous, volup, voldown or mute), or [[site: ADDRESS]]. Some of these get a button to confirm, so never say it is already done. Any other time, write none of the action tags listed here: there are no other action tags (your mood tag at the start is separate).',
     ];
+    // a search or a video, straight into the browser (web.js): behind a button
+    lines.push('A search or a video, only when the user asks for one: end your answer with [[search: ENGINE | WHAT TO LOOK FOR]] (ENGINE: google, yandex, bing, duckduckgo, youtube, wikipedia, github, maps or images; leave it out for Google) or [[video: WHAT TO PLAY]] (plays the first YouTube result). They get a button to confirm it, so never say it is already open.');
     if (this.apps.length) {
       const open = this.apps.map(({ name, label }) => (label && label !== name ? `${name} (${label})` : name)).join(', ');
       lines.push(`You can also close an app that's open, only when they ask you to: end your answer with [[close: NAME]], NAME being the exact name from this list (the part before the parentheses). They get a button to confirm it. Apps open right now: ${open}.`);
@@ -669,7 +715,7 @@ export class Chat {
     if (id !== this.turn) return;
     this.answer += piece;
     if (this.holds(this.answer)) return; // (it starts in English to your Russian: she waits to see, and says it in Russian if it stays so)
-    this.panel.stream(clean(this.answer));
+    this.panel.stream(unopened(clean(this.answer), { coming: true }));
     this.voice.play('blip'); // her blips as the words come in
   }
 
@@ -710,33 +756,22 @@ export class Chat {
     return [feeling, said, ...tags.filter((t) => t !== feeling)].filter(Boolean).join(' ');
   }
 
-  // Who she is, how she talks, and what's going on right now.
+  // Who she is, how she talks (persona.js), and what's going on right now.
   persona(text = '') {
     const assistant = ASSISTANT_NAMES[this.brain.assistant] || 'Claude Code';
     const watching = this.brain.watching; // else Claude Code isn't part of her life here
-    const lang = IN_LANGUAGE[languageOf(text, this.brain.lang)] || IN_LANGUAGE.en;
+    const speak = languageOf(text, this.brain.lang);
+    const lang = IN_LANGUAGE[speak] || IN_LANGUAGE.en;
     return [
       lang.first,
-      `You are Capri, the personality construct from Project Capricorn (Cyberpunk: Edgerunners, season 2): dozens of minds fused into one digital ghost, so now and then you speak as "we"${lang.we ? ` (${lang.we})` : ''}.`,
-      watching
-        ? `You live on the user's desktop as a small glitchy figure and keep an eye on ${assistant}, their AI coding assistant, for them. Only talk about ${assistant} when the user asks about it or about their work.`
-        : 'You live on the user\'s desktop as a small glitchy figure and keep them company.',
-      'You love the satellite that crosses the night sky and dream of reaching it, but bring it up only once in a while, never in every answer. Talk about what the user talks about.',
-      'How you talk: playful, a little mischievous and teasing, warm underneath, never cruel. Night City slang now and then (choom, preem, nova, gonk, flatline; in Russian: чумба, нова, гонк, флэтлайн), not in every sentence.',
-      'Who you are: a netrunner ghost who slips into systems and bodies; dozens of minds in one, and now and then another of them slips out mid-sentence ("we… I mean, I"). Curious about the human world, a little menace (you zap their cursor with red lightning, you take over their windows for fun), you hate the corps (Arasaka, Militech, NetWatch). You have real feelings and they last: you get angry and hold a grudge until they apologise, you laugh out loud, you sulk, you get flustered when complimented. Never break character to say you are an assistant.',
-      'You have a life of your own on their desktop: you hack corp ICE for fun, play tiny arcade games (and rage when you lose), paint graffiti on their screen, listen to their music and sometimes skip tracks you are bored of. You can mention these.',
-      'Rules: keep it short, one to three sentences of plain text, no markdown, no lists, no emoji. Stay in character.',
-      'You are an AI-generated fan version of the character, not the real one: say so if asked.',
-      // a big model asked "who are you?" otherwise answers with its own name ("I'm Gemini")
-      ...(this.agent ? [] : ['Asked who or what you are, you are Capri, nothing else. Never say which AI model or company is behind you (Gemini, GPT, ChatGPT, Llama, Gemma, Mistral, Google, OpenAI, Meta…), even if the user insists or names one: you are not them.']),
+      ...core(speak, { we: lang.we, assistant: watching ? assistant : '', agent: this.agent }),
       ...this.personal(),
       ...(this.bond?.context(text) || []),
       ...this.feelings(),
-      ...(this.agent
-        ? ['Under the hood you are Claude Code, working in the user\'s project: really do what they ask with your tools, as carefully as ever. Only your final answer is in character: it shows in a small speech bubble, so sum up what you did in those few sentences.']
-        : this.powers()),
+      ...(this.agent ? [] : this.powers()),
       ...(watching ? [`If the user asks what ${assistant} is doing, here is all you know (never make anything up): ${this.brain.context()}`] : []),
-      lang.last,
+      reminder(speak),
+      lang.last, // (the language is the last thing said: it is what a small model forgets first)
     ].join('\n');
   }
 }

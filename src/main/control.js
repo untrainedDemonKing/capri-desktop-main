@@ -12,6 +12,10 @@
 //   anything else steals focus in between, she stops instead of typing into the wrong place.
 // - A message is two steps: prepareMessage() opens the chat and types the message WITHOUT sending
 //   it, so you can read it on screen; sendMessage() presses Enter, and only runs after your yes.
+// - The mouse (moveMouse, clickMouse, scrollMouse), a control of a window by its name (pressElement, moveToElement) and a key
+//   combination (pressKeys) are separate scripts. Nothing from the chat is ever put into a script as code: a target is one of a
+//   fixed list or two whole numbers, a name goes in as base64 data, a key is built from a list of keys. The pointer is moved by a
+//   few steps at a time, and if you take hold of the mouse she stops at once ('interrupted').
 
 const { spawn } = require('node:child_process');
 
@@ -111,14 +115,75 @@ function Paste($h, $b64) {
 }
 `;
 
+
+// The mouse, in a script of its own (so that a fault in it cannot touch the windows and messages above): the pointer moved in
+// steps that ease in and out (and given up at once if you take hold of the mouse), a click, the wheel. SetProcessDPIAware: the
+// numbers are the screen's own pixels, not scaled ones.
+const MOUSE_HELPER = String.raw`
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class CapriMouse {
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+  [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
+  [DllImport("user32.dll")] static extern void mouse_event(uint flags, uint dx, uint dy, int data, UIntPtr extra);
+  [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+
+  public static void Aware() { try { SetProcessDPIAware(); } catch (Exception) { } }
+  public static int Width() { return GetSystemMetrics(0); }
+  public static int Height() { return GetSystemMetrics(1); }
+
+  public static string Move(int x, int y, int ms) {
+    POINT start;
+    GetCursorPos(out start);
+    int steps = Math.Max(8, ms / 10);
+    int lastX = start.X;
+    int lastY = start.Y;
+    for (int i = 1; i <= steps; i++) {
+      double t = (double)i / steps;
+      double e = t < 0.5 ? 2 * t * t : 1 - Math.Pow(-2 * t + 2, 2) / 2;
+      int nx = start.X + (int)Math.Round((x - start.X) * e);
+      int ny = start.Y + (int)Math.Round((y - start.Y) * e);
+      POINT now;
+      GetCursorPos(out now);
+      if (Math.Abs(now.X - lastX) > 8 || Math.Abs(now.Y - lastY) > 8) return "interrupted";
+      SetCursorPos(nx, ny);
+      lastX = nx;
+      lastY = ny;
+      System.Threading.Thread.Sleep(10);
+    }
+    return "ok";
+  }
+
+  public static void Click(bool right, bool twice) {
+    uint down = right ? 0x0008u : 0x0002u;
+    uint up = right ? 0x0010u : 0x0004u;
+    int n = twice ? 2 : 1;
+    for (int i = 0; i < n; i++) {
+      mouse_event(down, 0, 0, 0, UIntPtr.Zero);
+      System.Threading.Thread.Sleep(35);
+      mouse_event(up, 0, 0, 0, UIntPtr.Zero);
+      System.Threading.Thread.Sleep(70);
+    }
+  }
+
+  public static void Wheel(int clicks) { mouse_event(0x0800, 0, 0, clicks * 120, UIntPtr.Zero); }
+}
+'@
+[CapriMouse]::Aware()
+`;
+
 const b64 = (text) => Buffer.from(String(text ?? ''), 'utf8').toString('base64');
 
 // Runs a script with the helper; resolves with its last output line, or throws its error (with a
 // short code when it's one the overlay should word nicely).
-function run(script, timeout = 30000) {
+function run(script, timeout = 30000, { mouse = false } = {}) {
   if (!WIN) return Promise.reject(Object.assign(new Error('Windows only'), { code: 'nowin' }));
   return new Promise((resolve, reject) => {
-    const full = `[Console]::OutputEncoding = [Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; ${HELPER}
+    const full = `[Console]::OutputEncoding = [Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; ${HELPER}${mouse ? MOUSE_HELPER : ''}
 try {
 ${script}
 } catch {
@@ -142,7 +207,7 @@ ${script}
       const last = out.trim().split(/\r?\n/).pop() || '';
       if (last.startsWith('ERR ')) {
         const msg = last.slice(4);
-        const code = /lostfocus/.test(msg) ? 'lostfocus' : /nowindow/.test(msg) ? 'nowindow' : null;
+        const code = /lostfocus/.test(msg) ? 'lostfocus' : /nowindow/.test(msg) ? 'nowindow' : /noelement/.test(msg) ? 'noelement' : /interrupted/.test(msg) ? 'interrupted' : null;
         reject(Object.assign(new Error(msg), { code }));
       } else if (!out.trim() && err.trim()) {
         reject(new Error(err.trim().split(/\r?\n/)[0]));
@@ -193,6 +258,135 @@ if ($h -eq [IntPtr]::Zero) { throw 'nowindow' }
 Paste $h '${b64(body)}'
 [Console]::Out.WriteLine('1')`;
   await run(script, 15000);
+  return true;
+}
+
+// ---------- the mouse, the controls of a window, key combinations ----------
+
+// where the pointer can be sent by name: the share of the screen's width and height
+const TARGETS = {
+  center: [0.5, 0.5], topleft: [0.02, 0.03], topright: [0.98, 0.03], bottomleft: [0.02, 0.97], bottomright: [0.98, 0.97],
+  top: [0.5, 0.03], bottom: [0.5, 0.97], left: [0.03, 0.5], right: [0.97, 0.5],
+};
+const runner = { run }; // (the tests put a stand-in here)
+
+// The pointer to a place of the screen, smoothly: a name from TARGETS, or { x, y } in pixels. Resolves 'ok' or 'interrupted'
+// (you took hold of the mouse).
+async function moveMouse(target) {
+  let place;
+  if (typeof target === 'string' && Object.hasOwn(TARGETS, target)) {
+    const [fx, fy] = TARGETS[target];
+    place = `$x = [int]($w * ${fx}); $y = [int]($h * ${fy})`;
+  } else if (target && Number.isInteger(target.x) && Number.isInteger(target.y) && Math.abs(target.x) < 100000 && Math.abs(target.y) < 100000) {
+    place = `$x = ${target.x}; $y = ${target.y}`;
+  } else throw new Error('where to?');
+  const script = `
+$w = [CapriMouse]::Width(); $h = [CapriMouse]::Height()
+${place}
+$x = [Math]::Max(0, [Math]::Min($w - 1, $x)); $y = [Math]::Max(0, [Math]::Min($h - 1, $y))
+[Console]::Out.WriteLine([CapriMouse]::Move($x, $y, 450))`;
+  return runner.run(script, 10000, { mouse: true });
+}
+
+// A click where the pointer is: { button: 'left' | 'right', double }.
+async function clickMouse({ button = 'left', double = false } = {}) {
+  if (!['left', 'right'].includes(button)) throw new Error('which button?');
+  const script = `[CapriMouse]::Click($${button === 'right'}, $${double === true})
+[Console]::Out.WriteLine('1')`;
+  await runner.run(script, 8000, { mouse: true });
+  return true;
+}
+
+// The wheel: clicks up (positive) or down (negative), up to thirty.
+async function scrollMouse(clicks) {
+  const n = Number(clicks);
+  if (!Number.isInteger(n) || n === 0 || Math.abs(n) > 30) throw new Error('how far?');
+  await runner.run(`[CapriMouse]::Wheel(${n})\n[Console]::Out.WriteLine('1')`, 8000, { mouse: true });
+  return true;
+}
+
+// A control of a window found by its name (a button, a menu entry, a link, a tab…), through Windows' accessibility tree (UI
+// Automation): `action` 'press' moves the pointer to it and presses it (its own "invoke" where it has one, else a click), 'move'
+// only moves the pointer there. Resolves the name it found; 'nowindow' / 'noelement' when there is none.
+async function elementAction({ action = 'press', window: into, name } = {}) {
+  if (!['press', 'move'].includes(action)) throw new Error('what to do with it?');
+  const win = String(into || '').trim().slice(0, 60);
+  const what = String(name || '').trim().slice(0, 80);
+  if (!win) throw new Error('in which window?');
+  if (!what) throw new Error('which one?');
+  const script = `
+Add-Type -AssemblyName UIAutomationClient
+Add-Type -AssemblyName UIAutomationTypes
+$h = Win '${b64(win)}' 3000
+if ($h -eq [IntPtr]::Zero) { throw 'nowindow' }
+[void][CapriHands]::Focus($h)
+$want = (Txt '${b64(what)}').ToLowerInvariant()
+$root = [System.Windows.Automation.AutomationElement]::FromHandle($h)
+$all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+$best = $null; $bestScore = 0; $n = 0
+foreach ($e in $all) {
+  $n++
+  if ($n -gt 4000) { break }
+  try {
+    $c = $e.Current
+    $nm = $c.Name
+    if ([string]::IsNullOrEmpty($nm) -or $c.IsOffscreen -or -not $c.IsEnabled) { continue }
+    $low = $nm.ToLowerInvariant()
+    $score = 0
+    if ($low -eq $want) { $score = 100 } elseif ($low.StartsWith($want)) { $score = 60 } elseif ($low.Contains($want)) { $score = 30 }
+    if ($score -eq 0) { continue }
+    if ($c.ControlType.ProgrammaticName -match 'Button|MenuItem|Hyperlink|TabItem|ListItem|CheckBox|RadioButton|TreeItem|ComboBox') { $score += 10 }
+    $r = $c.BoundingRectangle
+    if ($r.IsEmpty -or $r.Width -lt 2 -or $r.Height -lt 2) { continue }
+    if ($score -gt $bestScore) { $best = $e; $bestScore = $score }
+  } catch { }
+}
+if ($best -eq $null) { throw 'noelement' }
+$r = $best.Current.BoundingRectangle
+$x = [int]($r.X + $r.Width / 2); $y = [int]($r.Y + $r.Height / 2)
+$moved = [CapriMouse]::Move($x, $y, 450)
+if ($moved -ne 'ok') { throw 'interrupted' }
+${action === 'press' ? `$pattern = $null
+if ($best.TryGetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern, [ref]$pattern)) { $pattern.Invoke() } else { [CapriMouse]::Click($false, $false) }` : ''}
+[Console]::Out.WriteLine($best.Current.Name)`;
+  return runner.run(script, 25000, { mouse: true });
+}
+
+// SendKeys' words for the keys that are not a letter or a digit
+const SPECIAL_KEYS = {
+  enter: 'ENTER', return: 'ENTER', esc: 'ESC', escape: 'ESC', tab: 'TAB', space: ' ', backspace: 'BACKSPACE', delete: 'DEL', del: 'DEL',
+  up: 'UP', down: 'DOWN', left: 'LEFT', right: 'RIGHT', home: 'HOME', end: 'END', pageup: 'PGUP', pagedown: 'PGDN', insert: 'INS',
+};
+const MODIFIERS = { ctrl: '^', alt: '%', shift: '+' };
+
+// A key combination as SendKeys writes it: { mods: ['ctrl', 'shift'], key: 's' } -> "^+s". Throws for a key it does not know, and for
+// the combinations she never presses (Alt+F4 closes a window: that is her closing flow, with its button, not a key).
+function keysString({ mods = [], key } = {}) {
+  const k = String(key ?? '').toLowerCase();
+  if (mods != null && !Array.isArray(mods)) throw new Error('which keys?');
+  const list = [...new Set((mods || []).map((m) => String(m).toLowerCase()))];
+  if (!list.every((m) => Object.hasOwn(MODIFIERS, m))) throw new Error('which keys?');
+  let body;
+  if (/^[a-z0-9]$/.test(k)) body = k;
+  else if (/^f([1-9]|1[0-2])$/.test(k)) body = `{${k.toUpperCase()}}`;
+  else if (Object.hasOwn(SPECIAL_KEYS, k)) body = SPECIAL_KEYS[k] === ' ' ? ' ' : `{${SPECIAL_KEYS[k]}}`;
+  else throw new Error('which key?');
+  if (list.includes('alt') && k === 'f4') throw Object.assign(new Error('that one closes windows'), { code: 'denied' });
+  if (list.includes('ctrl') && list.includes('shift') && k === 'esc') throw Object.assign(new Error('not that one'), { code: 'denied' });
+  return `${list.map((m) => MODIFIERS[m]).join('')}${body}`;
+}
+
+// A key combination into a window (it is brought to the front first, and nothing is pressed if something else takes the front).
+async function pressKeys({ window: into, mods, key } = {}) {
+  const win = String(into || '').trim().slice(0, 60);
+  if (!win) throw new Error('in which window?');
+  const keys = keysString({ mods, key });
+  const script = `
+$h = Win '${b64(win)}' 3000
+if ($h -eq [IntPtr]::Zero) { throw 'nowindow' }
+Keys $h (Txt '${b64(keys)}')
+[Console]::Out.WriteLine('1')`;
+  await runner.run(script, 12000);
   return true;
 }
 
@@ -265,4 +459,4 @@ $ws.SendKeys('{ENTER}')
   return true;
 }
 
-module.exports = { windowOp, showDesktop, type, prepareMessage, sendPrepared, appKey, APPS, OPS };
+module.exports = { windowOp, showDesktop, type, prepareMessage, sendPrepared, appKey, APPS, OPS, moveMouse, clickMouse, scrollMouse, elementAction, pressKeys, keysString, TARGETS, runner };

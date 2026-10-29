@@ -131,7 +131,7 @@ function recommendVoice(hw) {
 // Ollama is started with
 function tuningFor(id, hw) {
   const nvidia = hw.gpu?.vendor === 'nvidia';
-  if (id === 'light') return { numCtx: 3072, maxCtx: 4096, keepAlive: '10m', ollamaEnv: { OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_NUM_PARALLEL: '1' } };
+  if (id === 'light') return { numCtx: 4096, maxCtx: 6144, keepAlive: '10m', ollamaEnv: { OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_NUM_PARALLEL: '1' } };
   if (id === 'strong') return { numCtx: 8192, maxCtx: 16384, keepAlive: '30m', ollamaEnv: { OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_NUM_PARALLEL: '1', ...(nvidia ? { OLLAMA_FLASH_ATTENTION: '1' } : {}) } };
   return { numCtx: 4096, maxCtx: 8192, keepAlive: '15m', ollamaEnv: { OLLAMA_MAX_LOADED_MODELS: '1', OLLAMA_NUM_PARALLEL: '1' } };
 }

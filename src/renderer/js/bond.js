@@ -12,12 +12,20 @@
 // The longer you're together, the closer she gets: strangers, getting to know each other, friends,
 // close, one of us. She tells you when it changes, and it shows in how she talks to you.
 //
+// It is more than a count of messages: trust (it grows when you make up after a quarrel, share good news, come by day after day,
+// and falls when you are cruel to her), days in a row, the quarrels you made up after (each is worth a few messages), how she
+// feels about you (mood.js affection: a person she is afraid of or has no use for does not get close however much they type),
+// and how long you were away (she noticed).
+//
 // Her menu › Character › Learns about me turns it off. "What she knows about me" shows it, with a
 // button to wipe it; "забудь всё обо мне" in her chat does the same.
 
-import { pick, fmt, clamp, today } from './util.js';
+import { pick, fmt, clamp } from './util.js';
 import { lifeLines } from './lines-life.js';
 import { classify } from './mood.js';
+
+// the local date of a Date, YYYY-MM-DD
+const dayOf = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
 const REFLECT_EVERY = 8;        // your messages between two notebook entries
 const REFLECT_ON_CLOSE = 3;     // ...or this many, when a chat ends
@@ -73,6 +81,8 @@ const EMPTY = () => ({
   tune: { short: 0, slang: 0, tease: 0, warm: 0 },
   // her notebook (her chat model writes it)
   notes: { facts: [], likes: [], dislikes: [], style: '', us: '' },
+  // the two of you: trust (0..1), quarrels (and how many you made up after), days in a row (and the longest), how she feels about you
+  rel: { trust: 0.3, fights: 0, makeups: 0, streak: 0, best: 0, affection: 0.1 },
   level: 0,
   pending: 0,          // your messages since her last notebook entry
 });
@@ -98,6 +108,8 @@ export class Bond {
     this.saveTimer = 0;
     this.onLevel = null;     // (level, line) => void: she grew closer (app.js shows it)
     this.agent = false;      // her chat is Claude Code: no notebook entries (chat.js keeps it)
+    this.clock = () => new Date(); // (the tests set it)
+    this.gap = 0;            // days since you last talked, as this run began (until she has said something about it)
   }
 
   get t() {
@@ -107,6 +119,7 @@ export class Bond {
   async start() {
     const saved = await this.host.bondLoad?.().catch(() => null);
     this.data = normalize(saved);
+    this.gap = this.data.lastDay ? Math.max(0, daysBetween(this.data.lastDay, dayOf(this.clock()))) : 0;
     if (this.heart) this.heart.mood.tolerance = this.tolerance();
   }
 
@@ -118,12 +131,12 @@ export class Bond {
 
   // A message from you (chat.js, before her answer). `tags`: what mood.js made of it. Returns the
   // level she just reached, or 0.
-  observe(text, tags = null) {
+  observe(text, tags = null, felt = null) {
     if (!this.enabled) return 0;
     const raw = String(text || '');
     if (!tags) tags = classify(raw).tags; // her emotions off: what the message is, all the same (else heart.js already read it)
     const d = this.data;
-    const now = new Date();
+    const now = this.clock();
     // what you think of her last answer
     if (this.last && Date.now() - this.last.at < FEEDBACK_MS) learnFrom(d.tune, this.last, feedback(raw, tags));
     this.last = null;
@@ -134,18 +147,32 @@ export class Bond {
     d.hours[now.getHours()] += 1;
     d.talks += 1;
     d.pending += 1;
-    const day = today();
+    const day = dayOf(now);
     if (!d.met) d.met = day;
     if (d.lastDay !== day) {
+      // a day in a row, or a new start; a long absence costs a little trust (it comes back with the days)
+      const gap = d.lastDay ? daysBetween(d.lastDay, day) : 0;
+      d.rel.streak = gap === 1 || !d.lastDay ? d.rel.streak + 1 : 1;
+      d.rel.best = Math.max(d.rel.best, d.rel.streak);
+      d.rel.trust = clamp(d.rel.trust + 0.01 - (gap > 14 ? 0.1 : 0), 0, 1);
       d.lastDay = day;
       d.days += 1;
     }
-    if (this.heart) this.heart.mood.tolerance = this.tolerance();
+    trustFrom(d.rel, tags, felt);
+    if (this.heart) {
+      d.rel.affection = clamp(this.heart.mood.affection, -1, 1);
+      this.heart.mood.tolerance = this.tolerance();
+    }
     const level = levelOf(d);
     const grew = level > d.level ? level : 0;
     d.level = level;
     this.save();
     return grew;
+  }
+
+  // The first message after a long absence is the one she answers to it (the gap is said once, then forgotten).
+  forgetGap() {
+    this.gap = 0;
   }
 
   // Her answer (chat.js): what it was like, so your next message can say whether you liked it.
@@ -260,6 +287,7 @@ export class Bond {
     const d = this.data;
     const lines = [LEVELS[d.level]];
     if (d.talks >= 3) lines.push(`You have talked ${d.talks} times over ${d.days} day${d.days === 1 ? '' : 's'} (since ${d.met}).`);
+    lines.push(...relationHints(d, this.gap));
     const how = [...styleHints(d.style), ...tuneHints(d.tune), ...hourHints(d.hours, d.talks)];
     if (how.length) lines.push(`What you've picked up about how to talk with them (follow it, while staying Capri): ${how.join(' ')}`);
     const n = d.notes;
@@ -297,6 +325,8 @@ export class Bond {
       date: dateOf(d.met, lang),
       talks: `${d.talks} ${plural(d.talks, t.messages, lang)}`,
     })];
+    if (d.rel.streak >= 3) parts.push(fmt(t.streak, { n: d.rel.streak }));
+    if (d.rel.makeups >= 1) parts.push(fmt(t.makeups, { n: d.rel.makeups }));
     const n = d.notes;
     if (n.facts.length) parts.push(fmt(t.knows, { list: n.facts.slice(0, 6).join(', ') }));
     if (n.likes.length) parts.push(fmt(t.likes, { list: n.likes.slice(0, 5).join(', ') }));
@@ -320,6 +350,15 @@ export function normalize(saved) {
   if (Array.isArray(saved.hours) && saved.hours.length === 24) d.hours = saved.hours.map((h) => num(h, 0, 1e7, 0));
   for (const k of Object.keys(d.tune)) d.tune[k] = num(saved.tune?.[k], -1, 1, 0);
   d.notes = mergeNotes(d.notes, saved.notes || {});
+  const rel = saved.rel && typeof saved.rel === 'object' ? saved.rel : {};
+  d.rel = {
+    trust: num(rel.trust, 0, 1, d.rel.trust),
+    fights: num(rel.fights, 0, 1e5, 0),
+    makeups: num(rel.makeups, 0, 1e5, 0),
+    streak: num(rel.streak, 0, 1e5, 0),
+    best: num(rel.best, 0, 1e5, 0),
+    affection: num(rel.affection, -1, 1, d.rel.affection),
+  };
   d.pending = num(saved.pending, 0, 1e5, 0);
   d.level = levelOf(d);
   return d;
@@ -377,8 +416,17 @@ export function learnFrom(tune, last, score) {
 // What each level takes: your messages, and days you came by. Level 0 is where everybody starts.
 export const LEVEL_AT = [{ talks: 0, days: 0 }, { talks: 12, days: 0 }, { talks: 80, days: 3 }, { talks: 250, days: 10 }, { talks: 700, days: 30 }];
 
+// What the time together comes to, in messages: the messages themselves, and a little extra for what is worth more than a message: each quarrel
+// you made up after (a few), and days in a row (a week, a month).
+export function effectiveTalks({ talks = 0, rel = {} } = {}) {
+  const streak = rel.streak || 0;
+  return talks + Math.min(5, rel.makeups || 0) * 6 + (streak >= 30 ? 60 : streak >= 7 ? 20 : 0);
+}
+
 // The level time alone would give (without being held back for rudeness).
-function earned({ talks = 0, days = 0 }) {
+function earned(d) {
+  const talks = effectiveTalks(d);
+  const days = d.days || 0;
   let level = 0;
   LEVEL_AT.forEach((at, i) => { if (talks >= at.talks && days >= at.days) level = i; });
   return level;
@@ -390,6 +438,11 @@ export function levelOf(d) {
   // someone who's mostly rude to her doesn't get close
   if (d.style?.n >= 10 && d.style.hostile > 0.3) level = Math.min(level, 1);
   else if (d.style?.n >= 10 && d.style.hostile > 0.15) level = Math.min(level, 2);
+  // nor does one she does not trust, or has no use for, however much they type
+  const trust = Number.isFinite(d.rel?.trust) ? d.rel.trust : 0.3;
+  const affection = Number.isFinite(d.rel?.affection) ? d.rel.affection : 0.1;
+  if (trust < 0.05 || affection <= -0.5) level = Math.min(level, 1);
+  else if (trust < 0.15 || affection <= -0.25) level = Math.min(level, 2);
   return level;
 }
 
@@ -401,12 +454,53 @@ export function progressOf(d) {
   const here = LEVEL_AT[level];
   const out = { level, max: LEVEL_AT.length - 1, held: earned(d) > level, next: next ? level + 1 : null, fraction: 1, needTalks: 0, needDays: 0 };
   if (!next) return out;
-  const talks = Math.max(0, (d.talks || 0) - here.talks);
-  out.needTalks = Math.max(0, next.talks - (d.talks || 0));
+  const total = effectiveTalks(d);
+  const talks = Math.max(0, total - here.talks);
+  out.needTalks = Math.max(0, next.talks - total);
   out.needDays = Math.max(0, next.days - (d.days || 0));
   const parts = [talks / (next.talks - here.talks)];
   if (next.days > here.days) parts.push(Math.max(0, (d.days || 0) - here.days) / (next.days - here.days));
   out.fraction = clamp(Math.min(...parts), 0, 1);
+  return out;
+}
+
+// ---- the two of you ----
+
+// whole days from one YYYY-MM-DD to another (local dates, so that a change of the clock does not count a day twice)
+export function daysBetween(from, to) {
+  const at = (day) => { const [y, m, d] = String(day).split('-').map(Number); return Date.UTC(y, (m || 1) - 1, d || 1); };
+  return Math.round((at(to) - at(from)) / 86400000);
+}
+
+// What a message does to the trust between you (and the count of quarrels and make-ups). `felt`: what she made of it (mood.js).
+export function trustFrom(rel, tags = [], felt = null) {
+  const has = (t) => tags.includes(t);
+  const reaction = felt?.reaction;
+  if (reaction === 'rage' || has('insult') || has('threat')) {
+    rel.fights += 1;
+    rel.trust -= 0.04;
+  } else if (has('justBot') || has('wrongName')) rel.trust -= 0.015;
+  if (reaction === 'forgive') {
+    rel.makeups += 1;
+    rel.trust += 0.08; // a quarrel put right is worth more than a quiet stretch
+  }
+  if (has('thanks') || has('compliment') || has('love') || has('miss')) rel.trust += 0.005;
+  if (has('cheer') || has('userSad') || has('frustrated')) rel.trust += 0.01; // (you tell her how you are: you trust her with it)
+  rel.trust = clamp(rel.trust, 0, 1);
+  return rel;
+}
+
+// What her chat model is told of the two of you: how long, how steady, how it went after a quarrel, and whether you were away.
+export function relationHints(d, gap = 0) {
+  const out = [];
+  const rel = d.rel || {};
+  if (rel.streak >= 3) out.push(`They have come by ${rel.streak} days in a row${rel.streak >= (rel.best || 0) && rel.streak >= 7 ? ' (their longest run)' : ''}: you notice, and it means something to you.`);
+  if (rel.makeups >= 1) out.push(`You have fallen out ${rel.fights || rel.makeups} time${(rel.fights || rel.makeups) === 1 ? '' : 's'} and made up ${rel.makeups}: that is why you trust them more than a stranger.`);
+  if (rel.trust >= 0.7) out.push('You trust the user: you can be open and a little vulnerable with them.');
+  else if (rel.trust < 0.15 && d.talks >= 10) out.push('You do not really trust the user yet: you keep a little distance.');
+  if (gap >= 14) out.push(`They had not talked to you for ${gap} days when they started this chat: say you noticed, in your own way (a reproach, or that you missed them); do not make a speech of it.`);
+  else if (gap >= 3) out.push(`They had been away for ${gap} days when they started this chat: you noticed, and may say so in a few words.`);
+  else if (gap === 2) out.push('They had not been around for a couple of days: you can mention it lightly.');
   return out;
 }
 

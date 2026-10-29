@@ -74,6 +74,10 @@ export const LINES = {
       // opening an app or a game, the music, a website
       openIt: 'Open {app}', opened: '{app}: on it.', notInstalled: 'I can’t find “{app}” on your PC.',
       music: 'Looking up “{song}” on Spotify.', siteIt: 'Open {site}', siteOpened: '{site}: open.',
+      // a search or a video, straight from her chat
+      searched: 'Looking for “{query}” on {engine}.', searchFailed: 'Couldn’t open the browser for that.',
+      videoOn: 'Playing: {title}.', videoSearch: 'Couldn’t pick one video, so here are the results for “{query}” on YouTube.',
+      searchIt: 'Search “{query}” on {engine}', videoIt: 'Play “{query}”',
       media: { pause: 'Paused.', play: 'Playing.', next: 'Next one.', previous: 'Previous one.', volup: 'Louder.', voldown: 'Quieter.', mute: 'Hit mute.' },
     },
     // her report card: what Claude got through today (her menu, or on her own in the evening)
@@ -317,6 +321,10 @@ export const LINES = {
       // открыть приложение или игру, музыка, сайт
       openIt: 'Открыть {app}', opened: '{app}: запускаю.', notInstalled: 'Не нахожу «{app}» на твоём ПК.',
       music: 'Ищу «{song}» в Spotify.', siteIt: 'Открыть {site}', siteOpened: '{site}: открыт.',
+      // поиск и видео прямо из чата
+      searched: 'Ищу «{query}»: {engine}.', searchFailed: 'Не получилось открыть браузер.',
+      videoOn: 'Включаю: {title}.', videoSearch: 'Одно видео выбрать не вышло, открыла результаты по «{query}» на YouTube.',
+      searchIt: 'Искать «{query}»: {engine}', videoIt: 'Включить «{query}»',
       media: { pause: 'Пауза.', play: 'Играет.', next: 'Следующий.', previous: 'Предыдущий.', volup: 'Громче.', voldown: 'Тише.', mute: 'Нажала «без звука».' },
     },
     // её отчёт: что Claude сделал за день (её меню, или сама вечером)

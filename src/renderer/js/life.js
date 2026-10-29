@@ -23,6 +23,8 @@ const AWAY_AFTER = 5 * 60;              // seconds without input: you're away
 const SKIP_COOLDOWN = [18 * 60000, 35 * 60000];
 const OFFER_COOLDOWN = 45 * 60000;
 const NIGHT = [1, 5];                   // from 1 am to 5 am, she tells you to go to bed
+const LONG_SESSION = 3 * 3600 * 1000;   // this long at the PC without a real break: she says so, once
+const BREAK_MS = 20 * 60 * 1000;        // away this long is a break
 const STORE = 'capri.life';
 
 export class Life {
@@ -52,6 +54,11 @@ export class Life {
     this.nextAt = now + rand(...FIRST_AFTER);
     this.nextSkipAt = now + rand(6 * 60000, 12 * 60000);
     this.lastOffer = -Infinity;
+    this.sessionSince = Date.now(); // since when you have been at the PC without a real break (away for 20 minutes starts it over)
+    this.sessionTold = false;
+    this.lastBack = null;           // { at, ms }: you came back after being away this long
+    this.battery = null;            // { level, charging }, where there is one
+    this.online = typeof navigator === 'undefined' || navigator.onLine !== false;
     this.memo = this.load();
   }
 
@@ -72,6 +79,22 @@ export class Life {
     this.host.onMedia?.((now) => this.onMedia(now));
     this.host.onPresence?.((p) => this.onPresence(p));
     this.watchBattery();
+    // the net coming and going (she minds it a little; the same goes for her AI if it is a cloud one)
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('offline', () => this.netChanged(false));
+      window.addEventListener('online', () => this.netChanged(true));
+    }
+  }
+
+  // The net went or came back.
+  netChanged(online) {
+    if (online === this.online) return;
+    this.online = online;
+    this.heart.event(online ? 'online' : 'offline');
+    if (!this.free()) return;
+    const t = this.t.presence;
+    this.capri.react(online ? 'happy' : 'hurt');
+    this.say(pick(online ? t.online : t.offline), { face: online ? 'grin' : 'aside', hold: 4000 });
   }
 
   // Nothing else going on: not working for Claude, no chat, no guide, no panel, not asleep or away.
@@ -93,10 +116,21 @@ export class Life {
       return;
     }
     this.music(now);
+    this.session();
     if (!this.enabled || now < this.nextAt || !this.free()) return;
     const bored = this.heart.mood.mood === 'bored';
     this.nextAt = now + rand(...EVERY) * (bored ? 0.5 : 1);
     this.begin(this.choose());
+  }
+
+  // Hours at the PC without a break: she notices, once (and feels a little for you).
+  session(now = Date.now()) {
+    if (this.sessionTold || this.away || now - this.sessionSince < LONG_SESSION) return;
+    if (!this.free()) return;
+    this.sessionTold = true;
+    this.heart.event('longSession');
+    this.capri.react('care');
+    this.say(fmt(pick(this.t.presence.longSession), { time: duration(now - this.sessionSince, this.brain.lang) }), { face: 'look', hold: 5000 });
   }
 
   // What she feels like doing, by mood and by where she is (props need her standing).
@@ -409,6 +443,21 @@ export class Life {
     if (this.capri.activityAct === 'bop' && !this.capri.dancing) this.capri.setActivity(null);
   }
 
+  // What is going on around you, for her chat (English, like her prompt): the time of day, how long you have been at it, whether you
+  // just came back, the battery, the net. She may bring it up when it fits, and never lists it.
+  situation(now = new Date()) {
+    const out = [];
+    const hour = now.getHours();
+    const part = hour < 5 ? 'the middle of the night' : hour < 11 ? 'morning' : hour < 17 ? 'daytime' : hour < 22 ? 'evening' : 'late evening';
+    out.push(`It is ${String(hour).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} on their PC (${part}).`);
+    const stint = now.getTime() - this.sessionSince;
+    if (!this.away && stint >= 2 * 3600 * 1000) out.push(`They have been at the PC for about ${duration(stint, 'en')} without a real break.`);
+    if (this.lastBack && now.getTime() - this.lastBack.at < 10 * 60000 && this.lastBack.ms >= 30 * 60000) out.push(`They just came back after being away for ${duration(this.lastBack.ms, 'en')}.`);
+    if (this.battery && !this.battery.charging && this.battery.level <= 0.2) out.push(`Their battery is low (${Math.round(this.battery.level * 100)}%) and not charging.`);
+    if (!this.online) out.push('Their internet is down right now.');
+    return out;
+  }
+
   // What's going on in her life, for her chat (English, like her prompt).
   context() {
     const bits = [];
@@ -416,6 +465,7 @@ export class Life {
     const m = this.media;
     if (m.playing && m.title) bits.push(`Music playing on their PC right now${m.app ? ` (${m.app})` : ''}: ${[m.artist, m.title].filter(Boolean).join(' - ')}. You can hear it and have opinions about it.`);
     if (this.dj) bits.push('You sometimes skip tracks yourself when you are bored of them (DJ mode).');
+    bits.push(...this.situation());
     return bits.join(' ');
   }
 
@@ -440,6 +490,13 @@ export class Life {
     if (ms < AWAY_AFTER * 1000 || this.capri.stowed) return;
     const t = this.t.presence;
     this.heart.event('userBack');
+    // hours away are missed more than minutes (and a break is a break: the session starts over)
+    if (ms >= 2 * 3600 * 1000) this.heart.event('longAway', Math.min(4, ms / (2 * 3600 * 1000)));
+    this.lastBack = { at: Date.now(), ms };
+    if (ms >= BREAK_MS) {
+      this.sessionSince = Date.now();
+      this.sessionTold = false;
+    }
     const angry = this.heart.mood.v.anger >= 0.3;
     const lines = angry ? t.backAngry : ms >= 60 * 60000 ? t.backLong : t.back;
     setTimeout(() => {
@@ -487,16 +544,27 @@ export class Life {
       const battery = await navigator.getBattery();
       let told = false;
       const check = () => {
+        this.battery = { level: battery.level, charging: battery.charging };
         if (battery.charging) {
+          // plugged in after being told it was low: she is glad
+          if (told) {
+            this.heart.event('charging');
+            if (this.free()) {
+              this.capri.react('happy');
+              this.say(pick(this.t.presence.charging), { face: 'grin', hold: 4000 });
+            }
+          }
           told = false;
           return;
         }
         if (!told && battery.level <= 0.15 && this.free()) {
           told = true;
+          this.heart.event('batteryLow');
           this.capri.react('hurt');
           this.say(fmt(pick(this.t.presence.battery), { pct: Math.round(battery.level * 100) }), { face: 'aside', hold: 5000 });
         }
       };
+      check();
       battery.addEventListener('levelchange', check);
       battery.addEventListener('chargingchange', check);
     } catch {

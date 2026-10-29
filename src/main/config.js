@@ -74,6 +74,7 @@ const DEFAULTS = {
   rhythm: false,     // she moves to your music, from the real sound (loopback audio, rhythm.js)
   hands: false,      // she can work your windows and type for you when you ask (control.js, hands.js)
   handsType: true,   // she may type (messages, text); off: only open/close/arrange windows
+  handsMouse: true,  // she may move the mouse, press a button of a window by its name, press keys (control.js); needs hands
   ears: false,       // she listens to your microphone and writes down what you say (stt.js, ears.js)
   sttEngine: 'groq', // who turns your voice into text: 'groq', 'openai' or 'custom' (OpenAI-compatible)
   sttUrl: '',        // 'custom': http://127.0.0.1:8000/v1 (whisper.cpp, faster-whisper…)

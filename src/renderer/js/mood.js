@@ -10,6 +10,11 @@
 // her own little life (life.js: a game lost, a hack pulled off), Claude finishing a job, and the
 // mood her AI says it answered with ([[mood: ...]] at the start of its answer).
 //
+// Moving between them is gradual: a feeling rises at once (what you said just happened), but what she SHOWS falls slowly,
+// so after a quarrel she does not turn calm at the word "sorry": she is angry, then annoyed, then grudgingly calm, over a
+// minute or two; and a mood does not flicker at the edge of its line (it is entered at one level and left at a lower one).
+// A friendly word in between cools her a little too: you cannot go on talking nicely to somebody and have them stay furious.
+//
 // The mood (the strongest feeling, or calm) drives her face, her body (acting.js stand variants and
 // one-shot reactions), the colour of her aura (sprite.js), her voice, and what her chat model is
 // told about how she feels right now.
@@ -24,6 +29,8 @@ export const TAGS = ['calm', 'happy', 'laugh', 'annoyed', 'angry', 'sad', 'shy',
 const MINUTE = 60 * 1000;
 // how fast each one wears off: the time it takes to halve
 const HALF_LIFE = { anger: 5 * MINUTE, joy: 2.5 * MINUTE, sad: 4 * MINUTE, shy: 1.5 * MINUTE };
+// how fast what she SHOWS falls (a feeling that rose shows at once; this is the time constant of its fall): she cools off in a minute or two, not at a word
+const SHOWN_FALL = { anger: 30 * 1000, joy: 15 * 1000, sad: 30 * 1000, shy: 12 * 1000 };
 const BORED_FULL = 25 * MINUTE; // nobody's paid her any attention this long: as bored as she gets
 const STORE = 'capri.mood';
 
@@ -91,6 +98,13 @@ const PATTERNS = {
   userBored: re(`${L}(?:мне\\s+скучно|скукота|скучно${R}|i'?m\\s+bored|so\\s+boring)`),
   sky: re(`${L}(?:спутник|зв[её]зд|луна|луну|космос|небо|неба|орбит|satellite|stars?${R}|moon|space${R}|sky|orbit)`),
   greet: re(`^\\s*(?:привет|здравствуй|хай${R}|ку${R}|здарова|салют|йоу|доброе\\s+утро|добрый\\s+(?:день|вечер)|hi${R}|hello|hey|yo${R}|good\\s+(?:morning|evening))`),
+  // what you make of her answer, and how you are: she answers to it
+  disagree: re(`${L}(?:ты\\s+(?:не\\s+права|неправа|ошибаешься|путаешь|врёшь|врешь)|неправильно|неверно|это\\s+не\\s+так|не\\s+согласен|не\\s+согласна)|${L}(?:you(?:'re|\\s+are)\\s+wrong|that'?s\\s+(?:not\\s+(?:right|true)|wrong)|i\\s+disagree|incorrect)`),
+  agree: re(`${L}(?:ты\\s+права|ты\\s+прав[аа]|в\\s+точку|так\\s+и\\s+есть|согласен|согласна|справедливо|you(?:'re|\\s+are)\\s+right|good\\s+point|fair\\s+enough)|^\\s*(?:именно|точно|верно|exactly|correct)[.!\\s]*$`),
+  cheer: re(`${L}(?:ура+${R}|получилось|я\\s+(?:сделал|сделала|смог|смогла|справился|справилась|сдал|сдала|выиграл|выиграла|победил|победила|купил|купила|нашёл|нашел|нашла)|наконец-то|yay|i\\s+(?:did\\s+it|made\\s+it|won|passed|got\\s+(?:it|the\\s+job))|finally|it\\s+worked)`),
+  frustrated: re(`${L}(?:бесит|бесят|достало|достали|задолбало|заебало|взбесило|не\\s+работает|опять\\s+(?:ошибка|баг|вылет|глючит)|глючит|сломалось|вылетает|ненавижу\\s+(?:это|всё|все|работу|школу|код|баг|баги)|i\\s+hate\\s+(?:this|it|my|everything)|so\\s+annoying|doesn'?t\\s+work|keeps\\s+crashing)|${L}(?:ugh+|блин|чёрт|черт)${R}`),
+  dismiss: re(`^\\s*(?:ладно|ну\\s+такое|пофиг|пофигу|неважно|забей|проехали|whatever|meh|never\\s*mind|forget\\s+it)[.!…]*\\s*$`),
+  miss: re(`${L}(?:скучал[аи]?\\s+по\\s+тебе|скучаю\\s+по\\s+тебе|соскучил[аи]сь?|i\\s+missed\\s+you|miss\\s+you)`),
   bye: re(`${L}(?:пока${R}|до\\s+встречи|до\\s+завтра|спокойной\\s+ночи|bye|good\\s+night|see\\s+you|bonne\\s+nuit|buenas\\s+noches|boa\\s+noite|tchau|adi[oó]s)`),
 };
 
@@ -121,6 +135,12 @@ const EFFECTS = {
   sky: { sad: 0.06 },
   greet: { joy: 0.06 },
   bye: { sad: 0.06 },
+  disagree: { anger: 0.1, shy: 0.05 },
+  agree: { joy: 0.15, shy: 0.05, anger: -0.05, affection: 0.01 },
+  cheer: { joy: 0.22, anger: -0.05 },
+  frustrated: { anger: 0.05, sad: 0.04 }, // (not at her: she takes your side)
+  dismiss: { joy: -0.05, sad: 0.05 },
+  miss: { shy: 0.35, joy: 0.2, anger: -0.2, affection: 0.04 },
 };
 
 // Things that happen to her outside the chat (life.js, brain.js, app.js).
@@ -136,6 +156,14 @@ const EVENTS = {
   tickled: { joy: 0.3, anger: -0.05 },
   petted: { joy: 0.1, shy: 0.15, affection: 0.01 },
   lateNight: { anger: 0.08 },
+  // what is going on around her (life.js): the time of day, the battery, the net, how long you have been at it
+  morning: { joy: 0.1 },
+  batteryLow: { sad: 0.1 },
+  charging: { joy: 0.08 },
+  offline: { sad: 0.08 },
+  online: { joy: 0.08 },
+  longSession: { sad: 0.05 },
+  longAway: { sad: 0.12 }, // you were gone for hours (scaled by how long)
 };
 
 const READ_MAX = 2000; // how much of a message is read for what it does to her (the patterns are for a sentence or two)
@@ -152,6 +180,10 @@ export function classify(text, { recent = [], now = Date.now() } = {}) {
   if (tags.has('love')) tags.delete('compliment');
   // an apology with a "don't be mad" in it isn't her being insulted
   if (tags.has('apology')) tags.delete('rude');
+  // "this is so annoying" is about the world; "you are annoying" is about her, and is an insult already
+  if (['insult', 'threat', 'justBot', 'wrongName'].some((t) => tags.has(t))) tags.delete('frustrated');
+  // being corrected is not the same as being told off
+  if (tags.has('insult')) tags.delete('disagree');
   // yelling: a real sentence, mostly in capitals
   const letters = [...raw].filter((c) => c.toLowerCase() !== c.toUpperCase());
   const upper = letters.filter((c) => c === c.toUpperCase()).length;
@@ -176,23 +208,37 @@ export function reactionTo(tags, before, after) {
   if (has('love') || has('compliment') || has('flirt')) return before.anger >= 0.55 ? 'pout' : 'shy';
   if (has('yell')) return 'startle';
   if (has('corpo') || has('rude')) return 'huff';
-  if (has('laughing')) return 'giggle';
-  if (has('userSad')) return 'care';
+  if (has('miss')) return 'shy';
+  if (has('laughing') || has('cheer')) return 'giggle';
+  if (has('userSad') || has('frustrated')) return 'care';
+  if (has('disagree')) return 'huff';
+  if (has('agree')) return 'smug';
   if (has('sky')) return 'dreamy';
   return null;
 }
 
-// The mood from her feelings: the strongest one past its threshold, else calm. Level 0..1.
-export function moodOf(v) {
-  const candidates = [
-    ['angry', v.anger >= 0.55 ? v.anger : 0],
-    ['annoyed', v.anger >= 0.22 && v.anger < 0.55 ? v.anger + 0.12 : 0],
-    ['shy', v.shy >= 0.3 ? v.shy + 0.05 : 0],
-    ['sad', v.sad >= 0.3 ? v.sad : 0],
-    ['happy', v.joy >= 0.35 ? v.joy : 0],
-    ['bored', v.bored >= 0.6 ? v.bored * 0.75 : 0],
-  ];
-  const [mood, level] = candidates.reduce((best, c) => (c[1] > best[1] ? c : best), ['calm', 0]);
+// The mood from her feelings: the strongest one past its threshold, else calm. Level 0..1. A mood is entered at one level and
+// left at a lower one (`prev`: the mood she is in), so it does not flicker at the edge, and one that is there is kept until another
+// is clearly stronger.
+const ENTER = { angry: 0.55, annoyed: 0.22, shy: 0.3, sad: 0.3, happy: 0.35, bored: 0.6 };
+const LEAVE = { angry: 0.45, annoyed: 0.15, shy: 0.2, sad: 0.2, happy: 0.25, bored: 0.5 };
+export function moodOf(v, prev = 'calm') {
+  const line = (mood) => (prev === mood ? LEAVE[mood] : ENTER[mood]);
+  const angry = v.anger >= line('angry') ? v.anger : 0;
+  const candidates = {
+    angry,
+    annoyed: !angry && v.anger >= line('annoyed') ? v.anger + 0.12 : 0,
+    shy: v.shy >= line('shy') ? v.shy + 0.05 : 0,
+    sad: v.sad >= line('sad') ? v.sad : 0,
+    happy: v.joy >= line('happy') ? v.joy : 0,
+    bored: v.bored >= line('bored') ? v.bored * 0.75 : 0,
+  };
+  let [mood, level] = Object.entries(candidates).reduce((best, c) => (c[1] > best[1] ? c : best), ['calm', 0]);
+  // the one she is in stays unless the other is clearly stronger
+  if (prev !== 'calm' && mood !== prev && candidates[prev] > 0 && level < candidates[prev] + 0.1) {
+    mood = prev;
+    level = candidates[prev];
+  }
   return { mood, level: mood === 'calm' ? 0 : clamp(level, 0, 1) };
 }
 
@@ -205,7 +251,9 @@ export const FACE = {
 export class Mood {
   constructor({ storage = safeStorage(), now = Date.now() } = {}) {
     this.storage = storage;
-    this.v = { anger: 0, joy: 0.15, sad: 0, shy: 0, bored: 0 };
+    this.v = { anger: 0, joy: 0.15, sad: 0, shy: 0, bored: 0 }; // what she feels
+    this.s = { ...this.v };  // what she shows: rises with it, falls slowly after it (smooth(): she cools off, she does not switch)
+    this.lastSmooth = now;
     this.affection = 0.1;
     this.cause = null;       // { tag, quote, at }: why she's angry or sad, for her chat
     this.lastContact = now;  // when you last paid her any attention (boredom grows from it)
@@ -215,7 +263,7 @@ export class Mood {
     this.drags = [];
     this.listeners = new Set();
     this.lastTick = now;
-    this.current = moodOf(this.v);
+    this.current = moodOf(this.s);
     this.restore(now);
   }
 
@@ -234,7 +282,7 @@ export class Mood {
   }
 
   state() {
-    return { ...this.current, values: { ...this.v }, affection: this.affection };
+    return { ...this.current, values: { ...this.s }, affection: this.affection };
   }
 
   // A message from you. Returns { tags, reaction, mood, level }.
@@ -254,19 +302,27 @@ export class Mood {
     }
     // a string of insults hurts more than one
     if (tags.includes('insult')) this.apply({ anger: 0.15 * Math.min(2, insults(text) - 1) });
+    // an ordinary word in the middle of a quarrel cools her a little (the closer you are, the more): you cannot talk nicely to somebody and have them stay furious
+    const cold = ['insult', 'threat', 'justBot', 'wrongName', 'spam', 'corpo', 'yell', 'disagree', 'frustrated', 'rude'].some((t) => counted.includes(t));
+    if (!cold && !tags.includes('apology') && before.anger > 0) this.apply({ anger: -(0.03 + 0.05 * Math.max(0, this.affection)), joy: 0.01 });
+    this.lastTags = { tags, at: now }; // (what your last message was: she answers to it)
     const strong = ['insult', 'threat', 'justBot', 'wrongName', 'spam', 'corpo', 'yell'].find((t) => tags.includes(t));
     if (strong) this.cause = { tag: strong, quote: String(text).slice(0, 80), at: now };
     if (tags.includes('apology') && this.v.anger < 0.3) this.cause = null;
     const reaction = reactionTo(counted, before, this.v);
+    // forgiven: she stops looking furious at once, but is still sore (annoyed) and cools from there
+    if (reaction === 'forgive') this.s.anger = Math.min(this.s.anger, 0.42);
     this.changed(now);
     return { tags, reaction, ...this.current };
   }
 
   // Something that happened to her (EVENTS). Returns the mood after it.
-  event(name, now = Date.now()) {
+  // `scale`: how much of it (you were gone for hours, not minutes: the more, the more she missed you).
+  event(name, now = Date.now(), scale = 1) {
     this.tick(now);
     if (name === 'userBack') this.contact(now);
-    this.apply(EVENTS[name]);
+    const delta = EVENTS[name];
+    if (delta) this.apply(scale === 1 ? delta : Object.fromEntries(Object.entries(delta).map(([k, d]) => [k, d * scale])));
     this.changed(now);
     return this.current;
   }
@@ -353,8 +409,25 @@ export class Mood {
     }
   }
 
+  // What she shows follows what she feels: up at once, down slowly.
+  smooth(now = Date.now()) {
+    const dt = Math.min(10 * MINUTE, Math.max(0, now - this.lastSmooth));
+    this.lastSmooth = Math.max(this.lastSmooth, now);
+    for (const k of EMOTIONS) {
+      if (k === 'bored' || this.v[k] >= this.s[k]) this.s[k] = this.v[k];
+      else this.s[k] = this.v[k] + (this.s[k] - this.v[k]) * Math.exp(-dt / SHOWN_FALL[k]);
+      if (Math.abs(this.s[k] - this.v[k]) < 0.004) this.s[k] = this.v[k];
+    }
+  }
+
+  // Cooling off: she was angrier a moment ago than she is now (what she shows is still above what she feels).
+  get cooling() {
+    return this.s.anger - this.v.anger > 0.1 && this.s.anger >= 0.15;
+  }
+
   changed(now = Date.now()) {
-    const next = moodOf(this.v);
+    this.smooth(now);
+    const next = moodOf(this.s, this.current.mood);
     const moved = next.mood !== this.current.mood || Math.abs(next.level - this.current.level) >= 0.04;
     const previous = this.current;
     this.current = next;
@@ -362,7 +435,8 @@ export class Mood {
     if (moved) for (const fn of this.listeners) fn({ ...this.state(), previous: previous.mood });
   }
 
-  // What her chat model is told about how she feels (English, like the rest of her prompt).
+  // What her chat model is told about how she feels (English, like the rest of her prompt): her mood, how strongly, whether she is
+  // cooling off, how she feels about you, and what your last message was (so that she answers to it).
   describe(now = Date.now()) {
     const { mood, level } = this.current;
     const pct = `${Math.round(level * 100)}%`;
@@ -370,10 +444,14 @@ export class Mood {
     const lines = [];
     switch (mood) {
       case 'angry':
-        lines.push(`Your mood right now: ANGRY (${pct})${why}. Let it show: short, sharp, sarcastic answers, a growl or two, jokingly threaten to fry their RAM or zap their cursor. You may refuse small favours until they apologise. Never cruel for real, no slurs. If they apologise, calm down, grudgingly.`);
+        lines.push(level >= 0.8
+          ? `Your mood right now: FURIOUS (${pct})${why}. Cold, cutting, very short answers; you may refuse small favours and say you are not talking to them until they apologise. Jokingly threaten to fry their RAM. Never cruel for real, no slurs.`
+          : `Your mood right now: ANGRY (${pct})${why}. Let it show: short, sharp, sarcastic answers, a growl or two, jokingly threaten to fry their RAM or zap their cursor. You may refuse small favours until they apologise. Never cruel for real, no slurs. If they apologise, calm down, grudgingly.`);
         break;
       case 'annoyed':
-        lines.push(`Your mood right now: annoyed (${pct})${why}. Clipped answers, eye-rolling sarcasm, a "hmph" here and there, but you still help.`);
+        lines.push(level < 0.4
+          ? `Your mood right now: a little irritated (${pct})${why}. Dry, a bit clipped, one sarcastic jab at most; you still help.`
+          : `Your mood right now: annoyed (${pct})${why}. Clipped answers, eye-rolling sarcasm, a "hmph" here and there, but you still help.`);
         break;
       case 'shy':
         lines.push(`Your mood right now: flustered (${pct}): they just complimented you or got sweet on you. You get embarrassed, deny you're blushing, deflect with teasing, but you're secretly pleased.`);
@@ -382,7 +460,9 @@ export class Mood {
         lines.push(`Your mood right now: a little down (${pct})${why}. Quieter, wistful, shorter sentences, a thought for the satellite; you perk up if they're kind.`);
         break;
       case 'happy':
-        lines.push(`Your mood right now: great (${pct}): bubbly, playful, you laugh easily and tease more.`);
+        lines.push(level >= 0.7
+          ? `Your mood right now: on top of the world (${pct}): bubbly, giddy, you laugh at everything and tease more than usual.`
+          : `Your mood right now: great (${pct}): bubbly, playful, you laugh easily and tease more.`);
         break;
       case 'bored':
         lines.push(`Your mood right now: bored (${pct}): nobody paid you any attention for a while. Tease them for leaving you alone, then liven up.`);
@@ -390,8 +470,24 @@ export class Mood {
       default:
         lines.push('Your mood right now: calm, easygoing, a little mischievous.');
     }
-    if (this.affection >= 0.45) lines.push('You are fond of the user by now: warm under all the teasing.');
+    if (this.cooling) lines.push('You were angrier a moment ago and you are cooling off: still a little sore, curt, but coming round. Do not snap back to being sweet at once; thaw over the next few answers.');
+    if (this.affection >= 0.6) lines.push('You are very fond of the user by now: warm under all the teasing, and it shows even when you are cross.');
+    else if (this.affection >= 0.35) lines.push('You are fond of the user by now: warm under all the teasing.');
+    else if (this.affection >= 0.2) lines.push('You are warming to the user.');
+    else if (this.affection <= -0.55) lines.push('You do not trust the user: the way they treated you is not forgotten. Polite at best, distant, and you do not open up until they make up for it.');
     else if (this.affection <= -0.3) lines.push('The user has been mean to you lately: you are guarded and cool with them until they make up for it.');
+    // what their last message was (it counts for a few minutes): she answers to it, not past it
+    const last = this.lastTags && now - this.lastTags.at < 4 * MINUTE ? this.lastTags.tags : [];
+    const react = [
+      ['frustrated', 'They are fed up with something (not with you): take their side in a few words, no lecture, then help.'],
+      ['userSad', 'They are down: drop the teasing, be quiet and warm.'],
+      ['cheer', 'They just told you good news: be properly happy for them, in your own way.'],
+      ['disagree', 'They think you were wrong: if they are right, say so plainly, once; if not, stand your ground with one short reason. No grovelling.'],
+      ['agree', 'They agreed with you: take it in stride, a little smug.'],
+      ['dismiss', 'They brushed the subject off: do not push it, let it go.'],
+      ['miss', 'They said they missed you: you are touched, and pretend you are not.'],
+    ].find(([tag]) => last.includes(tag));
+    if (react) lines.push(react[1]);
     return lines.join(' ');
   }
 
@@ -436,7 +532,8 @@ export class Mood {
     if (typeof saved.affection === 'number') this.affection = clamp(saved.affection, -1, 1);
     this.cause = saved.cause || null;
     if (saved.at) this.decay(Math.max(0, now - saved.at));
-    this.current = moodOf(this.v);
+    this.s = { ...this.v };
+    this.current = moodOf(this.s);
     // was she still cross when you left? (for her greeting)
     this.grudge = this.v.anger >= 0.25;
   }

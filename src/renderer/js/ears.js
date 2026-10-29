@@ -9,13 +9,12 @@
 // talks so she doesn't hear herself.
 
 import { lifeLines } from './lines-life.js';
+import { TurnDetector, FRAME_MS, PRE_ROLL_MS, TAIL_MS, turnAudio } from './listen.js';
 
-const SILENCE_MS = 1100;      // this long quiet after speech: your turn is over
-const MAX_UTTERANCE = 15000;  // never record longer than this at a stretch
-const MIN_SPEECH_MS = 300;    // shorter than this: probably nothing, ignore
-const VOICE_LEVEL = 0.012;    // above this RMS counts as speech (her ring menu › Microphone moves it: micThreshold)
 const VAD_MS = 40;            // how often the level is checked (25 times a second is plenty)
 const ECHO_MS = 450;          // after she stops talking, a moment before her own echo is gone
+const SPEAK_MIN_MS = 120;     // pressed to send: a word this short ("да") is still a word
+const VOICE_LEVEL_DEFAULT = 0.012; // above this RMS counts as speech (her ring menu › Microphone moves it: micSensitivity); a noisy room raises it by itself (listen.js)
 
 // Sensitivity 0..1 (her ring menu) -> the RMS above which a sound counts as your voice: 0 hears only
 // a clear voice (0.035), 1 the faintest (0.003). The default 0.4 is the old fixed 0.012.
@@ -43,13 +42,23 @@ export class Ears {
     this.stream = null;
     this.ctx = null;
     this.analyser = null;
-    this.recorder = null;
-    this.chunks = [];
+    this.detector = new TurnDetector({ base: VOICE_LEVEL_DEFAULT });
+    this.capture = null;    // what taps the microphone's samples: { node, close() }
+    this.rate = 16000;      // the rate the samples come at
+    this.ring = [];         // the last moments heard (pre-roll), while no turn is on: [Float32Array]
+    this.ringSamples = 0;
+    this.chunks = [];       // the turn so far, from its pre-roll on
+    this.preSamples = 0;    // how much of it was heard before the voice was sure
+    this.turnAt = 0;
+    this.clock = 0;         // how many milliseconds of the mic have been looked at (the turn is told from the samples themselves, not from when the window got round to look: a slow moment of the PC must not cost the first word)
+    this.frameSum = 0;      // the frame being measured: its sum of squares
+    this.frameN = 0;        // and how many samples of it
     this.state = 'off';     // 'off' | 'idle' | 'listening' | 'thinking'
     this.recording = false;
     this.speaking = false;  // she's talking: don't listen to her
     this.deviceId = '';     // the microphone picked (''= the system's)
-    this.voiceLevel = VOICE_LEVEL;
+    this.voiceLevel = VOICE_LEVEL_DEFAULT;
+    this.hint = '';         // the language of her menus: for when the language heard is not one she speaks
     this.level = 0;         // how loud it is now, 0..1 (the meter in her ring menu and the badge)
     this.audioOut = '';     // where "hear yourself" plays (the output device picked in her ring menu › Voice)
     this.monitorHeld = false; // "hear yourself" is on (it keeps one watcher)
@@ -59,19 +68,24 @@ export class Ears {
     this.onTranscript = null; // (text) => void (chat.js sends it as if typed)
     this.onState = null;      // (state) => void (the indicator): 'off' | 'idle' | 'listening' | 'metering' | 'thinking'
     this.onLevel = null;      // (level 0..1) => void, while the mic is open
-    this.voiceSince = 0;
-    this.silenceSince = 0;
-    this.startedAt = 0;
   }
 
   get t() {
     return lifeLines(this.brain.lang).ears;
   }
 
+  // the level above which a sound is your voice now: her menu's sensitivity, or higher where the room is noisy
+  get listenLevel() {
+    return this.detector.threshold;
+  }
+
   configure(cfg) {
     this.enabled = cfg.ears === true;
-    this.lang = cfg.lang === 'auto' ? '' : (cfg.lang || 'ru');
+    // (the language you picked; with "auto" none is told, and the recogniser hears which it is, with the language of her menus for when it is unsure)
+    this.lang = cfg.langSetting === 'auto' || cfg.lang === 'auto' ? '' : (cfg.lang || 'ru');
+    this.hint = cfg.lang && cfg.lang !== 'auto' ? cfg.lang : '';
     this.voiceLevel = micThreshold(cfg.micSensitivity);
+    this.detector.base = this.voiceLevel;
     const out = typeof cfg.audioOut === 'string' ? cfg.audioOut : '';
     if (out !== this.audioOut) {
       this.audioOut = out;
@@ -120,8 +134,8 @@ export class Ears {
   async listenOnce() {
     if (!(await this.openMic())) return;
     this.capri.wake?.();
-    this.startRecording();
     this.single = true;
+    this.startRecording({ single: true });
   }
 
   // Conversation mode: the mic stays open; a turn starts when you start talking (vad).
@@ -163,14 +177,89 @@ export class Ears {
       this.enabled = false;
       return false;
     }
-    this.ctx = new AudioContext();
+    // (16 kHz is what a recogniser wants: the browser brings the mic's rate to it)
+    try {
+      this.ctx = new AudioContext({ sampleRate: 16000 });
+    } catch {
+      this.ctx = new AudioContext();
+    }
+    this.ctx.resume?.().catch?.(() => {});
     const src = this.ctx.createMediaStreamSource(this.stream);
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 1024;
     src.connect(this.analyser);
     this.vadData = new Uint8Array(this.analyser.fftSize);
+    this.rate = this.ctx.sampleRate || 16000;
+    this.ring = [];
+    this.ringSamples = 0;
+    this.clock = 0;
+    this.frameSum = 0;
+    this.frameN = 0;
+    this.detector.calibrate();
+    await this.tap(src);
     this.vadTimer = setInterval(() => this.vad(), VAD_MS);
     return true;
+  }
+
+  // The samples of the mic, a tenth of a second at a time, into `hear` (an audio worklet; a script processor where there is none).
+  // Without it she can still show the level, but there is nothing to send.
+  async tap(src) {
+    const ctx = this.ctx;
+    const hear = (samples) => {
+      if (ctx !== this.ctx) return;
+      this.hear(samples);
+    };
+    try {
+      if (ctx.audioWorklet?.addModule && typeof AudioWorkletNode !== 'undefined') {
+        await ctx.audioWorklet.addModule(new URL('./pcm-worklet.js', import.meta.url).href);
+        if (ctx !== this.ctx) return;
+        const node = new AudioWorkletNode(ctx, 'capri-pcm', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1 });
+        node.port.onmessage = (e) => hear(e.data);
+        const mute = ctx.createGain();
+        mute.gain.value = 0;
+        src.connect(node);
+        node.connect(mute);
+        mute.connect(ctx.destination);
+        this.capture = { close: () => { node.port.onmessage = null; try { src.disconnect(node); node.disconnect(); mute.disconnect(); } catch { /* gone */ } } };
+        return;
+      }
+      if (ctx.createScriptProcessor) {
+        const node = ctx.createScriptProcessor(2048, 1, 1);
+        node.onaudioprocess = (e) => hear(new Float32Array(e.inputBuffer.getChannelData(0)));
+        const mute = ctx.createGain();
+        mute.gain.value = 0;
+        src.connect(node);
+        node.connect(mute);
+        mute.connect(ctx.destination);
+        this.capture = { close: () => { node.onaudioprocess = null; try { src.disconnect(node); node.disconnect(); mute.disconnect(); } catch { /* gone */ } } };
+      }
+    } catch {
+      this.capture = null;
+    }
+  }
+
+  // What the mic heard: kept (as the pre-roll while no turn is on, and as the turn when there is one), and looked at frame by
+  // frame for your turn (the samples come in order, so the first word is always inside what was kept, however late this runs).
+  hear(samples) {
+    if (this.recording) {
+      this.chunks.push(samples);
+    } else {
+      this.ring.push(samples);
+      this.ringSamples += samples.length;
+      const keep = (PRE_ROLL_MS / 1000) * this.rate;
+      while (this.ring.length > 1 && this.ringSamples - this.ring[0].length >= keep) this.ringSamples -= this.ring.shift().length;
+    }
+    const size = Math.max(1, Math.round((this.rate * FRAME_MS) / 1000));
+    for (let i = 0; i < samples.length; i++) {
+      this.frameSum += samples[i] * samples[i];
+      if (++this.frameN === size) {
+        const rms = Math.sqrt(this.frameSum / size);
+        this.frameSum = 0;
+        this.frameN = 0;
+        this.clock += FRAME_MS;
+        this.judge(rms, this.clock);
+      }
+    }
   }
 
   // Another microphone while this one is open: close it and open the new one for the same job.
@@ -258,13 +347,13 @@ export class Ears {
     this.vadTimer = 0;
     this.metering = false;
     this.level = 0;
-    try {
-      this.recorder?.state === 'recording' && this.recorder.stop();
-    } catch {
-      // already stopped
-    }
-    this.recorder = null;
+    this.capture?.close();
+    this.capture = null;
+    this.ring = [];
+    this.ringSamples = 0;
+    this.chunks = [];
     this.recording = false;
+    this.detector.reset();
     for (const track of this.stream?.getTracks() || []) track.stop();
     this.stream = null;
     this.analyser = null;
@@ -273,77 +362,83 @@ export class Ears {
     this.setState('off');
   }
 
-  startRecording() {
+  // The turn begins: what was heard just before it (the pre-roll) is its start, and what comes goes on from it.
+  startRecording({ single = false, now = this.capture ? this.clock : performance.now() } = {}) {
     if (!this.stream || this.recording) return;
-    this.chunks = [];
-    try {
-      this.recorder = new MediaRecorder(this.stream, { mimeType: pickMime() });
-    } catch {
-      this.recorder = new MediaRecorder(this.stream);
-    }
-    this.recorder.ondataavailable = (e) => e.data.size && this.chunks.push(e.data);
-    this.recorder.onstop = () => this.send();
-    this.recorder.start();
+    this.chunks = this.ring;
+    this.preSamples = this.ringSamples;
+    this.ring = [];
+    this.ringSamples = 0;
     this.recording = true;
-    this.startedAt = performance.now();
-    this.voiceSince = 0;
-    this.silenceSince = performance.now();
+    this.turnAt = now;
+    if (single) this.detector.begin(now, { single: true });
     this.setState('listening');
   }
 
-  // Watches the level: in conversation mode it starts a turn when you speak and ends it when you go
-  // quiet; it also won't listen while she's talking.
+  // The level, 25 times a second: the meter (and, where the samples of the mic cannot be had, your turn is told from this).
   vad() {
     if (!this.analyser) return;
     this.analyser.getByteTimeDomainData(this.vadData);
     let sum = 0;
     for (const v of this.vadData) sum += ((v - 128) / 128) ** 2;
     const rms = Math.sqrt(sum / this.vadData.length);
-    const now = performance.now();
     // the meter: up at once, down a little slower
     const shown = meterLevel(rms);
     this.level = shown > this.level ? shown : this.level * 0.8 + shown * 0.2;
     this.onLevel?.(this.level);
-    const voice = rms > this.voiceLevel && !this.speaking && now > (this.echoUntil || 0);
-    if (voice) {
-      this.voiceSince = this.voiceSince || now;
-      this.silenceSince = now;
-      if (this.recording && this.state !== 'listening') this.setState('listening');
-    }
-    if (!this.recording) {
-      // conversation mode, between turns: start a turn when you begin to speak (not while her menu is
-      // showing the level or playing your mic back: then you're testing it, not talking to her)
-      if (this.converse && voice && !this.speaking && this.watchers === 0) this.startRecording();
-      return;
-    }
-    const spoke = this.voiceSince && now - this.voiceSince > MIN_SPEECH_MS;
-    const quietLong = now - this.silenceSince > SILENCE_MS;
-    if (now - this.startedAt > MAX_UTTERANCE || (spoke && quietLong)) this.finish();
-    else if (!spoke && now - this.startedAt > 4000 && this.single) this.finish(); // pressed to talk and said nothing
+    if (!this.capture) this.judge(rms, performance.now());
   }
 
+  // One look at the level (turn detector, listen.js): your turn starts, ends, or was only noise. She does not listen while
+  // she talks, nor to her own voice dying away, nor while her menu shows the level or plays your mic back (then you are
+  // testing it, not talking to her).
+  judge(rms, now) {
+    const deaf = this.speaking || performance.now() < (this.echoUntil || 0);
+    const event = this.detector.push(rms, now, { deaf });
+    if (event === 'start') {
+      if (this.converse && !deaf && this.watchers === 0 && !this.recording) this.startRecording({ now });
+      else this.detector.reset();
+    } else if (event === 'end') {
+      if (this.recording) this.finish();
+    } else if (event === 'drop') {
+      if (this.recording) this.cancel();
+    }
+  }
+
+  // Your turn is over (you went quiet, or pressed the button again): what was heard is sent to be written down.
   finish() {
     if (!this.recording) return;
+    const d = this.detector;
+    const voiced = d.voicedMs >= SPEAK_MIN_MS;
+    // up to your last word and a short tail: a long quiet after it only makes the recogniser invent words
+    const keep = this.preSamples / this.rate + Math.max(0, (d.lastVoiceAt || this.turnAt) - this.turnAt) / 1000 + TAIL_MS / 1000;
+    const chunks = this.chunks;
+    this.chunks = [];
     this.recording = false;
-    try {
-      this.recorder?.stop(); // fires onstop -> send()
-    } catch {
-      this.recorder = null;
+    d.reset();
+    if (!voiced) {
+      this.afterTurn();
+      return;
     }
+    this.send(chunks, keep);
   }
 
-  async send() {
-    const blob = new Blob(this.chunks, { type: this.chunks[0]?.type || 'audio/webm' });
+  // It was a noise (a click, a cough) or nothing: no turn.
+  cancel() {
     this.chunks = [];
-    const spoke = this.voiceSince > 0;
-    this.voiceSince = 0;
-    if (!spoke || blob.size < 1200) {
+    this.recording = false;
+    this.detector.reset();
+    this.afterTurn();
+  }
+
+  async send(chunks, keep) {
+    const { wav, seconds } = turnAudio(chunks, this.rate, keep);
+    if (seconds < 0.15) {
       this.afterTurn();
       return;
     }
     this.setState('thinking');
-    const buf = await blob.arrayBuffer();
-    const res = await this.host.transcribe({ audio: buf, mime: blob.type, lang: this.lang }).catch((err) => ({ ok: false, error: err.message, code: err.code }));
+    const res = await this.host.transcribe({ audio: wav, mime: 'audio/wav', lang: this.lang, hint: this.hint }).catch((err) => ({ ok: false, error: err.message, code: err.code }));
     if (!res?.ok) {
       this.panel.say({ kind: 'error', face: 'aside', line: res?.code === 'nokey' ? this.t.needKey : this.t.failed, quote: String(res?.error || '').slice(0, 80), hold: 6000, life: true });
       this.afterTurn();
@@ -367,15 +462,14 @@ export class Ears {
   }
 }
 
-function pickMime() {
-  for (const m of ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']) {
-    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) return m;
-  }
-  return '';
-}
-
-// Whisper fills silence with its own guesses ("Субтитры сделал...", "Thank you."): drop the usual ones.
-const JUNK = /^(?:you|thank you\.?|thanks for watching\.?|продолжение следует\.{0,3}|субтитры .*|редактор субтитров .*|корректор .*|амара\.орг.*|♪+|\.+|\s*)$/i;
+// Whisper fills silence with its own guesses ("Субтитры сделал...", "Thank you.", "Продолжение следует..."): the usual ones
+// are dropped (they are what a recogniser says when it heard a noise, not you).
+const JUNK = new RegExp(`^(?:${[
+  'you', 'thank you[.!]?', 'thanks for watching[.!]?', 'thanks for listening[.!]?',
+  'продолжение следует\\.{0,3}', 'субтитры .*', 'редактор субтитров .*', 'корректор .*', 'амара\\.орг.*', 'спасибо за (?:просмотр|внимание)[.!]?',
+  'подписывайтесь на (?:мой |наш )?канал.*', 'ставьте лайки.*', 'до новых встреч[.!]?', 'dimatorzok.*', 'сделал dimatorzok.*',
+  '♪+', '[.,!?…\\s-]*',
+].join('|')})$`, 'i');
 export function clean(text) {
   const t = String(text || '').trim();
   return JUNK.test(t) ? '' : t;

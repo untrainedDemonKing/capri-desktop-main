@@ -893,7 +893,7 @@ test('a small PC (4 GB): the 1B model, which cannot see the screen, and the Pipe
   assert.equal(cfg.ttsEngine, 'piper');
   assert.equal(p.snapshot().profile.id, 'light');
   assert.ok(p.snapshot().profile.notes.includes('noEyes'));
-  assert.deepEqual(state.tuned.map((t) => t.numCtx), [3072]);
+  assert.deepEqual(state.tuned.map((t) => t.numCtx), [4096]); // (her prompt in Russian is long: the smallest memory holds it with room for the talk)
 });
 
 test('a PC that cannot carry local models: no Ollama, no download of a model; the mind is left for a cloud one, the voice is the lightest', async () => {

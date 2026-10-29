@@ -20,6 +20,7 @@ const llm = require('./llm');
 const setup = require('./setup');
 const apps = require('./apps');
 const launch = require('./launch');
+const web = require('./web');
 const tts = require('./tts');
 const { Chatterbox, findPython } = require('./chatterbox');
 const chatterboxSetup = require('./chatterbox-setup');
@@ -631,6 +632,7 @@ function buildTray() {
       submenu: [
         { label: t.handsOn, type: 'checkbox', checked: cfg.hands === true, enabled: process.platform === 'win32', click: (item) => updateConfig({ hands: item.checked }) },
         { label: t.handsType, type: 'checkbox', checked: cfg.handsType !== false, enabled: process.platform === 'win32' && cfg.hands === true, click: (item) => updateConfig({ handsType: item.checked }) },
+        { label: t.handsMouse, type: 'checkbox', checked: cfg.handsMouse !== false, enabled: process.platform === 'win32' && cfg.hands === true, click: (item) => updateConfig({ handsMouse: item.checked }) },
       ],
     },
     {
@@ -1233,6 +1235,17 @@ function registerIpc() {
   ipcMain.handle('apps:media', (_e, action) => launch.media(action));
   ipcMain.handle('apps:music', (_e, query) => launch.music(query).catch(() => false));
   ipcMain.handle('apps:site', (_e, address) => launch.site(address).catch(() => false));
+  // straight requests to the web (web.js): a search in the engine you named, a video played
+  ipcMain.handle('web:search', async (_e, { engine, query } = {}) => {
+    const url = web.searchUrl(engine, query, resolveLang(config.load().lang));
+    return url ? web.open(url, (u) => shell.openExternal(u)).catch(() => false) : false;
+  });
+  ipcMain.handle('web:video', async (_e, { query } = {}) => {
+    const found = await web.videoUrl(query);
+    if (!found) return { ok: false };
+    const ok = await web.open(found.url, (u) => shell.openExternal(u)).catch(() => false);
+    return { ok, title: found.title, exact: found.exact };
+  });
   // typing to her: the overlay takes the keyboard while the chat is open, and gives it back after
   ipcMain.on('overlay:focus', (_e, on) => {
     if (!overlay) return;
@@ -1335,10 +1348,10 @@ function registerIpc() {
     }
   });
   // her ears: your voice (ears.js) turned into text by the speech service (stt.js)
-  ipcMain.handle('stt:transcribe', async (_e, { audio, mime, lang }) => {
+  ipcMain.handle('stt:transcribe', async (_e, { audio, mime, lang, hint }) => {
     const cfg = config.load();
     try {
-      const text = await stt.transcribe(cfg, setup.openKeys(cfg.apiKeys), { audio: Buffer.from(audio), mime, lang });
+      const text = await stt.transcribe(cfg, setup.openKeys(cfg.apiKeys), { audio: Buffer.from(audio), mime, lang, hint });
       return { ok: true, text };
     } catch (err) {
       return { ok: false, error: err.message, code: err.code || null };
@@ -1360,6 +1373,14 @@ function registerIpc() {
   ipcMain.handle('hands:window', (_e, { op, name }) => (handsOn() ? control.windowOp(op, name).then((n) => n, (err) => ({ error: { message: err.message, code: err.code } })) : { error: { code: 'off' } }));
   ipcMain.handle('hands:desktop', () => (handsOn() ? control.showDesktop().then(() => true, () => false) : false));
   ipcMain.handle('hands:type', (_e, { text, into }) => (handsOn() && config.load().handsType ? control.type(text, into).then(() => true, (err) => ({ error: { message: err.message, code: err.code } })) : { error: { code: 'off' } }));
+  // the mouse, the controls of a window, key combinations (control.js): the same gate, and its own switch (her menu › Hands)
+  const mouseOn = () => handsOn() && config.load().handsMouse !== false;
+  const handsDo = (task) => (mouseOn() ? task().then((v) => v, (err) => ({ error: { message: err.message, code: err.code } })) : { error: { code: 'off' } });
+  ipcMain.handle('hands:move', (_e, { target } = {}) => handsDo(() => control.moveMouse(target)));
+  ipcMain.handle('hands:click', (_e, { button, double } = {}) => handsDo(() => control.clickMouse({ button, double })));
+  ipcMain.handle('hands:scroll', (_e, { clicks } = {}) => handsDo(() => control.scrollMouse(clicks)));
+  ipcMain.handle('hands:element', (_e, { action, window: into, name } = {}) => handsDo(() => control.elementAction({ action, window: into, name })));
+  ipcMain.handle('hands:keys', (_e, { window: into, mods, key } = {}) => handsDo(() => control.pressKeys({ window: into, mods, key })));
   ipcMain.handle('hands:prepare', async (_e, request) => {
     if (!handsOn() || !config.load().handsType) throw Object.assign(new Error('off'), { code: 'off' });
     return control.prepareMessage(request);

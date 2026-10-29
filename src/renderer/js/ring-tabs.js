@@ -438,7 +438,7 @@ const mic = {
     let hearing = false;
     const tick = () => {
       const level = ears.stream ? ears.level : 0;
-      const threshold = meterLevel(micThreshold(cfg.micSensitivity ?? 0.4));
+      const threshold = meterLevel(ears.stream && ears.listenLevel ? ears.listenLevel : micThreshold(cfg.micSensitivity ?? 0.4)); // (a noisy room raises the line by itself)
       const lit = Math.round(level * CELLS);
       const cut = Math.round(threshold * CELLS);
       line.style.left = `calc(${(threshold * 100).toFixed(1)}% - 1px)`;
@@ -497,6 +497,7 @@ const senses = {
     root.append(heading(''));
     root.append(toggle(s.hands, cfg.hands === true, (v) => c.set({ hands: v }), { disabled: !win, hint: win ? '' : s.winOnly }));
     root.append(toggle(s.handsType, cfg.handsType !== false, (v) => c.set({ handsType: v }), { disabled: !win || cfg.hands !== true }));
+    root.append(toggle(s.handsMouse, cfg.handsMouse !== false, (v) => c.set({ handsMouse: v }), { disabled: !win || cfg.hands !== true }));
     root.append(note(s.privacy, true));
     return root;
   },

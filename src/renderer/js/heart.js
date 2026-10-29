@@ -12,7 +12,7 @@ import { pick, fmt } from './util.js';
 import { Shake } from './pointer-life.js';
 import * as marks from './fx-life.js';
 
-const TICK_MS = 4000;
+const TICK_MS = 1000;        // (a second: what she shows falls slowly and smoothly, and the pointer is watched at the same rate)
 const TICKLE_PASSES = 6;      // the pointer in and out of her this many times...
 const TICKLE_WINDOW = 1400;   // ...this fast, and it tickles
 const PAT_MS = 1600;          // the pointer moving on her head this long: a head pat
@@ -113,8 +113,8 @@ export class Heart {
     return this.enabled ? this.mood.describe() : '';
   }
 
-  event(name) {
-    if (this.enabled) this.mood.event(name);
+  event(name, scale = 1) {
+    if (this.enabled) this.mood.event(name, Date.now(), scale);
   }
 
   // A line for clicking her with nothing going on, by mood (null: her usual idle lines).
