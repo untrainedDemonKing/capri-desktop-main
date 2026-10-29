@@ -36,7 +36,12 @@ const TIERS = {
 const TIER_ORDER = ['base', 'small', 'turbo'];
 const LOG_LINES = 30;
 const START_TIMEOUT = 90000;
-const ILLEGAL_INSTRUCTION = 3221225501; // 0xC000001D: the program needs an instruction set (AVX2) this processor lacks
+// how Windows says a program could not even start, in words (the program's own last line would be nothing of the kind)
+const NOT_STARTED = {
+  3221225501: 'this processor lacks an instruction the program needs (it is too old for it)', // 0xC000001D: AVX2 or the like
+  3221225781: 'Windows lacks the Visual C++ runtime the program needs (install "Microsoft Visual C++ Redistributable 2015-2022", x64 or x86 as the program is)', // 0xC0000135
+  3221225595: 'the program does not fit this Windows (32-bit and 64-bit libraries mixed)', // 0xC000007B
+};
 const MAGIC = ['lmgg', 'ggml']; // the first four bytes of a ggml model (little- or big-endian)
 
 const withCode = (err, code) => Object.assign(err, { code });
@@ -301,10 +306,10 @@ class Whisper extends EventEmitter {
     let ended = '';
     proc.stdout?.on('data', (chunk) => this.note(chunk));
     proc.stderr?.on('data', (chunk) => this.note(chunk));
-    proc.on('error', (err) => { ended = err.code === 'ENOENT' ? `the program is not there: ${loc.exe}` : err.message; this.gone(proc, ended); });
+    proc.on('error', (err) => { ended = err.code === 'ENOENT' ? `the program is not there: ${loc.exe}` : err.message; this.gone(proc, ended, err.code === 'ENOENT'); });
     proc.on('exit', (code) => {
-      ended = code === ILLEGAL_INSTRUCTION ? 'this processor lacks an instruction the program needs (it is too old for it)' : `the program stopped (code ${code})`;
-      this.gone(proc, ended);
+      ended = NOT_STARTED[code] || `the program stopped (code ${code})`;
+      this.gone(proc, ended, Boolean(NOT_STARTED[code]));
     });
     // up when it answers (it loads the whole model before it listens)
     const until = Date.now() + this.startTimeout;
@@ -339,13 +344,13 @@ class Whisper extends EventEmitter {
   }
 
   // the program ended by itself (a model it could not read, a missing library, a crash)
-  gone(proc, why) {
+  gone(proc, why, known = false) {
     if (this.proc !== proc) return;
     this.proc = null;
     this.procKey = '';
     this.base = '';
     clearTimeout(this.idleTimer);
-    const reason = why.startsWith('this processor') || why.startsWith('the program is not there') ? why : this.lastProblem() || why;
+    const reason = known ? why : this.lastProblem() || why; // (a reason in words is told as it is; else the last complaint of the program)
     this.set('failed', reason);
   }
 

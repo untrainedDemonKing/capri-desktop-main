@@ -10,10 +10,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const cp = require('node:child_process');
 
 const nc = require('../../src/main/setup/node-check.js');
 const files = require('../../src/main/setup/fetch-files.js');
+const { zipFolder } = require('../helpers/zip.js');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-node-'));
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -84,15 +84,7 @@ test('fetching: the index, the checksum, the zip (checked), unpacked into her fo
   fs.writeFileSync(path.join(stage, 'node-v24.22.1-win-x64', 'node.exe'), 'MZ'.repeat(3000));
   fs.writeFileSync(path.join(stage, 'node-v24.22.1-win-x64', 'npm.cmd'), '@echo off');
   const zip = path.join(mk('zips'), 'node.zip');
-  cp.execFileSync('python3', ['-I', '-c', `
-import zipfile, os
-z = zipfile.ZipFile(${JSON.stringify(zip)}, 'w', zipfile.ZIP_DEFLATED)
-for d, _, fs_ in os.walk(${JSON.stringify(stage)}):
-    for f in fs_:
-        p = os.path.join(d, f)
-        z.write(p, os.path.relpath(p, ${JSON.stringify(stage)}))
-z.close()
-`]);
+  zipFolder(stage, zip);
   const body = fs.readFileSync(zip);
   const sum = crypto.createHash('sha256').update(body).digest('hex');
   const served = {

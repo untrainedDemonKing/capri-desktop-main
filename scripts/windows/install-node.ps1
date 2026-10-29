@@ -1,4 +1,4 @@
-# Fetches the portable Node.js (the newest long-term release that has a build for this Windows) into
+﻿# Fetches the portable Node.js (the newest long-term release that has a build for this Windows) into
 # %LOCALAPPDATA%\Capri\node, checks it against nodejs.org's own checksum, and adds it to the PATH of your
 # account (yours only, no administrator). The folder with node.exe is the only thing printed on the output;
 # what it says to you goes to the error stream. Used by start-capri.cmd when Node.js is missing or too old.

@@ -23,7 +23,7 @@ const fresh = (name = 'w') => { const d = path.join(base, `${name}${++n}`); fs.m
 const put = (file, bytes = 10) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, Buffer.alloc(bytes, 7)); };
 const tree = (dir) => {
   const out = [];
-  const walk = (d, rel) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const r = path.join(rel, e.name); if (e.isDirectory()) walk(path.join(d, e.name), r); else out.push(r); } };
+  const walk = (d, rel) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const r = `${rel}${rel ? '/' : ''}${e.name}`; if (e.isDirectory()) walk(path.join(d, e.name), r); else out.push(r); } };
   try { walk(dir, ''); } catch { /* not there */ }
   return out.sort();
 };

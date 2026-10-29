@@ -390,6 +390,15 @@ Keys $h (Txt '${b64(keys)}')
   return true;
 }
 
+// A look that touches nothing (her self-check, selftest.js): both helpers compiled the way every action above does, then PowerShell's
+// version, the screen's size in its own pixels and how many windows the finder sees. Nothing is moved, pressed or copied.
+async function probe() {
+  const script = `
+$seen = [CapriHands]::Find('').Count
+[Console]::Out.WriteLine('ps=' + $PSVersionTable.PSVersion + ' screen=' + [CapriMouse]::Width() + 'x' + [CapriMouse]::Height() + ' windows=' + $seen)`;
+  return runner.run(script, 30000, { mouse: true });
+}
+
 // ---------- messengers ----------
 
 // How to reach a chat by name in each app: the process to look for, how to open its search or
@@ -459,4 +468,4 @@ $ws.SendKeys('{ENTER}')
   return true;
 }
 
-module.exports = { windowOp, showDesktop, type, prepareMessage, sendPrepared, appKey, APPS, OPS, moveMouse, clickMouse, scrollMouse, elementAction, pressKeys, keysString, TARGETS, runner };
+module.exports = { windowOp, showDesktop, type, prepareMessage, sendPrepared, appKey, APPS, OPS, moveMouse, clickMouse, scrollMouse, elementAction, pressKeys, keysString, probe, TARGETS, runner };

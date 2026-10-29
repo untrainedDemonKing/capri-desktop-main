@@ -111,9 +111,10 @@ test('Linux: the processor from /proc/cpuinfo, the cards from lspci', () => {
 
 test('the disk: the free space of the nearest folder that exists; the system\'s bits, even for her 32-bit build on a 64-bit Windows', () => {
   const asked = [];
-  const d = hw.diskOf('/nowhere/at/all/models', { exists: (p) => p === '/', statfs: (p) => { asked.push(p); return { bavail: 100, bsize: 1 * GB, blocks: 500 }; } });
-  assert.deepEqual([d.path, d.free, d.total], ['/', 100 * GB, 500 * GB]);
-  assert.deepEqual(asked, ['/']);
+  const top = path.parse(path.resolve('/nowhere')).root; // '/' here, 'C:\\' on Windows
+  const d = hw.diskOf(path.join(top, 'nowhere', 'at', 'all', 'models'), { exists: (p) => p === top, statfs: (p) => { asked.push(p); return { bavail: 100, bsize: 1 * GB, blocks: 500 }; } });
+  assert.deepEqual([d.path, d.free, d.total], [top, 100 * GB, 500 * GB]);
+  assert.deepEqual(asked, [top]);
   assert.deepEqual(hw.diskOf('/x', { exists: () => true, statfs: () => { throw new Error('no'); } }).free, Infinity, 'unknown is not "full"');
   assert.equal(hw.systemIs64('x64', {}), true);
   assert.equal(hw.systemIs64('ia32', { PROCESSOR_ARCHITECTURE: 'x86', PROCESSOR_ARCHITEW6432: 'AMD64' }), true, 'a 32-bit process on a 64-bit Windows');

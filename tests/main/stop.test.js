@@ -15,6 +15,7 @@ const Module = require('node:module');
 
 const { runToEnd, runPythonAsync } = require('../../src/main/setup/proc.js');
 const files = require('../../src/main/setup/fetch-files.js');
+const { writeZip } = require('../helpers/zip.js');
 
 // setup.js only needs electron's safeStorage, for the keys: a stand-in so it runs under plain node
 const realLoad = Module._load;
@@ -91,13 +92,7 @@ test('winget and the Python installer end with the signal, and Python goes throu
 
 test('unpacking a zip stops at the next file when the signal has fired', async () => {
   const zip = path.join(tmp, 'x.zip');
-  cp.execFileSync('python3', ['-I', '-c', `
-import zipfile
-z = zipfile.ZipFile(${JSON.stringify(zip)}, 'w')
-z.writestr('a/one.txt', 'one' * 1000, compress_type=zipfile.ZIP_DEFLATED)
-z.writestr('a/two.txt', 'two')
-z.close()
-`]);
+  writeZip(zip, { 'a/one.txt': 'one'.repeat(1000), 'a/two.txt': 'two' });
   const out = path.join(tmp, 'out');
   await assert.rejects(() => files.unzip(zip, out, { signal: AbortSignal.abort() }), { name: 'AbortError' });
   assert.equal(fs.existsSync(path.join(out, 'a', 'one.txt')), false, 'not even the first file');

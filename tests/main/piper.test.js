@@ -15,6 +15,7 @@ const cp = require('node:child_process');
 
 const { Piper, assetFor, pickVoice, voicesIn, RELEASE, VOICES, STYLE } = require('../../src/main/voice/piper.js');
 const files = require('../../src/main/setup/fetch-files.js');
+const { writeZip } = require('../helpers/zip.js');
 
 const posix = process.platform !== 'win32';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-piper-test-'));
@@ -141,15 +142,7 @@ test('the program and the voices: the folder in her settings, then a "piper" fol
 test('unzip: files stored and deflated, folders, and a path that leaves the folder is refused', async () => {
   const dir = mk('zips');
   const good = path.join(dir, 'good.zip');
-  cp.execFileSync('python3', ['-I', '-c', `
-import zipfile
-z = zipfile.ZipFile(${JSON.stringify(good)}, 'w')
-z.writestr('piper/', '')
-z.writestr('piper/piper.exe', 'MZ' * 5000, compress_type=zipfile.ZIP_DEFLATED)
-z.writestr('piper/espeak-ng-data/voices/ru', 'name Russian', compress_type=zipfile.ZIP_STORED)
-z.writestr('piper/empty.txt', '')
-z.close()
-`]);
+  writeZip(good, { 'piper/': '', 'piper/piper.exe': 'MZ'.repeat(5000), 'piper/espeak-ng-data/voices/ru': 'name Russian', 'piper/empty.txt': '' });
   const out = path.join(dir, 'out');
   const seen = [];
   await files.unzip(good, out, { onProgress: (p) => seen.push(p) });
@@ -159,12 +152,7 @@ z.close()
   assert.ok(seen.length >= 2 && seen[seen.length - 1].completed === seen[seen.length - 1].total);
   assert.equal(files.findFile(out, ['piper.exe']), path.join(out, 'piper', 'piper.exe'));
   const evil = path.join(dir, 'evil.zip');
-  cp.execFileSync('python3', ['-I', '-c', `
-import zipfile
-z = zipfile.ZipFile(${JSON.stringify(evil)}, 'w')
-z.writestr('../escaped.txt', 'no')
-z.close()
-`]);
+  writeZip(evil, { '../escaped.txt': 'no' });
   await assert.rejects(() => files.unzip(evil, path.join(dir, 'evil-out')), /outside its folder/);
   assert.equal(fs.existsSync(path.join(dir, 'escaped.txt')), false);
   fs.writeFileSync(path.join(dir, 'junk.zip'), 'not a zip at all');
@@ -218,14 +206,7 @@ test('fetching the program: the release for this system is downloaded, unpacked 
 test('fetching the program on Windows: the zip is unpacked by her own unzip, and piper.exe is found', async () => {
   const dir = mk('win-userdata', 'piper');
   const zip = path.join(mk('win-release'), 'piper_windows_amd64.zip');
-  cp.execFileSync('python3', ['-I', '-c', `
-import zipfile
-z = zipfile.ZipFile(${JSON.stringify(zip)}, 'w')
-z.writestr('piper/piper.exe', 'MZ' * 1000, compress_type=zipfile.ZIP_DEFLATED)
-z.writestr('piper/espeak-ng.dll', 'dll')
-z.writestr('piper/espeak-ng-data/en_dict', 'dict')
-z.close()
-`]);
+  writeZip(zip, { 'piper/piper.exe': 'MZ'.repeat(1000), 'piper/espeak-ng.dll': 'dll', 'piper/espeak-ng-data/en_dict': 'dict' });
   const body = fs.readFileSync(zip);
   const fetchFn = async (url) => (url === `${RELEASE}/piper_windows_amd64.zip` ? new Response(body, { headers: { 'content-length': String(body.length) } }) : new Response('', { status: 404 }));
   const piper = new Piper({ platform: 'win32', arch: 'ia32', is64: true, fetchFn, defaultDir: () => dir, roots: () => [] });

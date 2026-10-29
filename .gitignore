@@ -13,3 +13,6 @@ assets/voice-default/capri.*
 
 # Python caches (the voice server, the test fixtures)
 __pycache__/
+
+# what the "Проверка Капри" folder (selftest/) writes when it is run
+selftest/results/

@@ -10,10 +10,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const cp = require('node:child_process');
 
 const { Whisper, assetFor, tierFor, threadsFor, isModel, silence, TIERS, RELEASES, VERSIONS, MODELS } = require('../../src/main/voice/whisper.js');
 const stt = require('../../src/main/voice/stt.js');
+const { writeZip } = require('../helpers/zip.js');
 const hardware = require('../../src/main/setup/hardware.js');
 
 const posix = process.platform !== 'win32';
@@ -113,15 +113,7 @@ test('the models she has: only ggml files, the one named first, else the one tha
 // ---- fetching them ----
 
 function zipOf(entries) {
-  const zip = path.join(mk('zips'), 'w.zip');
-  cp.execFileSync('python3', ['-I', '-c', `
-import zipfile, json
-z = zipfile.ZipFile(${JSON.stringify(zip)}, 'w')
-for name, body in json.loads(${JSON.stringify(JSON.stringify(entries))}).items():
-    z.writestr(name, body, compress_type=zipfile.ZIP_DEFLATED)
-z.close()
-`]);
-  return fs.readFileSync(zip);
+  return fs.readFileSync(writeZip(path.join(mk('zips'), 'w.zip'), entries));
 }
 
 test('fetching the program on Windows: the first version that has it, the next when one is gone, then the newest the site names', async () => {
@@ -283,6 +275,25 @@ test('a model that will not load is a clear failure with the program\'s own word
   // and it is started again by the next ask
   assert.match(await v.ready({}), /^http:\/\/127\.0\.0\.1:\d+$/);
   v.stop();
+});
+
+test('a program Windows could not start is told in words (a processor too old, a missing Visual C++ runtime), not as a bare code', async () => {
+  const { EventEmitter } = require('node:events');
+  for (const [code, words] of [[3221225501, /processor lacks an instruction/], [3221225781, /Visual C\+\+ runtime/], [3221225595, /32-bit and 64-bit/], [7, /stopped \(code 7\)/]]) {
+    const root = mk(`exit${code}`);
+    whisperFolder(root);
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    const w = new Whisper({
+      roots: () => [root], defaultDir: () => path.join(root, 'x'), startTimeout: 5000, port: async () => 1,
+      spawn: () => { setTimeout(() => { child.stderr.emit('data', 'some line the program said before it died'); child.emit('exit', code); }, 20); return child; },
+      fetchFn: async () => { throw new Error('nothing listens'); },
+    });
+    await assert.rejects(() => w.ready({}), (err) => err.code === 'exited' && words.test(err.message), String(code));
+    assert.match(w.status().error, words);
+  }
 });
 
 test('a server nobody asks goes away after a while, and starts again when asked', { skip: !posix }, async () => {

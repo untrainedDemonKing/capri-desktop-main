@@ -48,6 +48,17 @@ const { ASSISTANTS, assistant } = require('./ai/assistants');
 const activeAssistant = () => assistant(config.load().assistant); // Claude Code or Codex
 const activeHooks = () => activeAssistant().hooks;
 const demoSteps = require('../../scripts/dev/demo-sequence');
+const selftest = require('./system/selftest');
+
+// `Capri.exe --selftest=<folder>` (the "Проверка Капри" folder starts it): she checks herself in a data folder of her own and quits
+// (system/selftest.js). It is told before anything reads her settings or her data folder.
+const SELFTEST = selftest.dirFrom(process.argv);
+const selftestErrors = [];
+if (SELFTEST) {
+  fs.mkdirSync(SELFTEST, { recursive: true });
+  selftest.isolate({ app, dir: SELFTEST, render: selftest.renderFrom(process.argv) });
+  selftest.listen({ app }, selftestErrors);
+}
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const DEV = process.argv.includes('--dev');
@@ -1591,6 +1602,33 @@ function removeEverythingAndQuit() {
   });
 }
 
+// `--selftest=<folder>`: she looks at herself (system/selftest.js), writes <folder>/electron.json and quits. Never left hanging.
+function startSelftest() {
+  const log = (text) => console.log(`[selftest] ${text}`);
+  const cap = setTimeout(() => { log('too long, leaving'); app.exit(2); }, selftest.WHOLE_LIMIT);
+  selftest.execute({
+    app, dir: SELFTEST, root: ROOT, errors: selftestErrors, log,
+    mic: process.argv.includes('--selftest-mic'),
+    render: selftest.renderFrom(process.argv),
+    electron: { screen, globalShortcut, desktopCapturer, BrowserWindow },
+    overlay: () => overlay,
+    hub: () => hub,
+    config, hardware, control, profiles: require('./setup/profiles'),
+    windowsSeen: () => (lastWindows ? lastWindows.wins.length : null),
+    tray: () => tray,
+    windowWatchRunning: () => Boolean(windowWatch),
+  }).then((code) => {
+    clearTimeout(cap);
+    log(`done (${code})`);
+    process.exitCode = code;
+    app.quit(); // (her helpers are stopped on the way out: will-quit)
+    setTimeout(() => app.exit(code), 5000);
+  }, (err) => {
+    log(`failed: ${err?.stack || err}`);
+    app.exit(3);
+  });
+}
+
 function main() {
   if (process.argv.includes('--remove-everything')) {
     removeEverythingAndQuit();
@@ -1660,22 +1698,27 @@ function main() {
     // After that, what she lives on is found, started, and made ready if something is missing (a window opens only
     // if that takes long).
     const firstTime = !config.load().hubDone && !config.load().provisioned;
-    if (firstTime && config.load().autoSetup !== false && !process.argv.includes('--no-hub')) setTimeout(() => hub.show(), 1500);
+    if (SELFTEST) {
+      // (a check of herself starts nothing and fetches nothing: system/selftest.js)
+    } else if (firstTime && config.load().autoSetup !== false && !process.argv.includes('--no-hub')) setTimeout(() => hub.show(), 1500);
     else if (config.load().autoSetup !== false) setTimeout(() => provision.run(), 1200);
     else {
       // (not getting things ready for you, but the ones that are in place are still started)
       chatterbox.sync(config.load()).catch(() => {});
       if ((config.load().provider || 'ollama') === 'ollama') ollamaHost.sync(config.load()).catch(() => {});
     }
-    adoptBundledVoice();
-    refreshModels(); // for her menu's model list
-    setTimeout(() => launch.launchables().catch(() => {}), 20000); // what she can open, before you ask
+    if (!SELFTEST) {
+      adoptBundledVoice();
+      refreshModels(); // for her menu's model list
+      setTimeout(() => launch.launchables().catch(() => {}), 20000); // what she can open, before you ask
+    }
     screen.on('display-metrics-changed', fitOverlay);
     screen.on('display-added', () => { fitOverlay(); rebuildTray(); });
     screen.on('display-removed', () => { fitOverlay(); rebuildTray(); });
     // after sleep or a locked screen, once Windows has settled
     powerMonitor.on('resume', () => setTimeout(rearmOverlay, 2000));
     powerMonitor.on('unlock-screen', () => setTimeout(rearmOverlay, 1000));
+    if (SELFTEST) startSelftest();
   });
 
   app.on('will-quit', () => {
