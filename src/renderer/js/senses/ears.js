@@ -453,6 +453,10 @@ export class Ears {
   trouble(res) {
     const code = res?.code;
     if (code === 'nolocal') {
+      // (while it is being fetched, each thing you say would bring the same line: it is said once a minute)
+      const now = Date.now();
+      if (res.installing && now - (this.saidInstalling || 0) < 60000) return;
+      if (res.installing) this.saidInstalling = now;
       this.panel.say({ kind: 'info', face: 'look', line: res.installing ? this.t.installing : this.t.needLocal, hold: 7000, life: true });
       if (!res.installing && !this.installAsked) {
         this.installAsked = true;

@@ -374,8 +374,35 @@ test('an answer that is not JSON is asked for again in the plain form, and if it
   await assert.rejects(stt.transcribe(cfg, keys, { audio, mime: 'audio/wav', lang: 'ru' }, { fetch: hopeless.fetchFn }), (e) => e.code === 'badanswer');
 });
 
+test('no recogniser on this PC: she says she sets it up and asks for it once; while it is fetched the line comes once a minute; other failures are told as they are', async () => {
+  const { Ears } = await load('ears.js');
+  const said = [];
+  let installs = 0;
+  const ears = Object.create(Ears.prototype);
+  Object.assign(ears, { panel: { say: (m) => said.push(m) }, host: { sttInstall: async () => { installs++; return { ok: true }; } }, brain: { lang: 'ru' } });
+  ears.trouble({ ok: false, code: 'nolocal', installing: false });
+  assert.equal(installs, 1, 'it is fetched');
+  assert.match(said[0].line, /Ставлю, это один раз/);
+  ears.trouble({ ok: false, code: 'nolocal', installing: false });
+  assert.equal(installs, 1, 'and asked for once, not at every phrase');
+  ears.trouble({ ok: false, code: 'nolocal', installing: true });
+  ears.trouble({ ok: false, code: 'nolocal', installing: true });
+  ears.trouble({ ok: false, code: 'nolocal', installing: true });
+  assert.deepEqual(said.map((m) => /ещё ставится/.test(m.line)), [false, false, true], 'while it is being fetched: one line, not one for each thing you say');
+  said.length = 0;
+  ears.trouble({ ok: false, code: 'exited', error: 'the program stopped (code 1)' });
+  assert.match(said[0].line, /не запустилось/);
+  assert.equal(said[0].quote, 'the program stopped (code 1)');
+  ears.trouble({ ok: false, code: 'nokey' });
+  assert.match(said[1].line, /нужен ключ/);
+  ears.trouble({ ok: false, error: 'fetch failed' });
+  assert.match(said[2].line, /Не разобрала/);
+});
+
 test('the words a recogniser says for a noise are not sent on as yours, and yours are', async () => {
   const { clean } = await load('ears.js');
+  for (const marker of ['[BLANK_AUDIO]', '[Music]', '(музыка)', '*кашель*', '[ Silence ]', '[Аплодисменты] [Музыка]']) assert.equal(clean(marker), '', marker);
+  for (const mine of ['(смеётся) привет', 'Открой [Chrome]']) assert.equal(clean(mine), mine, mine);
   for (const junk of ['Продолжение следует...', 'Субтитры сделал DimaTorzok', 'Спасибо за просмотр!', 'Thanks for watching!', '...', '', 'you', 'Подписывайтесь на канал']) assert.equal(clean(junk), '', junk);
   for (const mine of ['Открой YouTube', 'ок', 'okay', 'да', 'Thank you, Capri']) assert.equal(clean(mine), mine, mine);
 });

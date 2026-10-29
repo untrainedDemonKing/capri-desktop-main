@@ -302,7 +302,7 @@ class Provision extends EventEmitter {
       hw = hardwareLib.normalize({ ram: os.totalmem() });
     }
     const have = await this.inventory(cfg);
-    return { hw, have, profile: profiles.plan(hw, { choice: cfg.profile || 'auto', have }) };
+    return { hw, have, profile: profiles.plan(hw, { choice: cfg.profile || 'auto', have, ears: cfg.autoEars !== false }) };
   }
 
   // Starts, or says it is on already. Resolves when everything wanted is ready or has failed. { rescan }: look at
@@ -394,10 +394,10 @@ class Provision extends EventEmitter {
     }
     this.hw = hw;
     this.have = await this.inventory(cfg);
-    this.profile = profiles.plan(hw, { choice: cfg.profile || 'auto', have: this.have });
+    this.profile = profiles.plan(hw, { choice: cfg.profile || 'auto', have: this.have, ears: cfg.autoEars !== false });
     // a Chatterbox folder next to her (that you put there) stays her voice on a plain PC; the profile is told, for its numbers and notes
     if (!cfg.provisioned && (cfg.ttsEngine || 'system') === 'system' && this.profile.auto && this.have.chatterbox && this.profile.voice.engine !== 'chatterbox') {
-      this.profile = profiles.plan(hw, { choice: cfg.profile || 'auto', have: this.have, voice: 'chatterbox' });
+      this.profile = profiles.plan(hw, { choice: cfg.profile || 'auto', have: this.have, voice: 'chatterbox', ears: cfg.autoEars !== false });
     }
     this.d.tune?.(this.profile.tuning, this.profile.id);
     this.done('scan', this.t('scanLine', {

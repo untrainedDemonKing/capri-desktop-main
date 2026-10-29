@@ -1298,6 +1298,7 @@ test('her ears are not prepared where they are not wanted: a cloud recogniser wi
   const off = world({ cfg: { autoEars: false }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
   await off.p.run();
   assert.equal(off.p.plan.whisper, false, 'taken off, she does not fetch it again behind your back');
+  assert.equal(off.p.snapshot().profile.download.items.some((i) => i.id === 'whisper'), false, 'and it is not in what is left to fetch');
   const linux = world({ state: { hw: pc({ platform: 'linux', ram: 16 * GB }), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
   await linux.p.run();
   assert.equal(linux.p.plan.whisper, false);

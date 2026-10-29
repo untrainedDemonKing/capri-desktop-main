@@ -256,6 +256,7 @@ test('her ears in the main menu: a row in the plan with the model for this PC, w
   assert.equal(state.ui.earsLabel.length > 5, true, 'and the page has words for it');
   await w.call('hub:apply', { mind: 'skip', voice: 'system', ears: false });
   assert.equal(w.updates[0].autoEars, false);
+  assert.deepEqual((await w.call('hub:state')).ears, { auto: false, supported: true }, 'taken off: the box is still there to put it back');
   const on = world();
   await on.call('hub:apply', { mind: 'skip', voice: 'system', ears: true });
   assert.equal(on.updates[0].autoEars, true);

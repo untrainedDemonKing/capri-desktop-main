@@ -73,7 +73,7 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
       cloud: cloudState(cfg),
       voiceKeys: { openai: Boolean(cfg.apiKeys?.openai), elevenlabs: Boolean(cfg.apiKeys?.elevenlabs) },
       node: { auto: cfg.autoNode !== false },
-      ears: { auto: cfg.autoEars !== false, supported: Boolean(profile.ears) },
+      ears: { auto: cfg.autoEars !== false, supported: Boolean(profiles.earsFor(hw)) },
       // what she may do: the settings now (the first time, the page offers them all that this system can)
       perms: { ears: cfg.ears === true, converse: cfg.converse === true, vision: cfg.vision === true, hands: cfg.hands === true, rhythm: cfg.rhythm === true, windows: hw.os.platform === 'win32' },
       folder: folderInfo(),
