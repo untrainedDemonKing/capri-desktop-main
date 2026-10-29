@@ -79,7 +79,7 @@ const DEFAULTS = {
   sttEngine: 'local', // who turns your voice into text: 'local' (whisper.cpp on this PC, fetched and run by her), 'groq', 'openai' or 'custom' (OpenAI-compatible); a cloud one with no key saved is the local one
   sttUrl: '',        // 'custom': http://127.0.0.1:8000/v1 (faster-whisper…)
   sttModel: '',      // a cloud service's model (empty: the engine's default)
-  autoEars: true,    // with her mind and her voice she gets the recogniser of speech ready too, and fetches it if it is missing (whisper.js)
+  autoEars: null,    // the recogniser of speech on this PC is made ready with her mind and her voice (whisper.js): true or false when the main menu or the mic's switch said so; null (nothing said yet) it is fetched once the microphone is on
   whisperDir: '',    // whisper.cpp's folder ('' she looks for one with "whisper" in its name next to her, then fetches it)
   whisperModel: '',  // the file of the model in it to use ('' the one that suits this PC)
   whisperTier: '',   // which model she fetched for this PC: 'base', 'small' or 'turbo' ('' small)

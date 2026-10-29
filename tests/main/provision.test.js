@@ -1243,7 +1243,7 @@ test('the Chatterbox folder she makes has its model\'s cache inside it, and pip 
 const winPc = (o = {}) => pc({ platform: 'win32', arch: 'x64', env: { PROCESSOR_ARCHITECTURE: 'AMD64' }, ram: 16 * GB, ...o });
 
 test('her ears are made ready with her mind and her voice: the program, the model that suits the PC, a check that it hears; and the recogniser on this PC is the one she uses from then on', async () => {
-  const { p, state, cfg } = world({ cfg: { sttEngine: 'groq' }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
+  const { p, state, cfg } = world({ cfg: { autoEars: true, sttEngine: 'groq' }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
   const changes = [];
   p.on('change', (s) => changes.push(s));
   await p.run();
@@ -1266,13 +1266,13 @@ test('her ears are made ready with her mind and her voice: the program, the mode
 });
 
 test('the second start: the program and the model are there, nothing is fetched, the window stays shut; a model of her own is taken as it is', async () => {
-  const { p, state } = world({ cfg: { sttEngine: 'local', whisperTier: 'small', earsChecked: '/w/whisper-server|/w/models/ggml-small-q5_1.bin', ttsEngine: 'piper', provisioned: true, chatModel: 'gemma3:4b' }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], piperFound: true, piperVoice: 'en_US-amy-medium' } });
+  const { p, state } = world({ cfg: { autoEars: true, sttEngine: 'local', whisperTier: 'small', earsChecked: '/w/whisper-server|/w/models/ggml-small-q5_1.bin', ttsEngine: 'piper', provisioned: true, chatModel: 'gemma3:4b' }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], piperFound: true, piperVoice: 'en_US-amy-medium' } });
   await p.run();
   assert.equal(p.ok, true);
   assert.equal(p.attention, false);
   assert.deepEqual([state.whisperInstalls, state.whisperFetches], [0, []]);
   assert.deepEqual([state.whisperChecks, p.step('ws-run').state], [0, 'done'], 'the check was made once, the first time, and is not made at every start (a model of hundreds of megabytes)');
-  const own = world({ cfg: { ttsEngine: 'piper', provisioned: true }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], piperFound: true, piperVoice: 'en_US-amy-medium', whisperModel: 'ggml-medium.bin' } });
+  const own = world({ cfg: { autoEars: true, ttsEngine: 'piper', provisioned: true }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], piperFound: true, piperVoice: 'en_US-amy-medium', whisperModel: 'ggml-medium.bin' } });
   await own.p.run();
   assert.deepEqual(own.state.whisperFetches, [], 'a model that lies there is not fetched over');
   assert.match(own.p.step('ws-model').detail, /ggml-medium\.bin/);
@@ -1280,7 +1280,7 @@ test('the second start: the program and the model are there, nothing is fetched,
 
 test('the model is picked by the PC: a small one for 4 GB, a big one for a strong PC; a 32-bit Windows gets the small one too', async () => {
   const tier = async (hw) => {
-    const w = world({ state: { hw, ollamaRunning: true, models: ['gemma3:1b', 'gemma3:4b'], whisperFound: false, whisperModel: '' } });
+    const w = world({ cfg: { autoEars: true }, state: { hw, ollamaRunning: true, models: ['gemma3:1b', 'gemma3:4b'], whisperFound: false, whisperModel: '' } });
     await w.p.run();
     return w.state.whisperFetches[0];
   };
@@ -1290,7 +1290,7 @@ test('the model is picked by the PC: a small one for 4 GB, a big one for a stron
 });
 
 test('her ears are not prepared where they are not wanted: a cloud recogniser with its key, ears turned off, a system with no program of hers', async () => {
-  const keyed = world({ cfg: { sttEngine: 'groq', apiKeys: { groq: 'sealed' } }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
+  const keyed = world({ cfg: { autoEars: true, sttEngine: 'groq', apiKeys: { groq: 'sealed' } }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
   await keyed.p.run();
   assert.equal(keyed.p.plan.whisper, false);
   assert.deepEqual(['ws-find', 'ws-model', 'ws-run'].map((id) => keyed.p.step(id).state), ['skipped', 'skipped', 'skipped']);
@@ -1299,7 +1299,7 @@ test('her ears are not prepared where they are not wanted: a cloud recogniser wi
   await off.p.run();
   assert.equal(off.p.plan.whisper, false, 'taken off, she does not fetch it again behind your back');
   assert.equal(off.p.snapshot().profile.download.items.some((i) => i.id === 'whisper'), false, 'and it is not in what is left to fetch');
-  const linux = world({ state: { hw: pc({ platform: 'linux', ram: 16 * GB }), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
+  const linux = world({ cfg: { autoEars: true }, state: { hw: pc({ platform: 'linux', ram: 16 * GB }), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
   await linux.p.run();
   assert.equal(linux.p.plan.whisper, false);
   assert.equal(linux.p.ok, true);
@@ -1307,7 +1307,7 @@ test('her ears are not prepared where they are not wanted: a cloud recogniser wi
 
 test('her ears failing say where, with the buttons that help, and do not keep the rest back: her mind and voice are ready, the voice is tried', async () => {
   const finished = [];
-  const down = world({ state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '', whisperInstallFails: 'github.com answered 503 for whisper-bin-x64.zip' } });
+  const down = world({ cfg: { autoEars: true }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '', whisperInstallFails: 'github.com answered 503 for whisper-bin-x64.zip' } });
   down.p.on('finish', (f) => finished.push(f));
   await down.p.run();
   assert.equal(down.p.step('ws-find').state, 'failed');
@@ -1318,10 +1318,10 @@ test('her ears failing say where, with the buttons that help, and do not keep th
   assert.equal(finished[0].ok, false);
   assert.equal(finished[0].core, true, 'her mind and her voice are ready all the same');
   // the model failing, then the check failing
-  const model = world({ state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperModel: '', whisperModelFails: 'huggingface.co answered 403' } });
+  const model = world({ cfg: { autoEars: true }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperModel: '', whisperModelFails: 'huggingface.co answered 403' } });
   await model.p.run();
   assert.match(model.p.step('ws-model').error, /Could not fetch the speech model: huggingface\.co answered 403/);
-  const check = world({ state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperCheckFails: 'this processor lacks an instruction the program needs' } });
+  const check = world({ cfg: { autoEars: true }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperCheckFails: 'this processor lacks an instruction the program needs' } });
   await check.p.run();
   assert.equal(check.p.step('ws-run').state, 'failed');
   assert.match(check.p.step('ws-run').error, /did not start: this processor lacks an instruction/);
@@ -1334,10 +1334,27 @@ test('her ears failing say where, with the buttons that help, and do not keep th
 });
 
 test('the folder named for her ears that is gone is told as that, with a button to pick another', async () => {
-  const w = world({ cfg: { whisperDir: '/gone/whisper' }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
+  const w = world({ cfg: { autoEars: true, whisperDir: '/gone/whisper' }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
   await w.p.run();
   assert.equal(w.p.step('ws-find').state, 'failed');
   assert.match(w.p.step('ws-find').error, /The folder \/gone\/whisper is not there/);
   assert.deepEqual(w.p.step('ws-find').actions, ['retry', 'choose-whisper']);
   assert.equal(w.state.whisperInstalls, 0);
+});
+
+test('her ears for a PC that was set up before she had them: nothing is fetched while the mic is off; once it is on, they are; "no" stays no', async () => {
+  const state = { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' };
+  const quiet = world({ cfg: { ttsEngine: 'piper', provisioned: true, ears: false }, state: { ...state, piperFound: true, piperVoice: 'en_US-amy-medium' } });
+  await quiet.p.run();
+  assert.equal(quiet.p.plan.whisper, false, 'the mic is off and nothing was said: no download she does not need');
+  assert.equal(quiet.p.snapshot().profile.download.items.some((i) => i.id === 'whisper'), false);
+  const talking = world({ cfg: { ttsEngine: 'piper', provisioned: true, ears: true }, state: { ...state, piperFound: true, piperVoice: 'en_US-amy-medium' } });
+  await talking.p.run();
+  assert.equal(talking.p.plan.whisper, true, 'the mic is on: she needs ears');
+  assert.deepEqual(talking.state.whisperFetches, ['small']);
+  const refused = world({ cfg: { ttsEngine: 'piper', provisioned: true, ears: true, autoEars: false }, state: { ...state, piperFound: true, piperVoice: 'en_US-amy-medium' } });
+  await refused.p.run();
+  assert.equal(refused.p.plan.whisper, false, 'taken off: the mic switch asks for them itself');
+  const { wantsEars } = require('../../src/main/setup/provision.js');
+  assert.deepEqual([{}, { ears: true }, { autoEars: true }, { autoEars: false, ears: true }, { autoEars: null, ears: true }].map(wantsEars), [false, true, true, false, true]);
 });

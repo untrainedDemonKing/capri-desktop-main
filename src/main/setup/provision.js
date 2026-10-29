@@ -27,6 +27,9 @@ const { text } = require('../dialogs/prepare-lines');
 const { engineFor } = require('../voice/stt');
 
 const GB = 1024 ** 3;
+// Whether her ears are to be fetched: you said so (the main menu, the mic's switch), or nothing was said and the microphone is on
+// (a PC that was set up before she had ears, with the mic off, does not get a download it does not need)
+const wantsEars = (cfg) => cfg.autoEars === true || (cfg.autoEars == null && cfg.ears === true);
 const STEPS = [
   ['scan', 'pc'],
   ['node', 'tools'],
@@ -287,7 +290,7 @@ class Provision extends EventEmitter {
     // (and not a mind you have taken off the disk: it is not fetched again until you choose it in her main menu)
     const ollama = cfg.autoMind !== false && (cfg.provider || 'ollama') === 'ollama' && (prof.mind.kind === 'ollama' || (prof.auto && Boolean(have.ollama)) || Boolean(cfg.wantModel));
     // (her ears: the recogniser on this PC, unless you set a cloud one up with a key of its own, or there is no program of it for this system)
-    const whisper = cfg.autoEars !== false && Boolean(prof.ears) && engineFor(cfg, cfg.apiKeys || {}) === 'local';
+    const whisper = wantsEars(cfg) && Boolean(prof.ears) && engineFor(cfg, cfg.apiKeys || {}) === 'local';
     return { ollama, chatterbox: engine === 'chatterbox', piper: engine === 'piper', whisper, node: cfg.autoNode !== false, adopt, engine };
   }
 
@@ -302,7 +305,7 @@ class Provision extends EventEmitter {
       hw = hardwareLib.normalize({ ram: os.totalmem() });
     }
     const have = await this.inventory(cfg);
-    return { hw, have, profile: profiles.plan(hw, { choice: cfg.profile || 'auto', have, ears: cfg.autoEars !== false }) };
+    return { hw, have, profile: profiles.plan(hw, { choice: cfg.profile || 'auto', have, ears: wantsEars(cfg) }) };
   }
 
   // Starts, or says it is on already. Resolves when everything wanted is ready or has failed. { rescan }: look at
@@ -394,10 +397,10 @@ class Provision extends EventEmitter {
     }
     this.hw = hw;
     this.have = await this.inventory(cfg);
-    this.profile = profiles.plan(hw, { choice: cfg.profile || 'auto', have: this.have, ears: cfg.autoEars !== false });
+    this.profile = profiles.plan(hw, { choice: cfg.profile || 'auto', have: this.have, ears: wantsEars(cfg) });
     // a Chatterbox folder next to her (that you put there) stays her voice on a plain PC; the profile is told, for its numbers and notes
     if (!cfg.provisioned && (cfg.ttsEngine || 'system') === 'system' && this.profile.auto && this.have.chatterbox && this.profile.voice.engine !== 'chatterbox') {
-      this.profile = profiles.plan(hw, { choice: cfg.profile || 'auto', have: this.have, voice: 'chatterbox', ears: cfg.autoEars !== false });
+      this.profile = profiles.plan(hw, { choice: cfg.profile || 'auto', have: this.have, voice: 'chatterbox', ears: wantsEars(cfg) });
     }
     this.d.tune?.(this.profile.tuning, this.profile.id);
     this.done('scan', this.t('scanLine', {
@@ -967,4 +970,4 @@ class Provision extends EventEmitter {
   }
 }
 
-module.exports = { Provision, STEPS, pickInstalled, sameModel, bytes };
+module.exports = { Provision, STEPS, pickInstalled, sameModel, bytes, wantsEars };

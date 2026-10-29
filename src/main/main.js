@@ -908,7 +908,7 @@ const earsInstalled = () => Boolean(whisper.locate(config.load()) && whisper.mod
 // preparation window shows how far it is when it takes long). Once taken off, it is fetched again only for this reason.
 function earsNeeded() {
   if (!earsLocal() || earsInstalled()) return;
-  if (config.load().autoEars === false) config.save({ autoEars: true });
+  if (config.load().autoEars !== true) config.save({ autoEars: true });
   if (!provision.running) provision.run();
 }
 

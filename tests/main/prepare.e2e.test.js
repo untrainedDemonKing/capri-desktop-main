@@ -94,7 +94,7 @@ test('a fresh PC with a good card: she gets her mind and her voice (Chatterbox) 
     PYTHONPATH: python.numpyAt, OLLAMA_HOST: `127.0.0.1:${port}`, FAKE_OLLAMA_LOG: olLog, CB_E2E_LOG: cbLog,
     PIP_NO_INDEX: '1', PIP_FIND_LINKS: wheels, PIP_DISABLE_PIP_VERSION_CHECK: '1',
   });
-  const cfg = { provider: 'ollama', ttsEngine: 'system', voiceMode: 'chat', provisioned: false, chatModel: null, chatterboxDir: '', chatterboxUrl: '', ollamaDir: '', chatterboxDevice: 'cpu', hfEndpoint: '' };
+  const cfg = { provider: 'ollama', ttsEngine: 'system', voiceMode: 'chat', provisioned: false, chatModel: null, chatterboxDir: '', chatterboxUrl: '', ollamaDir: '', chatterboxDevice: 'cpu', hfEndpoint: '', autoEars: true };
   const saved = [];
   const roots = () => [root, userData];
   const chatterbox = new Chatterbox({ roots, pollMs: 100 });
@@ -221,7 +221,7 @@ test('a plain PC: she fetches Piper and a voice, starts it, a question is answer
     const body = served.get(url);
     return body ? new Response(body, { headers: { 'content-length': String(body.length) } }) : new Response('not found', { status: 404 });
   };
-  const cfg = { provider: 'ollama', ttsEngine: 'system', voiceMode: 'chat', provisioned: false, chatModel: null, chatterboxDir: '', chatterboxUrl: '', ollamaDir: '', piperDir: '', profile: 'auto' };
+  const cfg = { provider: 'ollama', ttsEngine: 'system', voiceMode: 'chat', provisioned: false, chatModel: null, chatterboxDir: '', chatterboxUrl: '', ollamaDir: '', piperDir: '', profile: 'auto', autoEars: true };
   const roots = () => [root, userData];
   const chatterbox = new Chatterbox({ roots, pollMs: 100 });
   const ollamaHost = new OllamaHost({ roots, pollMs: 100, whichFn: async () => null, places: () => [] });
