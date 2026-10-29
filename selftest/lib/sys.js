@@ -39,7 +39,7 @@ ConvertTo-Json -Compress -InputObject $o
 // the programs Capri uses or fetches, by the name they have on this system
 const TOOLS = WIN
   ? [['node', ['-v']], ['npm.cmd', ['-v']], ['git', ['--version']], ['py', ['--version']], ['python', ['--version']], ['python3', ['--version']], ['winget', ['--version']],
-    ['ollama', ['--version']], ['nvidia-smi', ['--query-gpu=name,driver_version,memory.total', '--format=csv,noheader']], ['pwsh', ['-v']], ['ffmpeg', ['-version']], ['curl', ['--version']], ['tar', ['--version']], ['wsl', ['--version']]]
+    ['ollama', ['--version']], ['nvidia-smi', ['--query-gpu=name,driver_version,memory.total', '--format=csv,noheader']], ['pwsh', ['-v']], ['ffmpeg', ['-version']], ['curl', ['--version']], ['tar', ['--version']]]
   : [['node', ['-v']], ['npm', ['-v']], ['git', ['--version']], ['python3', ['--version']], ['python', ['--version']], ['ollama', ['--version']], ['nvidia-smi', ['--query-gpu=name,driver_version,memory.total', '--format=csv,noheader']],
     ['ffmpeg', ['-version']], ['curl', ['--version']], ['unzip', ['-v']], ['tar', ['--version']], ['espeak-ng', ['--version']], ['say', ['-v', '?']]];
 

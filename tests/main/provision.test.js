@@ -20,6 +20,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-prov-'));
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 const mk = (...p) => { const d = path.join(tmp, ...p); fs.mkdirSync(d, { recursive: true }); return d; };
 const touch = (f, t = '') => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, t); return f; };
+// where the Python of a Chatterbox folder's environment is, on this system (the same as chatterbox-setup.js's venvPython)
+const venvPy = (dir) => (process.platform === 'win32' ? path.join(dir, 'venv', 'Scripts', 'python.exe') : path.join(dir, 'venv', 'bin', 'python3'));
 
 test('the model to talk with: yours, then the ones she likes, never an embedding or an eyes-only one if another can talk', () => {
   assert.equal(pickInstalled(['gemma3:4b', 'qwen2.5:7b'], 'gemma3:4b'), 'gemma3:4b', 'the one in her config, if there');
@@ -92,7 +94,7 @@ function world(overrides = {}) {
   const tools = {
     hasChatterbox: () => state.hasPackage,
     findSystemPython: () => state.systemPython,
-    createVenv: (_sys, dir) => { const py = path.join(dir, 'venv', 'bin', 'python3'); touch(py); touch(path.join(dir, 'venv', 'pyvenv.cfg')); state.hasPackage = false; return py; },
+    createVenv: (_sys, dir) => { const py = venvPy(dir); touch(py); touch(path.join(dir, 'venv', 'pyvenv.cfg')); state.hasPackage = false; return py; },
     installTarget: () => ({ args: ['chatterbox-tts'], label: 'x' }),
     pip: async (_py, _args, onLine) => {
       onLine?.('Collecting torch');
@@ -225,7 +227,7 @@ test.afterEach(() => {
 // a Chatterbox folder next to her with an environment that has the package
 function readyFolder(name) {
   const dir = mk('roots', name);
-  touch(path.join(dir, 'venv', 'bin', 'python3'));
+  touch(venvPy(dir));
   touch(path.join(dir, 'venv', 'pyvenv.cfg'), 'home = /usr/bin');
   return dir;
 }
@@ -812,7 +814,8 @@ test('pip given a signal ends the program and everything it started, and answers
   const cp = require('node:child_process');
   const setup = require('../../src/main/voice/chatterbox-setup.js');
   let child;
-  const spawn = (_cmd, _args, opts) => {
+  const spawn = (cmd, args, opts) => {
+    if (cmd === 'taskkill') return cp.spawn(cmd, args, opts); // (on Windows she ends a program with the real one)
     child = cp.spawn(process.execPath, ['-e', 'setInterval(() => console.log("Downloading torch-2.6.0 (2.5 GB)"), 20)'], { ...opts, stdio: ['ignore', 'pipe', 'pipe'] });
     return child;
   };

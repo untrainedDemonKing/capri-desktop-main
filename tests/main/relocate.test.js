@@ -79,12 +79,18 @@ test('copyTree: files, folders, links as links, big ones in pieces with the byte
   put(path.join(from, 'a', 'one.txt'), 100);
   put(path.join(from, 'a', 'b', 'two.txt'), 200);
   put(path.join(from, 'big.bin'), 33 * 1048576);
-  fs.symlinkSync('a/one.txt', path.join(from, 'link'));
+  let linked = true;
+  try {
+    fs.symlinkSync('a/one.txt', path.join(from, 'link'));
+  } catch (err) {
+    if (err.code !== 'EPERM') throw err;
+    linked = false; // (Windows without developer mode does not let a program make a link)
+  }
   const to = path.join(fresh('dst'), 'copy');
   let bytes = 0;
   await copyTree(from, to, { onBytes: (k) => { bytes += k; } });
-  assert.deepEqual(tree(to), ['a/b/two.txt', 'a/one.txt', 'big.bin', 'link']);
-  assert.equal(fs.lstatSync(path.join(to, 'link')).isSymbolicLink(), true);
+  assert.deepEqual(tree(to), linked ? ['a/b/two.txt', 'a/one.txt', 'big.bin', 'link'] : ['a/b/two.txt', 'a/one.txt', 'big.bin']);
+  if (linked) assert.equal(fs.lstatSync(path.join(to, 'link')).isSymbolicLink(), true);
   assert.equal(fs.statSync(path.join(to, 'big.bin')).size, 33 * 1048576);
   assert.equal(bytes, 100 + 200 + 33 * 1048576);
   await assert.rejects(() => copyTree(from, path.join(fresh('dst'), 'x'), { signal: AbortSignal.abort() }), { name: 'AbortError' });

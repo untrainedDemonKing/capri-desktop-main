@@ -8,7 +8,11 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-public static class CapriTargetDpi { [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); }
+public static class CapriTargetDpi {
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int cmd);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+}
 '@
 [void][CapriTargetDpi]::SetProcessDPIAware()
 [System.Windows.Forms.Application]::EnableVisualStyles()
@@ -41,7 +45,8 @@ $two.Left = 260; $two.Top = 180; $two.Width = 200; $two.Height = 50
 $two.Add_Click({ $script:clicksRu++ })
 $form.Controls.Add($two)
 
-function Where($c) {
+# (not called Where: that is a name PowerShell already has, for Where-Object, and a name it has wins over a function)
+function Rect($c) {
   $p = $c.PointToScreen([System.Drawing.Point]::Empty)
   return @{ x = $p.X; y = $p.Y; w = $c.Width; h = $c.Height }
 }
@@ -54,9 +59,10 @@ function Save {
       clicks = $script:clicks; clicksRu = $script:clicksRu
       text = $box.Text; selected = $box.SelectionLength
       windowState = $form.WindowState.ToString(); inFront = [bool]$form.ContainsFocus
+      visible = [bool][CapriTargetDpi]::IsWindowVisible($form.Handle); title = $form.Text
       cursor = @{ x = $cursor.X; y = $cursor.Y }
       form = @{ x = $form.Left; y = $form.Top; w = $form.Width; h = $form.Height }
-      one = (Where $one); two = (Where $two); ruName = $ru
+      one = (Rect $one); two = (Rect $two); ruName = $ru
     }
     $json = ConvertTo-Json -Compress -Depth 4 -InputObject $o
     $tmp = "$State.tmp"
@@ -75,5 +81,7 @@ $stop.Interval = 120000
 $stop.Add_Tick({ $form.Close() })
 $stop.Start()
 
-$form.Add_Shown({ $form.Activate(); $box.Focus(); Save })
+# (a program started with its window hidden, as the check starts this one, has the first showing of its first window turned into
+# "hidden": the window is shown once more)
+$form.Add_Shown({ [void][CapriTargetDpi]::ShowWindow($form.Handle, 5); $form.Activate(); $box.Focus(); Save })
 [System.Windows.Forms.Application]::Run($form)

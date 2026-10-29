@@ -24,7 +24,8 @@ test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 const within = (ms, promise) => Promise.race([promise, new Promise((_r, reject) => setTimeout(() => reject(new Error(`still going after ${ms} ms`)), ms))]);
 const gone = (child) => new Promise((resolve) => (child.exitCode !== null || child.signalCode ? resolve() : child.once('exit', resolve)));
 // a program that prints every few ms and never ends by itself
-const chatty = (holder) => (_cmd, _args, opts) => {
+const chatty = (holder) => (cmd, args, opts) => {
+  if (cmd === 'taskkill') return cp.spawn(cmd, args, opts); // (on Windows she ends a program with the real one; it is not another chatty program)
   holder.child = cp.spawn(process.execPath, ['-e', 'setInterval(() => console.log("Downloading torch (2.5 GB)"), 15)'], { ...opts, stdio: ['ignore', 'pipe', 'pipe'] });
   return holder.child;
 };

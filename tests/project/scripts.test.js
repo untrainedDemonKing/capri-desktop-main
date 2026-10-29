@@ -57,3 +57,20 @@ test('the check\'s own launchers are plain ASCII (they only start Node: the word
   const kit = files.filter((f) => /selftest[\\/].*\.(cmd|bat)$/i.test(f));
   for (const f of kit) assert.ok(ascii(fs.readFileSync(f)), `${rel(f)} has letters beyond ASCII`);
 });
+
+// A function in PowerShell cannot take the name of an alias it already has: the alias wins, and the call goes to something else (a
+// helper called Where gave back nothing at all, because Where is Where-Object). So no function of ours is named like a usual alias.
+test('no PowerShell function is named like one of PowerShell\'s own aliases', () => {
+  const aliases = new Set(['where', 'foreach', 'select', 'sort', 'group', 'measure', 'compare', 'tee', 'cat', 'cd', 'cp', 'copy', 'cls', 'clear', 'del', 'dir', 'echo', 'ls',
+    'mv', 'move', 'pwd', 'rm', 'rmdir', 'sleep', 'type', 'kill', 'ps', 'gc', 'gi', 'gl', 'gm', 'gp', 'gu', 'h', 'history', 'man', 'md', 'mkdir', 'more', 'popd', 'pushd', 'r', 'ri',
+    'rv', 'sal', 'saps', 'sc', 'si', 'sl', 'sp', 'start', 'sv', 'write', 'ft', 'fl', 'fw', 'ac', 'curl', 'wget', 'diff', 'fc', 'iex', 'ii', 'irm', 'iwr', 'gcm', 'gal', 'gsv', 'ogv',
+    'select', 'sleep', 'ise', 'gwmi', 'icm', 'ipmo', 'rmo', 'nal', 'oh', 'lp', 'compare', 'cnsn', 'etsn', 'gjb', 'rjb', 'sajb', 'wjb']);
+  const bad = [];
+  const scan = (name, text) => {
+    for (const m of text.matchAll(/\bfunction\s+([A-Za-z][\w-]*)/g)) if (aliases.has(m[1].toLowerCase())) bad.push(`${name}: function ${m[1]}`);
+  };
+  for (const f of files.filter((x) => x.endsWith('.ps1'))) scan(rel(f), fs.readFileSync(f, 'utf8'));
+  // (control.js holds PowerShell in its String.raw blocks, among JavaScript functions with names of their own)
+  for (const m of fs.readFileSync(path.join(ROOT, 'src', 'main', 'system', 'control.js'), 'utf8').matchAll(/String\.raw`([\s\S]*?)`;/g)) scan('control.js', m[1]);
+  assert.deepEqual(bad, []);
+});

@@ -26,7 +26,7 @@ async function runFile(ctx, file) {
   }
   env.NODE_NO_WARNINGS = '1';
   delete env.NODE_TEST_CONTEXT; // (set when this check is itself run by node --test: the runner below must start as a runner)
-  const r = await exec(process.execPath, [path.join(__dirname, 'test-worker.js'), file], { cwd: ctx.source, env, timeout: 240000 });
+  const r = await exec(process.execPath, [path.join(__dirname, 'test-worker.js'), file], { cwd: ctx.source, env, timeout: 150000 });
   const tally = { file: rel, pass: 0, fail: 0, skip: 0, ms: r.ms, failures: [], crashed: '' };
   const lines = [];
   let ended = false;
@@ -47,7 +47,7 @@ async function runFile(ctx, file) {
     else if (e.t === 'end') ended = true;
   }
   if (!ended && !tally.crashed) {
-    tally.crashed = r.timedOut ? 'не уложился во время (4 минуты), остановлен' : `процесс завершился без результата (код ${r.code}${r.error ? `, ${r.error}` : ''})`;
+    tally.crashed = r.timedOut ? 'не уложился во время (2,5 минуты), остановлен' : `процесс завершился без результата (код ${r.code}${r.error ? `, ${r.error}` : ''})`;
   }
   if (r.err.trim()) lines.push(`stderr of the runner:\n${r.err.trim().slice(0, 4000)}`);
   ctx.write(`logs/unit/${safeName(rel)}.log`, `${rel}\n${'='.repeat(rel.length)}\npass ${tally.pass}, fail ${tally.fail}, skipped ${tally.skip}, ${r.ms} ms\n\n${lines.join('\n')}\n`);

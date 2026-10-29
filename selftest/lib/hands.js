@@ -59,6 +59,12 @@ async function run(ctx, deps = {}) {
     killTree(child);
     return;
   }
+  // (a window nobody can see cannot be worked on: if it is hidden, that is the finding, and the rest would only repeat it)
+  if (started.visible === false || !started.one || !started.one.w || !started.two || !started.two.w) {
+    ctx.add('hands', 'Тестовое окно открылось', 'fail', `окно создано, но ${started.visible === false ? 'не показано на экране' : 'у него не определились размеры кнопок'} (${JSON.stringify({ visible: started.visible, one: started.one })})`);
+    killTree(child);
+    return;
+  }
   ctx.add('hands', 'Тестовое окно открылось', 'pass', `${started.form.w}×${started.form.h} в точке ${started.form.x},${started.form.y}`);
   const home = started.cursor;
   const steps = [];
