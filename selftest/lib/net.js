@@ -145,6 +145,17 @@ async function run(ctx) {
     if (Math.abs(skew) > 5) ctx.add('network', 'Часы компьютера идут неправильно', 'warn', `расходятся с интернетом на ${Math.abs(skew)} мин: из-за этого HTTPS может не работать`);
   }
 
+  // the voice model comes from the model hub, whose speed may be nothing like GitHub's
+  const hub = found.find((f) => f.id === 'hf-hub');
+  if (hub && hub.status > 0 && hub.status < 400) {
+    const s = await speed('https://huggingface.co/ResembleAI/chatterbox/resolve/main/t3_cfg.safetensors');
+    if (s) {
+      ctx.facts.hubSpeedMBps = s.mbps;
+      const minutes = Math.round(3200 / Math.max(s.mbps, 0.1) / 60);
+      ctx.add('network', 'Скорость с Hugging Face (модель голоса ~3,2 ГБ)', minutes > 25 ? 'warn' : 'info', `${s.mbps} МБ/с: модель скачается примерно за ${minutes} мин`);
+    }
+  }
+
   const zip = found.find((f) => f.id === 'whisper-zip');
   if (zip && zip.status > 0 && zip.status < 400) {
     const s = await speed(zip.url);

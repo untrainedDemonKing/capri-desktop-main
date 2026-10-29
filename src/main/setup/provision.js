@@ -38,7 +38,7 @@ const STEPS = [
   ['pp-find', 'voice'], ['pp-voice', 'voice'], ['pp-run', 'voice'],
   ['ws-find', 'ears'], ['ws-model', 'ears'], ['ws-run', 'ears'],
 ];
-const CB_MODEL_WAIT = 20 * 60 * 1000;
+const CB_MODEL_WAIT = 3.5 * 60 * 60 * 1000; // (the server gives up by itself when nothing happens, chatterbox.js: this is only the end of it all)
 // about how much pip fetches for the voice, to show how far it is before it says (the packages of chatterbox-tts; then the torch for a graphics card)
 const PIP_PACKAGES_BYTES = 0.7e9;
 const PIP_CARD_BYTES = 2.7e9;
@@ -742,7 +742,7 @@ class Provision extends EventEmitter {
       }
       throw err;
     }
-    this.fail('cb-model', this.t('cbFailed', { error: 'timeout' }), ['retry'], chatterbox.status().log);
+    this.fail('cb-model', this.t('cbFailed', { error: chatterbox.status().error || 'timeout' }), ['retry'], chatterbox.status().log);
   }
 
   // how pip is run: ended by "Stop", and working in the temp folder of the place she was given (when you picked one)

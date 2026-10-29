@@ -21,7 +21,11 @@ const LOG_LINES = 40;
 // small): the bar of its download is how much of it is in the cache of the model hub, and the real size is taken
 // when a download bar of the hub says a file is larger
 const MODEL_BYTES = 3.2e9;
-const START_TIMEOUT = 15 * 60 * 1000; // the first start downloads the model (a few GB)
+// The first start downloads the model (a few GB, which on a slow line takes more than the half hour): it is given up on when nothing has
+// happened for STALL_MS (no line from the server, no more of the model in the cache), or in the end after HARD_MS, not after a fixed time.
+const STALL_MS = 10 * 60 * 1000;
+const HARD_MS = 3 * 60 * 60 * 1000;
+const LOG_FILE_MAX = 1.5e6; // bytes of the server's log kept in its file
 // folders that are never worth looking into when searching for the Python
 const SKIP = new Set(['node_modules', '.git', 'site-packages', '__pycache__', 'lib', 'lib64', 'include', 'share', 'models', 'weights', 'outputs', 'cache', '.cache', 'dist', 'build', 'docs']);
 const PREFER = ['venv', '.venv', 'env', '.env', 'python_embeded', 'python_embedded', 'python', 'runtime'];
@@ -184,9 +188,14 @@ function serverScript() {
 
 class Chatterbox extends EventEmitter {
   // `voices`: folders with recordings of voices that are hers (voice-sample.js), beside the ones found in the Chatterbox folder
-  constructor({ spawn = cp.spawn, fetchFn = (...a) => fetch(...a), fsx = fs, platform = process.platform, script = serverScript(), port = freePort, roots = () => [], voices = () => [], pollMs = 1000 } = {}) {
+  // `logFile`: where the server's own words are kept as they come ('' for nowhere), for the report that says why it did not start
+  constructor({
+    spawn = cp.spawn, fetchFn = (...a) => fetch(...a), fsx = fs, platform = process.platform, script = serverScript(), port = freePort, roots = () => [], voices = () => [], pollMs = 1000,
+    stallMs = STALL_MS, hardMs = HARD_MS, logFile = () => '',
+  } = {}) {
     super();
-    Object.assign(this, { spawn, fetchFn, fsx, platform, script, portFn: port, rootsFn: roots, voicesFn: voices, pollMs });
+    Object.assign(this, { spawn, fetchFn, fsx, platform, script, portFn: port, rootsFn: roots, voicesFn: voices, pollMs, stallMs, hardMs, logFileFn: logFile });
+    this.lastActivity = 0; // when the server last said something or more of the model came
     this.proc = null;
     this.phase = 'off'; // 'off', 'starting', 'ready', 'failed'
     this.error = '';
@@ -214,6 +223,7 @@ class Chatterbox extends EventEmitter {
   watchModel() {
     const { bytes, incomplete } = modelCacheBytes(this.cache, { fsx: this.fsx });
     const growing = bytes > this.bytes;
+    if (growing) this.lastActivity = Date.now();
     const was = this.progress;
     this.bytes = bytes;
     if (bytes > this.expect) this.expect = bytes * 1.05; // (larger than thought: the bar does not run over)
@@ -275,6 +285,8 @@ class Chatterbox extends EventEmitter {
     this.activity = '';
     this.device = '';
     this.started = Date.now();
+    this.lastActivity = this.started;
+    this.keepLog(`${new Date().toISOString()} starting the voice server (${cfg.chatterboxDevice || 'auto'})`, true);
     this.set('starting');
     const dir = findFolder(cfg, this.rootsFn(), { fsx: this.fsx });
     if (String(cfg.chatterboxDir || '').trim() && !dir) return this.fail('The Chatterbox folder is not there: ' + cfg.chatterboxDir, 'nofolder');
@@ -318,6 +330,8 @@ class Chatterbox extends EventEmitter {
       for (const line of String(chunk).split(/[\r\n]+/)) {
         const text = line.trim();
         if (!text) continue;
+        this.lastActivity = Date.now();
+        this.keepLog(text.slice(0, 400));
         this.log.push(text.slice(0, 240));
         if (this.log.length > LOG_LINES) this.log.shift();
         // the model hub's download bars: "model.safetensors:  45%|████ | 1.2G/3.0G"
@@ -353,6 +367,33 @@ class Chatterbox extends EventEmitter {
     return undefined;
   }
 
+  // what it had got to, for the words of a failure: how much of the model is in the cache and the last thing the server said
+  trail() {
+    const mb = Math.round(this.bytes / 1e6);
+    const last = this.log.length ? this.log[this.log.length - 1].slice(0, 120) : '';
+    return ` (${this.bytes ? `${mb} MB of the model are in the cache` : 'none of the model is in the cache'}${last ? `; the server last said: ${last}` : '; the server said nothing'})`;
+  }
+
+  // The server's words, kept in a file as they come (the first line of a start empties it): the log of the failure that the report is
+  // made from, since what stays in memory is the last few lines. Never throws.
+  keepLog(text, fresh = false) {
+    const file = this.logFileFn();
+    if (!file) return;
+    try {
+      if (fresh) {
+        this.fsx.mkdirSync(path.dirname(file), { recursive: true });
+        this.fsx.writeFileSync(file, `${text}\n`);
+        this.written = text.length;
+        return;
+      }
+      if ((this.written || 0) > LOG_FILE_MAX) return;
+      this.written = (this.written || 0) + text.length + 1;
+      this.fsx.appendFileSync(file, `${text}\n`);
+    } catch {
+      // nowhere to write it
+    }
+  }
+
   // the line of the server's log that says what went wrong
   lastProblem() {
     const hit = [...this.log].reverse().find((l) => /(Error|Exception|Traceback|CUDA|out of memory|No module)/i.test(l));
@@ -361,8 +402,10 @@ class Chatterbox extends EventEmitter {
 
   async poll(proc) {
     if (this.proc !== proc) return;
-    if (Date.now() - this.started > START_TIMEOUT) return this.fail('the model did not load in 15 minutes', 'timeout');
     this.watchModel();
+    const now = Date.now();
+    if (now - this.started > this.hardMs) return this.fail(`the model did not load in ${Math.round(this.hardMs / 3600000)} hours${this.trail()}`, 'timeout');
+    if (now - this.lastActivity > this.stallMs) return this.fail(`the model did not load: nothing happened for ${Math.round(this.stallMs / 60000)} minutes${this.trail()}`, 'timeout');
     try {
       const res = await this.fetchFn(`${this.url.replace(/\/v1$/, '')}/health`, { signal: AbortSignal.timeout(1500) });
       const body = await res.json();

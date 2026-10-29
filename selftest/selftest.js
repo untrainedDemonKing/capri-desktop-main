@@ -50,6 +50,7 @@ async function main() {
   const hands = require('./lib/hands');
   const net = require('./lib/net');
   const app = require('./lib/app');
+  const capriLogs = require('./lib/capri-logs');
   const real = require('./lib/real');
   const report = require('./lib/report');
 
@@ -61,6 +62,7 @@ async function main() {
     ctx.wants('unit') && ['Тесты кода', () => unit.run(ctx), 30],
     ctx.wants('network') && ['Сеть: откуда Капри всё скачивает', () => net.run(ctx), 5],
     ctx.wants('app') && ['Сама Капри', () => app.run(ctx), 12],
+    ctx.wants('logs') && ['Журналы Капри и то, что она скачала (голос Chatterbox)', () => capriLogs.run(ctx), 10],
     ctx.full && ctx.wants('real') && ['Настоящая установка распознавания речи и голоса', () => real.run(ctx), 25],
   ].filter(Boolean);
   for (const [i, [title, fn, limit]] of parts.entries()) await ctx.phase(`${i + 1}/${parts.length}. ${title}`, fn, limit);

@@ -334,6 +334,76 @@ test('end to end: a model that cannot load is a clear failure in her menu, not a
   }
 });
 
+// a server that is a stand-in: says what it is told to, never listens, and is ended by kill()
+function standIn() {
+  const { EventEmitter } = require('node:events');
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.stdin = { end() {}, on() {} };
+  child.pid = 4242;
+  child.kill = () => { child.killed = true; };
+  return child;
+}
+const waitUntil = async (test, ms = 3000) => {
+  const end = Date.now() + ms;
+  while (Date.now() < end && !test()) await new Promise((r) => setTimeout(r, 15));
+  return test();
+};
+
+test('the first start is given up on when nothing happens for a while (not after a fixed time): a server that says things is waited for, a silent one is not, and the failure says what it had got to', async () => {
+  const dir = mk('stall', 'Chatterbox');
+  touch(path.join(dir, 'venv', 'Scripts', 'python.exe'));
+  const logFile = path.join(tmp, 'stall', 'diagnostics', 'chatterbox-server.log');
+  const children = [];
+  const make = () => new Chatterbox({
+    platform: 'win32', roots: () => [path.join(tmp, 'stall')], pollMs: 20, stallMs: 400, hardMs: 20000, port: async () => 8999, logFile: () => logFile,
+    fetchFn: async () => { throw new Error('not listening'); },
+    spawn: (cmd) => { if (cmd === 'taskkill') return standIn(); const c = standIn(); children.push(c); return c; },
+  });
+
+  // a server that keeps saying what it does (a download, its bars) is not given up on, though it takes longer than the stall time
+  const busy = make();
+  await busy.sync({ ttsEngine: 'chatterbox', chatterboxDir: dir });
+  const talk = setInterval(() => children[0].stderr.emit('data', 'model.safetensors:  45%|████ | 1.2G/3.0G\n'), 100);
+  await new Promise((r) => setTimeout(r, 1000));
+  assert.equal(busy.status().phase, 'starting', 'still waited for after more than twice the stall time');
+  clearInterval(talk);
+  // ...and when it goes quiet it is given up on, with words that say what it had got to
+  assert.ok(await waitUntil(() => busy.status().phase === 'failed'), 'the quiet is the end of it');
+  assert.equal(busy.code, 'timeout');
+  assert.match(busy.status().error, /nothing happened for \d+ minutes/);
+  assert.match(busy.status().error, /the server last said: model\.safetensors/);
+  assert.equal(children[0].killed, undefined, 'it is ended with taskkill on Windows');
+
+  // a server that says nothing at all
+  const mute = make();
+  await mute.sync({ ttsEngine: 'chatterbox', chatterboxDir: dir });
+  assert.ok(await waitUntil(() => mute.status().phase === 'failed'));
+  assert.match(mute.status().error, /none of the model is in the cache; the server said nothing|the server last said/);
+
+  // what the server said is kept in a file, to be read after the failure
+  const kept = fs.readFileSync(logFile, 'utf8');
+  assert.match(kept, /starting the voice server/);
+  assert.doesNotMatch(kept, /1\.2G\/3\.0G/, 'the file is emptied by each start: this is the second one');
+});
+
+test('the words of the server are kept in a file as they come, up to a size', () => {
+  const file = path.join(tmp, 'keep', 'server.log');
+  const cb = new Chatterbox({ logFile: () => file });
+  cb.keepLog('start', true);
+  cb.keepLog('one');
+  cb.keepLog('two');
+  assert.equal(fs.readFileSync(file, 'utf8'), 'start\none\ntwo\n');
+  cb.keepLog('again', true);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'again\n', 'emptied by a start');
+  cb.written = 2e6;
+  cb.keepLog('too much');
+  assert.equal(fs.readFileSync(file, 'utf8'), 'again\n', 'no more once it is large');
+  assert.doesNotThrow(() => new Chatterbox({ logFile: () => path.join(tmp, 'keep', 'server.log', 'no', 'folder') }).keepLog('x', true));
+  assert.doesNotThrow(() => new Chatterbox().keepLog('x', true), 'no file asked for: nothing is written');
+});
+
 test('the torch for a card: the build its driver can run, a newer one for the newest cards, none when the driver is too old', () => {
   const setup = require('../../src/main/voice/chatterbox-setup.js');
   const torch = { version: '2.6.0', audio: '2.6.0', cuda: false };

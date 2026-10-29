@@ -6,11 +6,11 @@
 //                      fetched into a temporary folder and tried (about 200 MB, taken off again), the microphone
 //   --out <folder>     where the results go (default: results/ next to the check)
 //   --capri <file>     Capri.exe to look at, when it is not where the installer puts it
-//   --no-app --no-network --no-unit --no-hands --no-real    leave one part out
+//   --no-app --no-network --no-unit --no-hands --no-real --no-logs    leave one part out
 //   --keep             do not take off what the full check fetched
 //   --yes              do not ask before the full check starts (and do not wait for a key at the end)
 
-const FLAGS = new Set(['quick', 'full', 'keep', 'yes', 'no-app', 'no-network', 'no-unit', 'no-hands', 'no-real', 'help']);
+const FLAGS = new Set(['quick', 'full', 'keep', 'yes', 'no-app', 'no-network', 'no-unit', 'no-hands', 'no-real', 'no-logs', 'help']);
 const VALUED = new Set(['out', 'capri']);
 
 function parseArgs(argv) {
@@ -39,7 +39,7 @@ const HELP = `Проверка Капри
   --full    полная: окно-мишень, скачивание распознавания речи и голоса во временную папку (~200 МБ), микрофон
   --out <папка>   куда сложить результат
   --capri <файл>  путь к Capri.exe, если она стоит не там, где её ставит установщик
-  --no-app --no-network --no-unit --no-hands --no-real   пропустить часть
+  --no-app --no-network --no-unit --no-hands --no-real --no-logs   пропустить часть
   --keep    не удалять скачанное полной проверкой
   --yes     не спрашивать и не ждать нажатия клавиши
 `;

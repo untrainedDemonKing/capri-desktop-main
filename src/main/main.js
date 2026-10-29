@@ -109,7 +109,10 @@ let overlay = null; // her window
 const toOverlay = (channel, payload) => { if (overlay && !overlay.isDestroyed()) overlay.webContents.send(channel, payload); };
 // the recording she was given as her voice, if any (voice-sample.js): in her own data folder
 const voiceSample = createSample({ dir: () => path.join(app.getPath('userData'), 'voices') });
-const chatterbox = new Chatterbox({ roots: placesNextToHer, voices: () => [voiceSample.dir()] });
+// what she keeps for the report of a failure (the Проверка Капри folder reads these two files): the words of the voice server, and what her
+// preparation said, in her data folder
+const diagnosticsDir = () => path.join(app.getPath('userData'), 'diagnostics');
+const chatterbox = new Chatterbox({ roots: placesNextToHer, voices: () => [voiceSample.dir()], logFile: () => path.join(diagnosticsDir(), 'chatterbox-server.log') });
 chatterbox.on('change', (status) => toOverlay('chatterbox:status', status));
 const ollamaHost = new OllamaHost({ roots: placesNextToHer });
 ollamaHost.on('change', (status) => toOverlay('ollama:status', status));
@@ -220,6 +223,12 @@ let prepare = null; // her preparation window (prepare.js), made once the app is
 let hub = null; // her main menu (hub.js), the same
 provision.on('change', (snapshot) => toOverlay('provision:status', snapshot));
 provision.on('finish', async ({ ok, core, plan, attention, profile }) => {
+  try {
+    fs.mkdirSync(diagnosticsDir(), { recursive: true });
+    fs.writeFileSync(path.join(diagnosticsDir(), 'provision.txt'), provision.report());
+  } catch (err) {
+    console.error('[capri] writing her report:', err.message);
+  }
   await refreshModels();
   rebuildTray();
   // (core: her mind and her voice are ready; her ears failing to install is told in the preparation window, and is no reason to keep the rest back)

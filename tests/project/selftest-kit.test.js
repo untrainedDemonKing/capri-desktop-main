@@ -518,3 +518,114 @@ test('a part of the check that hangs is given up on (and what it started is ende
   assert.deepEqual(ctx.results.map((r) => [r.title, r.status]), [['hangs: зависло', 'fail'], ['crashes: сама проверка упала', 'fail'], ['done', 'pass']]);
   assert.match(ctx.results[0].detail, /не закончилось/);
 });
+
+// ---- what Capri herself left, and the state of her voice ----
+
+const logs = lib('capri-logs.js');
+
+function logsCtx() {
+  const ctx = createContext(parseArgs(['--out', path.join(temp(), 'o')]), KIT);
+  ctx.say = () => {};
+  return ctx;
+}
+
+test('her data folder and the folder she fetches into are found by what is in them (the marker, the voice), on any drive of the user', () => {
+  const home = temp();
+  fs.mkdirSync(path.join(home, 'Documents', 'Capri', 'chatterbox'), { recursive: true });
+  fs.mkdirSync(path.join(home, 'Capri'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'Capri', 'capri-folder.json'), '{}');
+  fs.mkdirSync(path.join(home, 'Desktop', 'Capri'), { recursive: true }); // (neither marked nor with a voice: not hers)
+  const found = logs.capriFolders({}, 'linux', home);
+  assert.deepEqual(found.sort(), [path.join(home, 'Capri'), path.join(home, 'Documents', 'Capri')].sort());
+  const data = path.join(home, 'AppData', 'Roaming');
+  fs.mkdirSync(path.join(data, 'Capri'), { recursive: true });
+  assert.deepEqual(logs.dataFolders({ APPDATA: data }, 'win32', home), [path.join(data, 'Capri')]);
+});
+
+test('the cache of the model hub: how much of the voice is there and which files are half fetched', () => {
+  const folder = temp();
+  const blobs = path.join(folder, 'hf_home', 'hub', 'models--ResembleAI--chatterbox', 'blobs');
+  fs.mkdirSync(blobs, { recursive: true });
+  fs.writeFileSync(path.join(blobs, 'aaa'), Buffer.alloc(1000));
+  fs.writeFileSync(path.join(blobs, 'bbb.incomplete'), Buffer.alloc(500));
+  fs.mkdirSync(path.join(folder, 'hf_home', 'hub', 'models--other--thing', 'blobs'), { recursive: true });
+  const [c] = logs.voiceCache(folder, {}, temp());
+  assert.equal(c.bytes, 1500);
+  assert.equal(c.partial.length, 1);
+  assert.equal(c.partial[0].size, 500);
+  assert.deepEqual(logs.voiceCache(temp(), {}, temp()), [], 'no cache: nothing');
+});
+
+test('a torch build is for a card when it holds its binary (same major, minor not above) or code to compile for it (that card or older)', () => {
+  const cu128 = ['sm_50', 'sm_80', 'sm_86', 'sm_90', 'sm_100', 'sm_120', 'compute_120'];
+  const cu124 = ['sm_50', 'sm_80', 'sm_86', 'sm_90'];
+  assert.equal(logs.builtFor(cu128, [12, 0]), true);
+  assert.equal(logs.builtFor(cu124, [12, 0]), false, 'the newest card on a build from before it: no kernels');
+  assert.equal(logs.builtFor(cu124, [8, 9]), true, 'an 8.9 card runs the 8.6 binary');
+  assert.equal(logs.builtFor(['sm_86'], [8, 0]), false);
+  assert.equal(logs.builtFor([], [12, 0]), true, 'nothing said: nothing against');
+});
+
+test('what her preparation and her voice server kept is copied, and a failed step and the server\'s complaints are findings of their own', async () => {
+  const data = temp();
+  const dir = path.join(data, 'diagnostics');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'provision.txt'), [
+    'Capri preparation, 2026-10-29T17:00:00.000Z',
+    '[done] cb-folder: Папка: D:\\Capri\\chatterbox',
+    '[failed] cb-model: загрузка',
+    '    error: Chatterbox не запустился: the model did not load: nothing happened for 10 minutes (1900 MB of the model are in the cache)',
+    '    | loading the model on cuda',
+  ].join('\n'));
+  fs.writeFileSync(path.join(dir, 'chatterbox-server.log'), 'loading the model on cuda\nTraceback (most recent call last):\nRuntimeError: CUDA error: no kernel image is available\n');
+  const ctx = logsCtx();
+  await logs.diagnostics(ctx, [data]);
+  const fails = ctx.results.filter((r) => r.status === 'fail');
+  assert.equal(fails.length, 1);
+  assert.match(fails[0].title, /шаг «cb-model»/);
+  assert.match(fails[0].detail, /1900 MB of the model/);
+  assert.ok(ctx.results.some((r) => /сообщал об ошибках/.test(r.title) && /no kernel image/.test(r.detail)));
+  assert.match(fs.readFileSync(ctx.path('logs/capri/chatterbox-server.log'), 'utf8'), /Traceback/);
+  assert.ok(fs.existsSync(ctx.path('logs/capri/provision.txt')));
+
+  const none = logsCtx();
+  await logs.diagnostics(none, []);
+  assert.equal(none.results[0].status, 'info', 'no files yet is not a failure');
+});
+
+test('the Python of her voice is asked about the torch: a build with no kernels for the card is the finding, a good one is not, a Python that does not answer is told', async () => {
+  const root = temp();
+  const folder = path.join(root, 'Capri');
+  const py = path.join(folder, 'chatterbox', 'venv', process.platform === 'win32' ? 'Scripts' : 'bin');
+  fs.mkdirSync(py, { recursive: true });
+  const exe = path.join(py, process.platform === 'win32' ? 'python.exe' : 'python3');
+  fs.writeFileSync(exe, '');
+  const probe = (info) => async (file, args) => {
+    assert.equal(file, exe);
+    assert.deepEqual(args.slice(0, 2), ['-I', '-c'], 'isolated: its own environment, nothing of the user\'s');
+    return { out: `${JSON.stringify(info)}\n`, err: '', code: 0 };
+  };
+  const base = { python: '3.11.9', torch: '2.6.0+cu124', cuda_build: '12.4', torchaudio: '2.6.0', chatterbox_package: true, cuda_available: true, device: 'NVIDIA GeForce RTX 5070', capability: [12, 0] };
+
+  const bad = logsCtx();
+  await logs.voice(bad, [folder], probe({ ...base, arch_list: ['sm_80', 'sm_86', 'sm_90'], kernel_ok: false }));
+  const miss = bad.results.find((r) => /подходит этой видеокарте/.test(r.title));
+  assert.equal(miss.status, 'fail');
+  assert.match(miss.detail, /no kernel image/);
+
+  const good = logsCtx();
+  await logs.voice(good, [folder], probe({ ...base, torch: '2.7.1+cu128', cuda_build: '12.8', arch_list: ['sm_90', 'sm_120', 'compute_120'], kernel_ok: true }));
+  assert.equal(good.results.find((r) => /подходит этой видеокарте/.test(r.title)).status, 'pass');
+
+  const cpu = logsCtx();
+  await logs.voice(cpu, [folder], probe({ ...base, cuda_available: false }));
+  assert.equal(cpu.results.find((r) => /не видит видеокарту/.test(r.title)).status, 'warn');
+
+  const silent = logsCtx();
+  await logs.voice(silent, [folder], async () => ({ out: '', err: 'ModuleNotFoundError', code: 1 }));
+  assert.equal(silent.results.find((r) => /Python и torch отвечают/.test(r.title)).status, 'fail');
+
+  const absent = logsCtx();
+  await logs.voice(absent, [], async () => { throw new Error('must not run'); });
+  assert.equal(absent.results[0].status, 'info');
+});
