@@ -13,40 +13,40 @@ const {
 
 const config = require('./config');
 const { TRAY, LANGS } = require('./labels');
-const { createBridge } = require('./bridge');
-const { startWindowWatch } = require('./windows');
-const { createMover } = require('./mover');
-const llm = require('./llm');
-const setup = require('./setup');
-const apps = require('./apps');
-const launch = require('./launch');
-const web = require('./web');
-const tts = require('./tts');
-const { Chatterbox, findPython } = require('./chatterbox');
-const chatterboxSetup = require('./chatterbox-setup');
-const { Piper } = require('./piper');
-const hardware = require('./hardware');
-const { needsRaise } = require('./stacking');
-const { OllamaHost } = require('./ollama-host');
-const ollama = require('./ollama');
-const tuner = require('./tune');
-const { createSample } = require('./voice-sample');
-const { Provision } = require('./provision');
-const { createInstalled } = require('./installed');
-const { createFolder } = require('./downloads');
-const { Relocate } = require('./relocate');
-const { Cleanup } = require('./cleanup');
-const nodeCheck = require('./node-check');
-const { createPrepare } = require('./prepare');
-const { createHub } = require('./hub');
-const stt = require('./stt');
-const vision = require('./screen');
-const control = require('./control');
-const { startMediaWatch } = require('./media');
-const { ASSISTANTS, assistant } = require('./assistants');
+const { createBridge } = require('./system/bridge');
+const { startWindowWatch } = require('./system/windows');
+const { createMover } = require('./system/mover');
+const llm = require('./ai/llm');
+const setup = require('./setup/setup');
+const apps = require('./system/apps');
+const launch = require('./system/launch');
+const web = require('./system/web');
+const tts = require('./voice/tts');
+const { Chatterbox, findPython } = require('./voice/chatterbox');
+const chatterboxSetup = require('./voice/chatterbox-setup');
+const { Piper } = require('./voice/piper');
+const hardware = require('./setup/hardware');
+const { needsRaise } = require('./system/stacking');
+const { OllamaHost } = require('./ai/ollama-host');
+const ollama = require('./ai/ollama');
+const tuner = require('./ai/tune');
+const { createSample } = require('./voice/voice-sample');
+const { Provision } = require('./setup/provision');
+const { createInstalled } = require('./disk/installed');
+const { createFolder } = require('./disk/downloads');
+const { Relocate } = require('./disk/relocate');
+const { Cleanup } = require('./disk/cleanup');
+const nodeCheck = require('./setup/node-check');
+const { createPrepare } = require('./dialogs/prepare');
+const { createHub } = require('./dialogs/hub');
+const stt = require('./voice/stt');
+const vision = require('./system/screen');
+const control = require('./system/control');
+const { startMediaWatch } = require('./system/media');
+const { ASSISTANTS, assistant } = require('./ai/assistants');
 const activeAssistant = () => assistant(config.load().assistant); // Claude Code or Codex
 const activeHooks = () => activeAssistant().hooks;
-const demoSteps = require('../../scripts/demo-sequence');
+const demoSteps = require('../../scripts/dev/demo-sequence');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const DEV = process.argv.includes('--dev');
@@ -356,7 +356,7 @@ function createOverlay() {
     type: process.platform === 'win32' ? 'toolbar' : undefined,
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, '..', 'preload.js'),
+      preload: path.join(__dirname, '..', 'preload', 'overlay.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

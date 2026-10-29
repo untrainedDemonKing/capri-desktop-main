@@ -6,7 +6,7 @@ both arms can be animated. The canvas is widened so the mirrored hand fits.
 
     python tools/build-sprite.py [--preview out.png]
 
-Needs Pillow. Keep the masks below in sync with src/renderer/js/sprite.js.
+Needs Pillow. Keep the masks below in sync with src/renderer/js/body/sprite.js.
 """
 import sys
 from pathlib import Path

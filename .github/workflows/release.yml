@@ -1,6 +1,6 @@
 # Выпуск релиза: проверяет код, собирает установщики Windows (64-битный и 32-битный) и публикует релиз на GitHub.
 # Запуск вручную: вкладка Actions › Release › Run workflow. Тег по умолчанию — v и версия из package.json
-# (0.6.0 → v0.6.0). Описание релиза собирает scripts/release-notes.js, «Что нового» берётся из .github/RELEASE_NEWS.md.
+# (0.6.0 → v0.6.0). Описание релиза собирает scripts/release/release-notes.js, «Что нового» берётся из .github/RELEASE_NEWS.md.
 name: Release
 
 on:
@@ -92,7 +92,7 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           ls -l installers
-          node scripts/release-notes.js installers > release-notes.md
+          node scripts/release/release-notes.js installers > release-notes.md
       - name: Создать релиз
         env:
           GH_TOKEN: ${{ github.token }}
