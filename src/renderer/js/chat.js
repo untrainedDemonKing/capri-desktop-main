@@ -10,15 +10,32 @@ import { ASSISTANT_NAMES } from './lines.js';
 import { askedTheme } from './themes.js';
 import { lifeLines } from './lines-life.js';
 import { FORGET_ME } from './bond.js';
+import { languageOf } from './tongue.js';
 
 const REMEMBER = 20; // messages she has in mind when answering
 const KEEP = 60;     // messages she remembers across restarts (memory.json)
-// her language, where small models need it: how she says "we" (else it's in English), and the last line
-// of her prompt, in that language (they drift into the English of everything above it)
+// Her language, where small models need it. She answers in the language you write or speak to her in (tongue.js),
+// whatever her menus are set to, and small models drift into the English of everything else in her prompt and of her
+// earlier answers, so it is said three times: first in her prompt, last in her prompt, and in a note on your message.
+// we: how she says "we" (else it's in English).
 const IN_LANGUAGE = {
-  en: { we: '', last: 'Write everything in English, unless the user writes to you in another language: then in theirs.' },
-  ru: { we: '"мы" in Russian', last: 'Пиши всё по-русски, если только пользователь не пишет тебе на другом языке: тогда на его языке. По-английски остаются только словечки Найт-Сити, никогда не целые фразы.' },
+  en: {
+    we: '',
+    first: 'Language: answer in English only, not a word in another language (unless they ask for a translation or an example in another language).',
+    last: 'Once more: the whole answer in English, even if the answers above were in another language.',
+    note: '[Reply in English.]',
+  },
+  ru: {
+    we: '"мы" in Russian',
+    first: 'ЯЗЫК: отвечай только по-русски, русскими буквами, ни одного английского предложения (кроме случая, когда пользователь прямо просит перевод или пример на английском). Словечки Найт-Сити по-русски: чумба, нова, гонк, флэтлайн.',
+    last: 'Ещё раз: весь ответ по-русски, русскими буквами, даже если выше или в прошлых ответах было по-английски.',
+    note: '[Ответь по-русски.]',
+  },
 };
+// (a model sometimes repeats the note at the start of its answer)
+const NOTE_ECHO = /^\s*\[(?:Ответь по-русски|Reply in English)\.?\]\s*/i;
+// you ask for English words (a translation, an example, how to say it): then her English is what you asked for
+const ASKS_ENGLISH = /англ|english|translat|перев[еёо]д|переведи|по-английски/i;
 const STAY_MS = 10 * 60 * 1000; // no wandering off mid-conversation
 const LOADING_AFTER_MS = 5000;
 const APPS_FRESH = 20000;      // the list of open apps is looked up at most this often
@@ -243,6 +260,9 @@ export class Chat {
     const id = Date.now();
     this.turn = id;
     this.answer = '';
+    // the language she answers in: the one you wrote in (the menus' when it cannot be told), and whether English words are what you asked for
+    this.speak = languageOf(text, this.brain.lang);
+    this.wantsEnglish = this.speak === 'ru' && ASKS_ENGLISH.test(text);
     this.history.push({ role: 'user', content: text });
     this.speech?.stop(); // she stops talking to listen
     // how it makes her feel, shown right away: she bristles, giggles, blushes... (heart.js)
@@ -266,14 +286,23 @@ export class Chat {
     }
     await Promise.race([this.appsReady, new Promise((r) => setTimeout(r, 1500))]);
     const messages = [{ role: 'system', content: this.persona(text) }, ...this.history.slice(-REMEMBER)];
+    // the note on your message, next to where the model writes (a copy: the note is not kept in her memory of the talk)
+    const noted = IN_LANGUAGE[this.speak] || IN_LANGUAGE.en;
+    const mine = messages.length - 1;
+    if (messages[mine].role === 'user' && messages[mine].content === text) messages[mine] = { ...messages[mine], content: `${text}\n\n${noted.note}` };
     // nothing yet after a few seconds: Ollama is still loading the model (the first answer after a start),
     // or Claude Code is at work
     const wait = this.agent ? this.t.working : this.cold ? this.t.loading : null;
     const slow = wait && setTimeout(() => {
       if (this.turn === id && !this.answer) this.panel.stream(wait);
     }, LOADING_AFTER_MS);
-    const res = await this.host.chatSend({ id, messages });
+    let res = await this.host.chatSend({ id, messages, lang: this.speak });
     clearTimeout(slow);
+    // a small model answers in English to Russian words now and then, whatever it was told: said again in Russian
+    if (res.ok && this.turn === id && this.strays(res.text)) {
+      const fixed = await this.restate(res.text, id);
+      if (fixed) res = { ...res, text: fixed };
+    }
     if (this.turn !== id) {
       // closed meanwhile: your message goes too, or the next answer would answer it as well
       if (this.history.at(-1)?.content === text) this.history.pop();
@@ -639,16 +668,55 @@ export class Chat {
   onDelta(id, piece) {
     if (id !== this.turn) return;
     this.answer += piece;
+    if (this.holds(this.answer)) return; // (it starts in English to your Russian: she waits to see, and says it in Russian if it stays so)
     this.panel.stream(clean(this.answer));
     this.voice.play('blip'); // her blips as the words come in
+  }
+
+  // Whether an answer is in English to your Russian (three words are enough to tell).
+  strays(answer) {
+    if (!this.mustBeRussian()) return false;
+    const said = clean(answer);
+    return languageOf(said, 'ru') === 'en' && (said.match(/[A-Za-z]{2,}/g) || []).length >= 3;
+  }
+
+  // Whether what has come in of an answer is not shown yet: it has English words and no Russian one, so it may be the
+  // English one (a Russian answer that starts with "Choom," shows a moment later, with the first Russian word).
+  holds(answer) {
+    if (!this.mustBeRussian()) return false;
+    const said = clean(answer);
+    return /[A-Za-z]{2,}/.test(said) && !/[\u0400-\u04FF]/.test(said);
+  }
+
+  // (not for Claude Code, which answers as it does, nor when you asked for English words)
+  mustBeRussian() {
+    return !this.agent && this.speak === 'ru' && !this.wantsEnglish;
+  }
+
+  // The same answer in Russian, said by the same model (a translation it does well even when it answers badly): '' when
+  // it cannot, and then the answer stays as it was. Her tags (the mood, an app to open) are kept as they were.
+  async restate(answer, turn) {
+    const tags = answer.match(/\[\[[^\]]*\]\]/g) || [];
+    const plain = clean(answer);
+    if (!plain) return '';
+    const messages = [
+      { role: 'system', content: 'Переведи сообщение на русский язык. Сохрани настроение и манеру: дерзкая, тёплая, немного хулиганит. Только перевод, одно-три коротких предложения, без пояснений и кавычек. Словечки Найт-Сити по-русски: чумба, нова, гонк, флэтлайн.' },
+      { role: 'user', content: plain },
+    ];
+    const res = await this.host.chatSend({ id: turn + 1, messages, lang: 'ru' }).catch(() => null);
+    const said = res?.ok ? clean(res.text) : '';
+    if (!said || languageOf(said, 'ru') !== 'ru') return '';
+    const feeling = tags.find((t) => MOOD_TAG.test(t));
+    return [feeling, said, ...tags.filter((t) => t !== feeling)].filter(Boolean).join(' ');
   }
 
   // Who she is, how she talks, and what's going on right now.
   persona(text = '') {
     const assistant = ASSISTANT_NAMES[this.brain.assistant] || 'Claude Code';
     const watching = this.brain.watching; // else Claude Code isn't part of her life here
-    const lang = IN_LANGUAGE[this.brain.lang] || IN_LANGUAGE.en;
+    const lang = IN_LANGUAGE[languageOf(text, this.brain.lang)] || IN_LANGUAGE.en;
     return [
+      lang.first,
       `You are Capri, the personality construct from Project Capricorn (Cyberpunk: Edgerunners, season 2): dozens of minds fused into one digital ghost, so now and then you speak as "we"${lang.we ? ` (${lang.we})` : ''}.`,
       watching
         ? `You live on the user's desktop as a small glitchy figure and keep an eye on ${assistant}, their AI coding assistant, for them. Only talk about ${assistant} when the user asks about it or about their work.`
@@ -678,6 +746,7 @@ export class Chat {
 export function clean(text) {
   return String(text)
     .replace(/<think>[\s\S]*?(<\/think>|$)/g, '')
+    .replace(NOTE_ECHO, '')
     .replace(/\[\[[^\]]*(\]\]|$)/g, '') // her tags (read from the raw answer, never shown)
     .replace(/^\s*\[\s*(?:mood|настроение)\s*:[^\]]*\]?\s*/i, '') // her mood tag, written sloppily
     .replace(/\*\*([^*\n]+)\*\*/g, '$1')

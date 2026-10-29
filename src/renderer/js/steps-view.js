@@ -77,6 +77,20 @@
       box.dataset.group = id;
       const title = id === 'tools' ? opts.ui.groupTools : id === 'ollama' ? opts.ui.groupOllama : snap.plan.piper ? opts.ui.groupPiper : opts.ui.groupChatterbox;
       box.append(el('h2', 'group__title', title));
+      // one bar over all of what the group is getting (the voice: Python, packages, model), with how long is left about
+      const all = snap.overall;
+      if (all && all.group === id && groupState(steps) === 'running') {
+        const total = el('div', 'overall');
+        total.append(el('div', 'overall__label', all.label));
+        const bar = el('div', 'bar');
+        const fillBar = el('i');
+        fillBar.style.width = `${Math.round(all.fraction * 100)}%`;
+        bar.append(fillBar);
+        bar.setAttribute('role', 'progressbar');
+        bar.setAttribute('aria-valuenow', String(Math.round(all.fraction * 100)));
+        total.append(bar);
+        box.append(total);
+      }
       for (const s of steps) box.append(stepRow(s, opts));
       container.append(box);
     }

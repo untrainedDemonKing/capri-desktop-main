@@ -183,7 +183,12 @@ const states = (p) => Object.fromEntries(p.steps.map((s) => [s.id, s.state]));
 
 // (a test that fails must not leave its folder next to her for the next one to find)
 test.afterEach(() => {
-  for (const name of ['Chatterbox-Bar', 'Chatterbox-Old', 'Chatterbox-Model', 'Chatterbox-Stop', 'Chatterbox-Load', 'Chatterbox-Picked', 'Chatterbox-Card']) fs.rmSync(path.join(tmp, 'roots', name), { recursive: true, force: true });
+  // (every folder a test made: each one makes the one it needs)
+  let left = [];
+  try {
+    left = fs.readdirSync(path.join(tmp, 'roots')).filter((n) => /^Chatterbox-/.test(n));
+  } catch { /* no test has made the place yet */ }
+  for (const name of left) fs.rmSync(path.join(tmp, 'roots', name), { recursive: true, force: true });
 });
 
 // a Chatterbox folder next to her with an environment that has the package
@@ -542,6 +547,81 @@ test('the model of the voice has a bar over its whole download (not file by file
   assert.equal(w.p.attention, true, 'a download of the model is long: the window is worth showing');
   assert.ok(seen.some((s) => s.progress === 0.4 && /Fetching the voice model: 1.2 GB of ~3.0 GB \(40%\)/.test(s.detail)), `bytes and percent: ${seen.find((s) => s.progress === 0.4)?.detail}`);
   assert.ok(seen.some((s) => s.progress === null && /Loading the voice model/.test(s.detail)), 'then it is loading into memory');
+});
+
+test('one bar over the whole voice: Python, the packages, the torch for the card and the model, never going back, with the percent in words', async () => {
+  const w = world({
+    cfg: { ttsEngine: 'chatterbox', chatterboxDir: readyFolder('Chatterbox-All') },
+    state: { hasPackage: false, ollamaRunning: true, torchHasCuda: false },
+    deps: { hardware: async () => ({ ram: 32 * GB, vram: 12 * GB, gpu: { name: 'NVIDIA GeForce RTX 4070', vram: 12 * GB, driver: '560.94' } }) },
+  });
+  const seen = [];
+  w.p.on('change', (snap) => { if (snap.overall) seen.push(snap.overall); });
+  const lines = async (onLine, list) => { for (const l of list) { onLine(l); await new Promise((r) => setTimeout(r, 1)); } };
+  w.p.d.tools.preparePip = async () => ({ raw: true });
+  w.p.d.tools.pip = async (_py, args, onLine) => {
+    if (args.includes('--force-reinstall')) {
+      await lines(onLine, ['Downloading torch-2.6.0+cu124-cp311-cp311-win_amd64.whl (2.5 GB)', 'Progress 0 of 2500000000', 'Progress 1250000000 of 2500000000', 'Progress 2500000000 of 2500000000', 'Installing collected packages: torch']);
+      w.state.torchHasCuda = true;
+      return { ok: true, tail: [] };
+    }
+    await lines(onLine, ['Downloading torch-2.6.0-cp311-cp311-win_amd64.whl (204.2 MB)', 'Progress 0 of 204200000', 'Progress 102100000 of 204200000', 'Progress 204200000 of 204200000', 'Installing collected packages: torch, chatterbox-tts']);
+    w.state.hasPackage = true;
+    return { ok: true, tail: [] };
+  };
+  let tick = 0;
+  const walk = [[0.1, 0.32e9], [0.4, 1.3e9], [0.7, 2.2e9], [null, 3.3e9]];
+  w.p.d.chatterbox.status = () => {
+    const [progress, bytes_] = walk[Math.min(tick++ >> 3, walk.length - 1)];
+    return { phase: tick > 40 ? 'ready' : 'starting', error: '', progress, bytes: bytes_, expect: 3.2e9, device: 'cuda', log: ['loading'] };
+  };
+  w.p.d.chatterbox.sync = async () => {};
+  await w.p.run();
+  assert.equal(w.p.step('cb-model').state, 'done');
+  assert.ok(seen.length > 20, `the bar is there all through (${seen.length} updates)`);
+  assert.equal(seen[0].group, 'voice');
+  for (let i = 1; i < seen.length; i++) assert.ok(seen[i].fraction >= seen[i - 1].fraction - 1e-9, `never back: ${seen[i - 1].fraction} then ${seen[i].fraction}`);
+  assert.ok(seen[0].fraction < 0.1, `it starts at the start: ${seen[0].fraction}`);
+  assert.ok(seen.some((o) => o.fraction > 0.3 && o.fraction < 0.5), 'the packages and the torch are about a third to a half of it');
+  assert.ok(seen.some((o) => o.fraction > 0.5 && o.fraction < 0.9), 'the model is the rest');
+  assert.ok(Math.max(...seen.map((o) => o.fraction)) <= 0.99, 'never full before it is all done');
+  assert.ok(seen.every((o) => /^The voice is \d+% ready/.test(o.label)), seen[0].label);
+  assert.equal(w.p.snapshot().overall, null, 'when it is all done there is nothing left to show');
+});
+
+test('about how long is left comes from the speed over the last seconds, and is not said before there is a speed to go by', () => {
+  const w = world({ cfg: { ttsEngine: 'chatterbox' } });
+  const p = w.p;
+  p.plan = { chatterbox: true };
+  p.step('cb-python').state = 'done';
+  p.step('cb-package').state = 'running';
+  p.step('cb-model').state = 'pending';
+  const t0 = 1_000_000;
+  assert.match(p.overall(t0).label, /^The voice is 1% ready, working out how long is left/, 'the first moments: no speed yet');
+  p.parts.package = 0.25;
+  assert.match(p.overall(t0 + 4000).label, /working out/, 'four seconds are too few');
+  p.parts.package = 0.5;
+  // (0.35 GB of the 4.2 GB in 20 seconds: 17.5 MB/s, 3.85 GB to go)
+  assert.equal(p.overall(t0 + 20000).label, 'The voice is 9% ready, about 4 min left');
+  assert.ok(p.overall(t0 + 20000).fraction > 0.08);
+  // later: the speed of the last 45 seconds only (it got faster)
+  p.parts.package = 1;
+  const late = p.overall(t0 + 80000);
+  assert.match(late.label, /about \d+ min left/);
+  // nothing running: nothing shown
+  p.step('cb-package').state = 'done';
+  p.step('cb-model').state = 'done';
+  assert.equal(p.overall(t0 + 90000), null);
+  // no voice of this kind to get
+  p.plan = { chatterbox: false };
+  assert.equal(p.overall(t0), null);
+  const ru = world({ cfg: { ttsEngine: 'chatterbox' }, deps: { lang: () => 'ru' } });
+  ru.p.plan = { chatterbox: true };
+  ru.p.step('cb-python').state = 'done';
+  ru.p.step('cb-package').state = 'running';
+  ru.p.overall(t0);
+  ru.p.parts.package = 0.5;
+  assert.equal(ru.p.overall(t0 + 20000).label, 'Голос готов на 9%, осталось около 4 мин');
 });
 
 test('a model is made to answer one word once: the engine of Ollama that is not whole is told as that, with the way out; the check is written down and not made at every start', async () => {

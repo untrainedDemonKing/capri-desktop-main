@@ -6,6 +6,8 @@
 // minds" effect: a chorus of slightly delayed copies of her, like the dozens of minds she's made of, and a
 // little digital edge. Her body nods along while she talks.
 
+import { languageOf } from './tongue.js';
+
 const LOCALES = { ru: 'ru-RU', en: 'en-US' };
 // female system voices she'd rather use, by language (Windows, macOS, Edge's names)
 const PREFERRED = {
@@ -128,8 +130,8 @@ export class Speech {
 
   // ---------- the system's voice ----------
 
-  pickVoice() {
-    const locale = LOCALES[this.lang] || 'en-US';
+  pickVoice(lang = this.lang) {
+    const locale = LOCALES[lang] || 'en-US';
     const base = locale.slice(0, 2);
     const voices = this.systemVoices.filter((v) => v.lang?.toLowerCase().startsWith(base));
     if (!voices.length) return null;
@@ -145,9 +147,11 @@ export class Speech {
   system(text, mood, token) {
     if (typeof speechSynthesis === 'undefined' || typeof SpeechSynthesisUtterance === 'undefined') return Promise.resolve();
     return new Promise((resolve) => {
+      // (read in the language it is written in: an English answer is not read with the Russian voice, nor the other way round)
+      const lang = languageOf(text, this.lang);
       const u = new SpeechSynthesisUtterance(text);
-      u.lang = LOCALES[this.lang] || 'en-US';
-      const v = this.pickVoice();
+      u.lang = LOCALES[lang] || 'en-US';
+      const v = this.pickVoice(lang);
       if (v) u.voice = v;
       const [pitch, rate] = PROSODY[mood] || PROSODY.calm;
       u.pitch = Math.min(2, pitch);
@@ -166,7 +170,7 @@ export class Speech {
 
   // True once played (or cut off), false if the service couldn't (she says it with the system voice then).
   async cloud(text, mood, token) {
-    const res = await this.host.ttsSpeak({ text, mood, lang: this.lang }).catch((err) => ({ ok: false, error: err.message }));
+    const res = await this.host.ttsSpeak({ text, mood, lang: languageOf(text, this.lang) }).catch((err) => ({ ok: false, error: err.message }));
     if (this.current !== token) return true;
     if (!res?.ok) {
       this.onError?.(res?.error || 'failed', res?.code);

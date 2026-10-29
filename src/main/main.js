@@ -902,13 +902,13 @@ async function refreshModels({ cached = false } = {}) {
 // Her answer from the model picked, or from the next one when that one can't: too busy twice in a row
 // (Gemini's "high demand"), or not served anymore (an older model closed to new keys). The model
 // that answered is kept for next time.
-async function chatWithFallback(cfg, messages, send, signal, streamed) {
+async function chatWithFallback(cfg, messages, send, signal, streamed, lang = resolveLang(cfg.lang)) {
   let model = pickModel(cfg);
   const tried = new Set();
   let busy = 0;
   for (;;) {
     try {
-      const text = await llm.chat(cfg.provider, llmConfig(cfg), { model, messages, task: 'chat', lang: resolveLang(cfg.lang) }, send, signal);
+      const text = await llm.chat(cfg.provider, llmConfig(cfg), { model, messages, task: 'chat', lang }, send, signal);
       if (model !== pickModel(cfg)) updateConfig({ chatModel: model });
       return text;
     } catch (err) {
@@ -1122,7 +1122,7 @@ function registerIpc() {
     return models?.length ? 'ready' : 'none';
   });
   // her answer, streamed to the overlay piece by piece as `chat:delta`
-  ipcMain.handle('chat:send', async (_e, { id, messages }) => {
+  ipcMain.handle('chat:send', async (_e, { id, messages, lang }) => {
     const abort = new AbortController();
     chats.set(id, abort);
     tuneJob?.abort.abort(); // (the measurement waits: your message is first)
@@ -1143,7 +1143,8 @@ function registerIpc() {
     };
     try {
       const cfg = config.load();
-      const text = await chatWithFallback(cfg, messages, send, abort.signal, () => streamed);
+      // (the language she answers in, which is the one you wrote in: a Russian answer needs twice the room an English one does)
+      const text = await chatWithFallback(cfg, messages, send, abort.signal, () => streamed, LANGS.includes(lang) ? lang : resolveLang(cfg.lang));
       drain();
       if (cfg.provider === 'claude') saveMemory({ claude: llm.claudeMemory() });
       return { ok: true, text };

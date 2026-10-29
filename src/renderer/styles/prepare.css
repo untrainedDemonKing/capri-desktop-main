@@ -71,6 +71,11 @@ h1 { margin: 0 0 4px; font: 700 21px/1.15 'Chakra Petch', 'JetBrains Mono', sans
 .bar > i { position: absolute; inset: 0 auto 0 0; background: var(--violet); width: 0; transition: width 0.25s linear; }
 .bar[data-unknown='true'] > i { width: 30%; animation: slide 1.1s linear infinite; }
 
+.overall { margin: 2px 0 8px; padding: 8px 10px; background: var(--ink); border: 1px solid var(--ink-3); }
+.overall__label { font-weight: 600; font-size: 12px; }
+.overall .bar { height: 10px; margin-top: 6px; }
+.overall .bar > i { background: var(--green); }
+
 .step__btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .step__log { margin: 8px 0 0; padding: 8px; max-height: 120px; overflow: auto; background: var(--ink); color: var(--dim); font-size: 11px; white-space: pre-wrap; word-break: break-all; border: 1px solid var(--ink-3); }
 

@@ -37,6 +37,15 @@ const CB_MODEL_WAIT = 20 * 60 * 1000;
 // about how much pip fetches for the voice, to show how far it is before it says (the packages of chatterbox-tts; then the torch for a graphics card)
 const PIP_PACKAGES_BYTES = 0.7e9;
 const PIP_CARD_BYTES = 2.7e9;
+// what else the voice takes, for the one bar over all of it: Python (when she has to fetch it), the model, and the time it needs to be loaded
+// and tried, counted as if it were that much more to fetch
+const PYTHON_BYTES = 0.03e9;
+const MODEL_BYTES = 3.2e9;
+const LOADING_BYTES = 0.3e9;
+const RATE_WINDOW = 45 * 1000; // the speed is taken over the last 45 seconds
+const RATE_AFTER = 8 * 1000;   // and said after the first eight
+// the part of the voice a step is, for that bar
+const VOICE_PART = { 'cb-python': 'python', 'cb-package': 'package', 'cb-model': 'model' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- which model to talk with ----
@@ -60,6 +69,17 @@ function pickInstalled(models = [], wanted = null) {
 
 // the installed model that is this one ("gemma3:4b" for "gemma3:4b", or "gemma3:4b-it-q4_K_M"; "llama3.2" is "llama3.2:latest")
 const sameModel = (models, want) => models.find((m) => m === want || m.startsWith(`${want}-`) || (!want.includes(':') && m === `${want}:latest`)) || null;
+
+// about how long is left, in words: "12 min", "1 h 5 min" (rounded to the minute, up to 10 minutes to five)
+function etaTime(ms, lang) {
+  const ru = lang === 'ru';
+  let minutes = Math.max(1, Math.round(ms / 60000));
+  if (minutes > 10) minutes = Math.round(minutes / 5) * 5;
+  if (minutes < 60) return ru ? `${minutes} мин` : `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return ru ? `${h} ч${m ? ` ${m} мин` : ''}` : `${h} h${m ? ` ${m} min` : ''}`;
+}
 
 const bytes = (n, lang) => {
   const unit = lang === 'ru' ? ['МБ', 'ГБ'] : ['MB', 'GB'];
@@ -100,6 +120,8 @@ class Provision extends EventEmitter {
 
   reset() {
     this.steps = STEPS.map(([id, group]) => ({ id, group, state: 'pending', progress: null, detail: '', error: '', heavy: false, bar: false, actions: [], log: [] }));
+    this.parts = { python: 0, package: 0, model: 0 }; // how far each part of the voice is (0 to 1), only forward
+    this.samples = []; // [{ at, done }] how many bytes of the voice were done when: its speed
   }
 
   step(id) {
@@ -117,15 +139,59 @@ class Provision extends EventEmitter {
         download: { items: this.profile.download.items, total: this.profile.download.total },
       },
       steps: this.steps.map((s) => ({ ...s, log: s.log.slice(-6) })),
+      overall: this.overall(),
     };
+  }
+
+  // One bar over the whole of the voice (Python, the packages and torch, the model): how far it is and, from its speed so far,
+  // about how long is left. null when there is no such voice to get, or nothing of it going on. { group, fraction, label }.
+  overall(now = Date.now()) {
+    if (!this.plan?.chatterbox) return null;
+    const parts = ['cb-python', 'cb-package', 'cb-model'].map((id) => {
+      const step = this.step(id);
+      const size = id === 'cb-python' ? PYTHON_BYTES : id === 'cb-package' ? PIP_PACKAGES_BYTES + (this.wantsCard() ? PIP_CARD_BYTES : 0) : MODEL_BYTES + LOADING_BYTES;
+      const fraction = ['done', 'skipped'].includes(step.state) ? 1 : this.parts[VOICE_PART[id]];
+      return { step, size, fraction };
+    });
+    if (!parts.some((p) => p.step.state === 'running')) return null;
+    const total = parts.reduce((n, p) => n + p.size, 0);
+    const done = parts.reduce((n, p) => n + p.size * p.fraction, 0);
+    const fraction = Math.min(0.99, done / total);
+    const last = this.samples[this.samples.length - 1];
+    if (!last || now - last.at >= 1000) {
+      this.samples.push({ at: now, done });
+      while (this.samples.length > 2 && now - this.samples[1].at > RATE_WINDOW) this.samples.shift();
+    }
+    const first = this.samples[0];
+    const span = now - first.at;
+    const rate = span >= RATE_AFTER ? (done - first.done) / (span / 1000) : 0; // bytes per second
+    const left = rate > 0 ? ((total - done) / rate) * 1000 : 0;
+    const percent = Math.round(fraction * 100);
+    const label = left > 0 ? this.t('overallEta', { percent, time: etaTime(left, this.d.lang()) }) : this.t('overallCounting', { percent });
+    return { group: 'voice', fraction, label };
   }
 
   update(id, patch) {
     const s = this.step(id);
     if (s.state === 'stopped' && !patch.state) return; // (a bar still on its way when she was stopped)
     Object.assign(s, patch);
+    if (typeof patch.progress === 'number' && VOICE_PART[id]) this.part(id, patch.progress);
     if (patch.heavy || patch.state === 'failed') this.attention = true;
     this.emit('change', this.snapshot());
+  }
+
+  // how far a part of the voice is (only forward: a bar that goes back says nothing)
+  part(id, fraction) {
+    const key = VOICE_PART[id];
+    // (the model: its download is most of the part, then it is loaded into memory and tried)
+    const reach = id === 'cb-model' ? 0.92 * fraction : fraction;
+    this.parts[key] = Math.max(this.parts[key], Math.min(1, reach));
+  }
+
+  // the model is being loaded into memory (or tried): there is no number for it, so the bar goes on a little with the time, not past 97%
+  creep(id, to = 0.97) {
+    const key = VOICE_PART[id];
+    if (this.parts[key] > 0.5) this.parts[key] = Math.min(to, this.parts[key] + 0.0008);
   }
 
   begin(id, patch = {}) {
@@ -626,6 +692,7 @@ class Provision extends EventEmitter {
         if (st.phase === 'ready') {
           if (!checked && chatterbox.check) {
             // it is loaded: does it speak? (once for this Python: it is written down)
+            this.parts.model = Math.max(this.parts.model, 0.97);
             this.update('cb-model', { bar: true, progress: null, detail: this.t('cbChecking') });
             try {
               await this.raceStop(chatterbox.check(cfg(), this.d.lang()));
@@ -646,7 +713,10 @@ class Provision extends EventEmitter {
             heavy: true, progress: st.progress,
             detail: st.bytes ? this.t('cbDownloadingOf', { done: bytes(st.bytes, lang), total: bytes(st.expect, lang), percent }) : this.t('cbDownloading', { percent }),
           });
-        } else this.update('cb-model', { bar: true, progress: null, detail: st.log.length ? `${this.t('cbLoading')} ${st.log[st.log.length - 1].slice(0, 80)}` : this.t('cbLoading') });
+        } else {
+          this.creep('cb-model');
+          this.update('cb-model', { bar: true, progress: null, detail: st.log.length ? `${this.t('cbLoading')} ${st.log[st.log.length - 1].slice(0, 80)}` : this.t('cbLoading') });
+        }
         await this.raceStop(sleep(400));
       }
     } catch (err) {

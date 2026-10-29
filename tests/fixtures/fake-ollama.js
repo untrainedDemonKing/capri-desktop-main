@@ -95,7 +95,8 @@ http.createServer(async (req, res) => {
   }
   if (url === '/api/chat') {
     if (!installed().some((m) => m === b.model || m.split(':')[0] === b.model)) return json(404, { error: `model '${b.model}' not found` });
-    const question = String(b.messages?.[b.messages.length - 1]?.content || '');
+    // (what she adds to a message so that the model answers in the language it is written in: a model does not quote that)
+    const question = String(b.messages?.[b.messages.length - 1]?.content || '').replace(/\s*\[(?:Ответь по-русски|Reply in English)\.\]\s*$/, '');
     const answer = `Ты спросил: «${question.slice(0, 80)}». Я Капри, я здесь, и я отвечаю.`;
     if (!loaded.includes(b.model)) loaded.push(b.model);
     if (b.stream === false) {
