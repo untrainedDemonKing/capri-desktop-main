@@ -1055,7 +1055,7 @@ test('Ollama that cannot be installed otherwise is fetched as a zip into a folde
 });
 
 test('Python\'s own installer next to her is found (the 3.11 one first, the right bits), for a PC with no winget', () => {
-  const setup = require('../../src/main/setup/setup.js');
+  const setup = require('../helpers/setup.js')();
   const root = mk('py-installers');
   touch(path.join(root, 'python-3.12.4-amd64.exe'));
   touch(path.join(root, 'python-3.11.9-amd64.exe'));

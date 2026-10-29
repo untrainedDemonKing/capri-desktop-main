@@ -11,20 +11,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const cp = require('node:child_process');
-const Module = require('node:module');
 
 const { runToEnd, runPythonAsync } = require('../../src/main/setup/proc.js');
 const files = require('../../src/main/setup/fetch-files.js');
 const { writeZip } = require('../helpers/zip.js');
 
-// setup.js only needs electron's safeStorage, for the keys: a stand-in so it runs under plain node
-const realLoad = Module._load;
-Module._load = function load(request, ...rest) {
-  if (request === 'electron') return { safeStorage: {}, app: { getPath: () => os.tmpdir() } };
-  return realLoad.call(this, request, ...rest);
-};
-const setup = require('../../src/main/setup/setup.js');
-Module._load = realLoad;
+const setup = require('../helpers/setup.js')(); // (setup.js needs electron's safeStorage: a stand-in under plain node)
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-stop-'));
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
