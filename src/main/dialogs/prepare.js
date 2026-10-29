@@ -11,7 +11,7 @@ const { table } = require('./prepare-lines');
 const SITES = /^https:\/\/(www\.)?(ollama\.com|python\.org|nodejs\.org)(\/|$)/;
 const AUTO_CLOSE = 6000;
 
-function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, lang, ollamaHost, chatterbox, piper, openAiTab, isHubOpen, protocolUrl }) {
+function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, lang, ollamaHost, chatterbox, piper, whisper, openAiTab, isHubOpen, protocolUrl }) {
   let win = null;
   let userOpened = false; // opened from the menu: it stays until it is closed
   let dismissed = false; // closed on purpose during this run: not opened again by what happens next (a failure at the end is)
@@ -68,6 +68,7 @@ function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provi
   chatterbox.on('change', () => send('prepare:change', provision.snapshot()));
   ollamaHost.on('change', () => send('prepare:change', provision.snapshot()));
   piper?.on('change', () => send('prepare:change', provision.snapshot()));
+  whisper?.on('change', () => send('prepare:change', provision.snapshot()));
 
   ipcMain.handle('prepare:state', () => state());
   ipcMain.handle('prepare:retry', async () => {
@@ -80,10 +81,10 @@ function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provi
     return true;
   });
   ipcMain.handle('prepare:choose', async (_e, what) => {
-    const key = { ollama: 'ollamaDir', chatterbox: 'chatterboxDir', piper: 'piperDir' }[what];
+    const key = { ollama: 'ollamaDir', chatterbox: 'chatterboxDir', piper: 'piperDir', whisper: 'whisperDir' }[what];
     if (!key) return null;
     const { canceled, filePaths } = await dialog.showOpenDialog(win && !win.isDestroyed() ? win : undefined, {
-      title: { ollama: 'Ollama', chatterbox: 'Chatterbox', piper: 'Piper' }[what], properties: ['openDirectory'], defaultPath: config.load()[key] || path.dirname(process.execPath),
+      title: { ollama: 'Ollama', chatterbox: 'Chatterbox', piper: 'Piper', whisper: 'whisper.cpp' }[what], properties: ['openDirectory'], defaultPath: config.load()[key] || path.dirname(process.execPath),
     });
     if (canceled || !filePaths[0]) return null;
     if (what === 'ollama') {
@@ -92,6 +93,9 @@ function createPrepare({ BrowserWindow, ipcMain, dialog, shell, clipboard, provi
     } else if (what === 'piper') {
       piper?.stop(false);
       updateConfig({ piperDir: filePaths[0], ttsEngine: 'piper' });
+    } else if (what === 'whisper') {
+      whisper?.stop(false);
+      updateConfig({ whisperDir: filePaths[0], sttEngine: 'local', autoEars: true });
     } else {
       updateConfig({ chatterboxDir: filePaths[0], ttsEngine: 'chatterbox' });
       chatterbox.stop(false);

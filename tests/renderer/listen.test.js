@@ -353,7 +353,9 @@ test('a hiccup is tried once more; a refused key and a missing key are not; a se
     const refused = server([{ ok: false, status: 401, text: async () => '{"error":{"message":"bad key"}}' }]);
     await assert.rejects(stt.transcribe(cfg, keys, { audio, mime: 'audio/wav', lang: 'ru' }, { fetch: refused.fetchFn }), (e) => e.code === 'badkey');
     assert.equal(refused.calls.length, 1, 'not tried again');
-    await assert.rejects(stt.transcribe(cfg, {}, { audio, mime: 'audio/wav', lang: 'ru' }, { fetch: refused.fetchFn }), (e) => e.code === 'nokey');
+    // (a cloud service with no key saved is not asked at all: the recogniser on this PC answers, or tells it is not there yet)
+    await assert.rejects(stt.transcribe(cfg, {}, { audio, mime: 'audio/wav', lang: 'ru' }, { fetch: refused.fetchFn }), (e) => e.code === 'nolocal');
+    assert.equal(refused.calls.length, 1, 'and the cloud was not asked');
     const plain = server([(n) => (n === 1 ? { ok: false, status: 400, text: async () => 'unknown response_format' } : { ok: true, status: 200, json: async () => ({ text: 'plain answer' }) })]);
     assert.equal(await stt.transcribe({ sttEngine: 'custom', sttUrl: 'http://127.0.0.1:1/v1' }, {}, { audio, mime: 'audio/wav', lang: 'ru' }, { fetch: plain.fetchFn }), 'plain answer');
     assert.equal(plain.calls[1].format, 'json');
@@ -361,6 +363,15 @@ test('a hiccup is tried once more; a refused key and a missing key are not; a se
   } finally {
     global.setTimeout = realTimeout;
   }
+});
+
+test('an answer that is not JSON is asked for again in the plain form, and if it is still none, it is said so (not taken for "you said nothing")', async () => {
+  const notJson = { ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token'); } };
+  const recovers = server([notJson, { ok: true, status: 200, json: async () => ({ text: 'plain words' }) }]);
+  assert.equal(await stt.transcribe(cfg, keys, { audio, mime: 'audio/wav', lang: 'ru' }, { fetch: recovers.fetchFn }), 'plain words');
+  assert.equal(recovers.calls[1].format, 'json');
+  const hopeless = server([notJson]);
+  await assert.rejects(stt.transcribe(cfg, keys, { audio, mime: 'audio/wav', lang: 'ru' }, { fetch: hopeless.fetchFn }), (e) => e.code === 'badanswer');
 });
 
 test('the words a recogniser says for a noise are not sent on as yours, and yours are', async () => {

@@ -47,17 +47,17 @@ for (const [what, o, id, model, voice] of TABLE) {
 
 test('what each plan fetches: the mind\'s program and model, the voice\'s pieces, and a total that grows with the card', () => {
   const small = profiles.plan(pc({ ram: 7.8 * GB }));
-  assert.deepEqual(small.download.items.map((i) => i.id), ['ollama', 'model', 'piper']);
+  assert.deepEqual(small.download.items.map((i) => i.id), ['ollama', 'model', 'piper', 'whisper'], 'and her ears: the recogniser of speech');
   const mid = profiles.plan(pc({ ram: 15.9 * GB, gpus: [nvidia('RTX 3060', 12)] }));
-  assert.deepEqual(mid.download.items.map((i) => i.id), ['ollama', 'model', 'chatterbox']);
+  assert.deepEqual(mid.download.items.map((i) => i.id), ['ollama', 'model', 'chatterbox', 'whisper']);
   assert.equal(mid.download.items.find((i) => i.id === 'chatterbox').bytes, profiles.SIZE.chatterboxCuda, 'torch with the card\'s libraries');
   const cpuOnly = profiles.plan(pc({ ram: 15.9 * GB }), { choice: 'strong' });
   assert.equal(cpuOnly.download.items.find((i) => i.id === 'chatterbox').bytes, profiles.SIZE.chatterboxCpu, 'the plain torch is much smaller');
   assert.ok(mid.download.total > small.download.total);
-  const have = profiles.plan(pc({ ram: 7.8 * GB }), { have: { ollama: true, models: ['gemma3:4b'], piper: true } });
+  const have = profiles.plan(pc({ ram: 7.8 * GB }), { have: { ollama: true, models: ['gemma3:4b'], piper: true, whisper: true } });
   assert.deepEqual(have.download.items, [], 'what she has is not fetched again');
   assert.equal(have.download.need, 0);
-  const family = profiles.plan(pc({ ram: 7.8 * GB }), { have: { ollama: true, models: ['gemma3:4b-it-q4_K_M'], piper: true } });
+  const family = profiles.plan(pc({ ram: 7.8 * GB }), { have: { ollama: true, models: ['gemma3:4b-it-q4_K_M'], piper: true, whisper: true } });
   assert.deepEqual(family.download.items, [], 'a model of the same family counts');
 });
 
@@ -141,11 +141,12 @@ test('describe: the PC in plain facts for her window', () => {
 test('after the fetching the plan counts again: what is there is not "to fetch" any more', () => {
   const planned = profiles.plan(pc({ ram: 15.9 * GB }));
   assert.ok(planned.download.total > 4 * GB);
-  const after = profiles.refresh(planned, { ollama: true, models: ['gemma3:4b'], piper: true });
+  const after = profiles.refresh(planned, { ollama: true, models: ['gemma3:4b'], piper: true, whisper: true });
   assert.equal(after.download.total, 0);
   assert.equal(after.disk.ok, true);
   assert.equal(after.id, planned.id, 'the rest of the plan is the same');
-  assert.equal(profiles.refresh(planned, { ollama: true, models: [], piper: true }).download.items[0].id, 'model', 'a model still missing is still counted');
+  assert.equal(profiles.refresh(planned, { ollama: true, models: [], piper: true, whisper: true }).download.items[0].id, 'model', 'a model still missing is still counted');
+  assert.deepEqual(profiles.refresh(planned, { ollama: true, models: ['gemma3:4b'], piper: true }).download.items.map((i) => i.id), ['whisper'], 'and so are her ears');
 });
 
 test('the choices she offers are the four profiles', () => {
@@ -224,4 +225,22 @@ test('every model of the catalog is told apart by name, with a size, and is one 
   assert.equal(new Set(names).size, names.length);
   for (const m of profiles.CATALOG) assert.ok(/^[a-z0-9.]+:[a-z0-9.]+$/.test(m.model) && m.bytes > 0 && ['ok', 'good', 'great', 'best'].includes(m.ru), m.model);
   for (const m of profiles.LADDER) assert.ok(names.includes(m.model), `the gemma3 ladder is in the catalog: ${m.model}`);
+});
+
+test('her ears: the model by the PC, the size it adds to the fetch, nothing where there is no program of hers or where it is not wanted', () => {
+  const ears = (o) => profiles.earsFor(pc(o));
+  assert.equal(ears({ ram: 3 * GB }).tier, 'base');
+  assert.equal(ears({ ram: 15.9 * GB }).tier, 'small');
+  assert.equal(ears({ ram: 63 * GB, cpu: { name: '', cores: 12, threads: 24 } }).tier, 'turbo');
+  assert.ok(ears({ ram: 15.9 * GB }).bytes > 190e6, 'the program and the model');
+  assert.equal(ears({ platform: 'linux', ram: 16 * GB }), null);
+  assert.equal(ears({ platform: 'darwin', arch: 'arm64', ram: 16 * GB }), null);
+  const plan = profiles.plan(pc({ ram: 15.9 * GB }));
+  assert.deepEqual([plan.ears.tier, plan.download.items.find((i) => i.id === 'whisper').name], ['small', 'small']);
+  assert.equal(profiles.plan(pc({ ram: 15.9 * GB }), { ears: false }).download.items.some((i) => i.id === 'whisper'), false, 'turned off in her settings');
+  assert.equal(profiles.plan(pc({ ram: 15.9 * GB, platform: 'linux' })).ears, null);
+  // her main menu counts them as a piece of the set-up of its own
+  const parts = profiles.components({ mind: 'ollama', model: 'gemma3:4b', voice: 'piper', ears: plan.ears, have: { ollama: true, models: ['gemma3:4b'], piper: true } });
+  assert.deepEqual(parts.items.filter((i) => !i.have).map((i) => i.id), ['whisper']);
+  assert.equal(profiles.components({ mind: 'skip', voice: 'system', have: {} }).items.some((i) => i.id === 'whisper'), false, 'unless it is wanted');
 });

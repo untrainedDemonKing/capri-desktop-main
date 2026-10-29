@@ -28,10 +28,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const KINDS = {
   ollama: { sub: 'ollama', exe: ['ollama.exe', 'ollama'] },
   piper: { sub: 'piper', exe: ['piper.exe', 'piper'] },
+  whisper: { sub: 'whisper', exe: ['whisper-server.exe', 'server.exe', 'whisper-server'] },
   chatterbox: { sub: 'chatterbox', exe: [] },
   node: { sub: 'node', exe: ['node.exe', 'node'] },
 };
-const ORDER = ['chatterbox', 'piper', 'ollama', 'node'];
+const ORDER = ['chatterbox', 'piper', 'whisper', 'ollama', 'node'];
 
 // A folder with everything in it copied to `to` (made as needed). onBytes(n) as it goes; `signal` ends it (a rejection
 // that is an AbortError); links stay links.
@@ -123,6 +124,8 @@ class Relocate extends EventEmitter {
     if (ol?.ours && ol.how === 'zip') found.push({ kind: 'ollama', from: ol.dir });
     const pi = cleanup.piperPlace();
     if (pi?.ours) found.push({ kind: 'piper', from: pi.dir });
+    const ws = cleanup.whisperPlace();
+    if (ws?.ours) found.push({ kind: 'whisper', from: ws.dir });
     const cb = cleanup.chatterboxPlace();
     if (cb?.ours) found.push({ kind: 'chatterbox', from: cb.dir });
     const nd = cleanup.nodePlace();
@@ -325,6 +328,8 @@ class Relocate extends EventEmitter {
       installed?.record('ollama', { how: 'zip', dir: to });
     } else if (kind === 'piper') {
       save({ piperDir: path.resolve(to) === path.resolve(folder.sub('piper')) ? '' : to });
+    } else if (kind === 'whisper') {
+      save({ whisperDir: path.resolve(to) === path.resolve(folder.sub('whisper')) ? '' : to });
     } else if (kind === 'chatterbox') {
       save({ chatterboxDir: to });
     } else if (kind === 'node') {
@@ -338,21 +343,21 @@ class Relocate extends EventEmitter {
 
   // ---- a folder moved by hand ----
 
-  // Her settings name Ollama's, Piper's or Chatterbox's folder where there is nothing any more, and the folder in use has
+  // Her settings name Ollama's, Piper's, whisper's or Chatterbox's folder where there is nothing any more, and the folder in use has
   // one: that is where it was moved to. Returns the kinds taken up again.
   adopt() {
     const { cfg, save, folder, fsx } = this.d;
     const c = cfg();
     const patch = {};
     const found = [];
-    for (const [kind, key] of [['ollama', 'ollamaDir'], ['piper', 'piperDir'], ['chatterbox', 'chatterboxDir']]) {
+    for (const [kind, key] of [['ollama', 'ollamaDir'], ['piper', 'piperDir'], ['whisper', 'whisperDir'], ['chatterbox', 'chatterboxDir']]) {
       const named = String(c[key] || '').trim();
       const here = folder.sub(KINDS[kind].sub);
       if (!named || fsx.existsSync(named) || path.resolve(named) === path.resolve(here)) continue;
       const exe = KINDS[kind].exe;
       const there = kind === 'chatterbox' ? this.taken(here) : Boolean(exe.length && findFile(here, exe, { depth: 2, fsx }));
       if (!there) continue;
-      patch[key] = kind === 'piper' ? '' : here;
+      patch[key] = kind === 'piper' || kind === 'whisper' ? '' : here;
       found.push(kind);
     }
     if (found.length) save(patch);

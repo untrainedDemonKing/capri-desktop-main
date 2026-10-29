@@ -37,8 +37,9 @@ function world({ fsx = fs, busy = '', free = 500 * 1024 ** 3, sameDisk, hers = [
   fs.mkdirSync(userData, { recursive: true });
   if (oldMarked) dl.make(oldRoot); else fs.mkdirSync(oldRoot, { recursive: true });
   dl.make(newRoot);
-  const state = { cfg: { dataDir: newRoot, piperDir: '', chatterboxDir: '', ollamaDir: '' }, saved: [], stops: 0, after: 0, path: [] };
+  const state = { cfg: { dataDir: newRoot, piperDir: '', whisperDir: '', chatterboxDir: '', ollamaDir: '' }, saved: [], stops: 0, after: 0, path: [] };
   if (hers.includes('piper')) { put(path.join(oldRoot, 'piper', 'piper', 'piper'), 50); put(path.join(oldRoot, 'piper', 'voices', 'ru.onnx'), 300); state.cfg.piperDir = path.join(oldRoot, 'piper'); }
+  if (hers.includes('whisper')) { put(path.join(oldRoot, 'whisper', 'Release', 'whisper-server.exe'), 50); put(path.join(oldRoot, 'whisper', 'models', 'ggml-small-q5_1.bin'), 700); state.cfg.whisperDir = path.join(oldRoot, 'whisper'); }
   if (hers.includes('chatterbox')) {
     put(path.join(oldRoot, 'chatterbox', 'venv', 'bin', 'python3'), 20); put(path.join(oldRoot, 'chatterbox', 'venv', 'pyvenv.cfg'), 5);
     put(path.join(oldRoot, 'chatterbox', 'venv', 'lib', 'a.bin'), 400); put(path.join(oldRoot, 'chatterbox', 'huggingface', 'hub', 'm.bin'), 800);
@@ -55,6 +56,7 @@ function world({ fsx = fs, busy = '', free = 500 * 1024 ** 3, sameDisk, hers = [
     ollamaApi: { list: async () => [], remove: async () => {} },
     ollamaHost: { status: () => ({}), stop() {} }, chatterbox: { stop() {} },
     piper: { stop() {}, defaultDir: () => folder.sub('piper') },
+    whisper: { stop() {}, defaultDir: () => folder.sub('whisper') },
     nodeTools: {}, provision: { running: false }, run: async () => ({ ok: true }),
   });
   const calls = { check: [] };
@@ -100,6 +102,24 @@ test('what is hers and not in the folder in use is listed (cheaply), with where 
   const there = world();
   there.state.cfg.dataDir = there.oldRoot;
   assert.deepEqual(there.move.candidates(), [], 'what is in the folder in use already stays');
+});
+
+test('her ears move with the rest: listed, renamed into the folder in use, her settings pointed at the place it has there (the default one is no setting at all)', async () => {
+  const w = world({ hers: ['whisper'] });
+  assert.deepEqual(w.move.candidates(), ['whisper']);
+  assert.equal(w.move.places()[0].to, path.join(w.newRoot, 'whisper'));
+  assert.deepEqual(await w.move.start(), { ok: true });
+  const end = await finish(w);
+  assert.equal(end.ok, true, JSON.stringify(end));
+  assert.deepEqual(end.moved, ['whisper']);
+  assert.equal(w.state.cfg.whisperDir, '', 'the place the folder in use gives it is where it is looked for');
+  assert.deepEqual(tree(path.join(w.newRoot, 'whisper')), ['Release/whisper-server.exe', 'models/ggml-small-q5_1.bin']);
+  assert.ok(!fs.existsSync(path.join(w.oldRoot, 'whisper')));
+  // moved by hand: her settings name the old place, the folder in use has it
+  const hand = world({ hers: ['whisper'] });
+  fs.renameSync(path.join(hand.oldRoot, 'whisper'), path.join(hand.newRoot, 'whisper'));
+  assert.deepEqual(hand.move.adopt(), ['whisper']);
+  assert.equal(hand.state.cfg.whisperDir, '');
 });
 
 test('on one disk it is renamed: everything is in the new place, the old folder goes, her settings point there, her programs are stopped and started again', async () => {

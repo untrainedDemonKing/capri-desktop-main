@@ -243,6 +243,58 @@ test('Node.js in the main menu: a row in the plan when asked for, with whether i
   assert.equal('autoNode' in none.updates[0], false, 'not told: left as it is');
 });
 
+test('her ears in the main menu: a row in the plan with the model for this PC, whether it is there, and the choice kept in her config; where there is no program of hers, no row', async () => {
+  const w = world({ have: { ollama: true, models: [], chatterbox: false, piper: false, node: false, whisper: false } });
+  const p = await w.hub.preview({ mind: 'skip', voice: 'system', ears: true });
+  assert.deepEqual(p.items.map((i) => [i.id, i.name, i.have]), [['whisper', 'small', false]]);
+  assert.ok(p.total > 200e6 && p.total < 400e6, 'the program and the middle model');
+  assert.deepEqual((await w.hub.preview({ mind: 'skip', voice: 'system', ears: false })).items, [], 'not asked for: not in the plan');
+  const there = world({ have: { ollama: true, models: [], chatterbox: false, piper: false, node: false, whisper: true } });
+  assert.equal((await there.hub.preview({ mind: 'skip', voice: 'system', ears: true })).total, 0);
+  const state = await w.call('hub:state');
+  assert.deepEqual(state.ears, { auto: true, supported: true });
+  assert.equal(state.ui.earsLabel.length > 5, true, 'and the page has words for it');
+  await w.call('hub:apply', { mind: 'skip', voice: 'system', ears: false });
+  assert.equal(w.updates[0].autoEars, false);
+  const on = world();
+  await on.call('hub:apply', { mind: 'skip', voice: 'system', ears: true });
+  assert.equal(on.updates[0].autoEars, true);
+  const none = world();
+  await none.call('hub:apply', { mind: 'skip', voice: 'system' });
+  assert.equal('autoEars' in none.updates[0], false, 'not told: left as it is');
+  const linux = world({ hw: hardware.make({ platform: 'linux', ram: 15.9 * GB, disk: { path: '', free: 200 * GB, total: 500 * GB } }) });
+  assert.deepEqual((await linux.call('hub:state')).ears, { auto: true, supported: false });
+  assert.deepEqual((await linux.hub.preview({ mind: 'skip', voice: 'system', ears: true })).items, [], 'no program of hers for Linux');
+});
+
+test('what she may do: the page is told what is set, the button writes the permissions, and looking at the screen by herself is only for a PC with a card', async () => {
+  const w = world();
+  const state = await w.call('hub:state');
+  assert.deepEqual(state.perms, { ears: false, converse: false, vision: false, hands: false, rhythm: false, windows: true });
+  await w.call('hub:apply', { mind: 'skip', voice: 'system', perms: { ears: true, converse: true, vision: true, hands: true, rhythm: true } });
+  const patch = w.updates[0];
+  assert.deepEqual([patch.ears, patch.converse, patch.vision, patch.hands, patch.rhythm], [true, true, true, true, true]);
+  assert.equal(patch.visionEvery, 0, 'a PC with no card: she looks when asked, not by herself every minute');
+  const card = world({ hw: hardware.make({ ram: 15.9 * GB, gpus: [{ name: 'NVIDIA GeForce RTX 3060', vram: 12 * GB, driver: '552.22', compute: 8.6 }], disk: { path: '', free: 200 * GB, total: 500 * GB } }) });
+  await card.call('hub:apply', { mind: 'skip', voice: 'system', perms: { vision: true } });
+  assert.equal('visionEvery' in card.updates[0], false, 'with a card the default stands');
+  // conversation mode needs the mic; permissions not told are left as they are
+  const deaf = world();
+  await deaf.call('hub:apply', { mind: 'skip', voice: 'system', perms: { ears: false, converse: true } });
+  assert.deepEqual([deaf.updates[0].ears, deaf.updates[0].converse], [false, false]);
+  assert.equal('hands' in deaf.updates[0], false);
+  const keeps = world({ cfg: { ears: true } });
+  await keeps.call('hub:apply', { mind: 'skip', voice: 'system', perms: { converse: true } });
+  assert.deepEqual([keeps.updates[0].converse, 'ears' in keeps.updates[0]], [true, false]);
+  const none = world();
+  await none.call('hub:apply', { mind: 'skip', voice: 'system' });
+  for (const k of ['ears', 'converse', 'vision', 'hands', 'rhythm', 'visionEvery']) assert.equal(k in none.updates[0], false, `${k} is not touched`);
+  // a system that is not Windows: the page is told, so that it does not offer what cannot work
+  const linux = world({ hw: hardware.make({ platform: 'linux', ram: 15.9 * GB, disk: { path: '', free: 200 * GB, total: 500 * GB } }) });
+  assert.equal((await linux.call('hub:state')).perms.windows, false);
+  for (const key of ['permsTitle', 'permEars', 'permEarsWhat', 'permConverse', 'permVision', 'permHands', 'permHandsWhat', 'permRhythm', 'permNotHere']) assert.ok(state.ui[key], key);
+});
+
 test('the recommendations the page shows: the best model and its reasons, an alternative, the voice, and every model graded for this PC', async () => {
   const plain = await world().call('hub:state');
   assert.equal(plain.rec.mind.best, 'gemma3:4b');

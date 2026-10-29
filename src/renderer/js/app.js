@@ -330,6 +330,11 @@ async function boot() {
   // Ears: you talk, she writes it down and answers (ears.js, stt.js); speech.js reads her answer out.
   const ears = new Ears({ host, capri, panel, voice, brain, speech });
   ears.configure(config);
+  // her ears were fetched and work: she says so (with the mic off, where to turn it on)
+  host.onSttReady?.(() => {
+    const te = lifeLines(brain.lang).ears;
+    panel.say({ kind: 'done', face: 'grin', line: ears.enabled ? te.ready : te.readyOff, hold: 6000, life: true });
+  });
   ears.onTranscript = (text) => {
     // show what you said and send it to her chat (open it first if need be)
     if (!chat.open) chat.start().then(() => setTimeout(() => chat.say(text), 400));
@@ -675,14 +680,23 @@ async function boot() {
   async function setupEars() {
     const te = lifeLines(brain.lang).ears;
     let saved = false;
+    let local = false;
     await guide.scene(async () => {
       const cfg = await host.getConfig();
       const engine = await guide.ask({
         face: 'look', line: te.setup, quote: te.setupHow,
-        actions: [...['groq', 'openai', 'custom'].map((id) => ({ id, label: te.engines[id], primary: id === cfg.sttEngine })), { id: 'later', label: te.later }],
+        actions: [...['local', 'groq', 'openai', 'custom'].map((id) => ({ id, label: te.engines[id], primary: id === (cfg.sttEngine || 'local') })), { id: 'later', label: te.later }],
       });
       if (!engine || engine === 'later') return;
       const choice = { engine };
+      if (engine === 'local') {
+        // (nothing to ask: the recogniser of this PC needs no key and no address; she fetches it)
+        await host.sttSetup(choice);
+        await host.sttInstall?.();
+        local = true;
+        saved = true;
+        return;
+      }
       if (engine === 'custom') {
         const g = await guide.askText({ face: 'look', line: te.url, quote: te.urlHow, placeholder: cfg.sttUrl || 'http://127.0.0.1:8000/v1', actions: cfg.sttUrl ? [{ id: 'skip', label: te.skip }] : [] });
         if (!g) return;
@@ -705,7 +719,7 @@ async function boot() {
     if (!saved) return;
     host.setConfig({ ears: true });
     capri.perform('hop');
-    panel.say({ kind: 'done', face: 'grin', line: te.saved, hold: 6000 });
+    panel.say({ kind: 'done', face: 'grin', line: local ? te.localSaved : te.saved, hold: 6000 });
   }
 
   async function runCommand(cmd) {

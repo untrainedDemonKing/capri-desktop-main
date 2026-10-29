@@ -13,6 +13,7 @@
     'choose-ollama': () => ({ label: ui.chooseOllama, run: () => window.prepare.choose('ollama') }),
     'choose-chatterbox': () => ({ label: ui.chooseChatterbox, run: () => window.prepare.choose('chatterbox') }),
     'choose-piper': () => ({ label: ui.choosePiper, run: () => window.prepare.choose('piper') }),
+    'choose-whisper': () => ({ label: ui.chooseWhisper, run: () => window.prepare.choose('whisper') }),
     'repair-ollama': () => ({ label: ui.repairOllama, run: () => window.prepare.repairOllama() }),
     'open-ollama-site': () => ({ label: ui.openOllamaSite, run: () => window.prepare.open('https://ollama.com/download') }),
     'open-node-site': () => ({ label: ui.openNodeSite, run: () => window.prepare.open('https://nodejs.org/en/download') }),

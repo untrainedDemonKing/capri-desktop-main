@@ -76,9 +76,14 @@ const DEFAULTS = {
   handsType: true,   // she may type (messages, text); off: only open/close/arrange windows
   handsMouse: true,  // she may move the mouse, press a button of a window by its name, press keys (control.js); needs hands
   ears: false,       // she listens to your microphone and writes down what you say (stt.js, ears.js)
-  sttEngine: 'groq', // who turns your voice into text: 'groq', 'openai' or 'custom' (OpenAI-compatible)
-  sttUrl: '',        // 'custom': http://127.0.0.1:8000/v1 (whisper.cpp, faster-whisper…)
-  sttModel: '',      // its model (empty: the engine's default)
+  sttEngine: 'local', // who turns your voice into text: 'local' (whisper.cpp on this PC, fetched and run by her), 'groq', 'openai' or 'custom' (OpenAI-compatible); a cloud one with no key saved is the local one
+  sttUrl: '',        // 'custom': http://127.0.0.1:8000/v1 (faster-whisper…)
+  sttModel: '',      // a cloud service's model (empty: the engine's default)
+  autoEars: true,    // with her mind and her voice she gets the recogniser of speech ready too, and fetches it if it is missing (whisper.js)
+  whisperDir: '',    // whisper.cpp's folder ('' she looks for one with "whisper" in its name next to her, then fetches it)
+  whisperModel: '',  // the file of the model in it to use ('' the one that suits this PC)
+  whisperTier: '',   // which model she fetched for this PC: 'base', 'small' or 'turbo' ('' small)
+  earsChecked: '',   // the program and model of her ears that were made to answer once (provision.js runWhisper): '<its program>|<its model>', not at every start
   pushToTalk: 'Control+Alt+Space', // hold it to talk to her
   converse: false,   // conversation mode: she keeps listening and you talk back and forth
   micDevice: '',     // which microphone ('' the system's default; an id from her ring menu › Microphone)

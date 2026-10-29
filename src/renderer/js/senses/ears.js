@@ -440,13 +440,28 @@ export class Ears {
     this.setState('thinking');
     const res = await this.host.transcribe({ audio: wav, mime: 'audio/wav', lang: this.lang, hint: this.hint }).catch((err) => ({ ok: false, error: err.message, code: err.code }));
     if (!res?.ok) {
-      this.panel.say({ kind: 'error', face: 'aside', line: res?.code === 'nokey' ? this.t.needKey : this.t.failed, quote: String(res?.error || '').slice(0, 80), hold: 6000, life: true });
+      this.trouble(res);
       this.afterTurn();
       return;
     }
     const text = clean(res.text);
     if (text && text.length > 1) this.onTranscript?.(text);
     this.afterTurn(); // (nothing understood: just keep listening)
+  }
+
+  // The recogniser did not give the words. Where it is not on this PC yet, it is fetched (once per run), and said so.
+  trouble(res) {
+    const code = res?.code;
+    if (code === 'nolocal') {
+      this.panel.say({ kind: 'info', face: 'look', line: res.installing ? this.t.installing : this.t.needLocal, hold: 7000, life: true });
+      if (!res.installing && !this.installAsked) {
+        this.installAsked = true;
+        this.host.sttInstall?.().catch?.(() => {});
+      }
+      return;
+    }
+    const line = code === 'nokey' ? this.t.needKey : code === 'exited' ? this.t.localFailed : this.t.failed;
+    this.panel.say({ kind: 'error', face: 'aside', line, quote: String(res?.error || '').slice(0, 80), hold: 6000, life: true });
   }
 
   // After a turn: in conversation mode, wait for her to finish talking, then listen again (the vad
@@ -469,6 +484,8 @@ const JUNK = new RegExp(`^(?:${[
   'продолжение следует\\.{0,3}', 'субтитры .*', 'редактор субтитров .*', 'корректор .*', 'амара\\.орг.*', 'спасибо за (?:просмотр|внимание)[.!]?',
   'подписывайтесь на (?:мой |наш )?канал.*', 'ставьте лайки.*', 'до новых встреч[.!]?', 'dimatorzok.*', 'сделал dimatorzok.*',
   '♪+', '[.,!?…\\s-]*',
+  // what whisper.cpp writes for a sound that is not speech: "[BLANK_AUDIO]", "[Music]", "(музыка)", "*cough*", "[ Silence ]"
+  '(?:\\[[^\\]]*\\]|\\([^)]*\\)|\\*[^*]*\\*|♪[^♪]*♪)(?:\\s*(?:\\[[^\\]]*\\]|\\([^)]*\\)|\\*[^*]*\\*))*',
 ].join('|')})$`, 'i');
 export function clean(text) {
   const t = String(text || '').trim();

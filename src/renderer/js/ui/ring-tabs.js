@@ -428,7 +428,27 @@ const mic = {
     root.append(pick([{ id: 'ptt', label: m.ptt }, { id: 'converse', label: m.converse }], cfg.converse ? 'converse' : 'ptt', (id) => c.set({ converse: id === 'converse' })));
     root.append(note(fmt(m.pttKey, { key: prettyKey(cfg.pushToTalk) }), true));
     root.append(toggle(m.meter, cfg.micMeter !== false, (v) => c.set({ micMeter: v })));
-    root.append(row(fmt(m.stt, { engine: m.engines[cfg.sttEngine] || cfg.sttEngine || '…' }), go(c, m.setup, 'setupEars')));
+    // which recogniser, and how it is: ready, being fetched, not there (the one on this PC is fetched by her; the button does it at once)
+    const sttBox = el('div');
+    root.append(sttBox);
+    const paintStt = (st) => {
+      const engine = st?.engine || cfg.sttEngine || 'local';
+      const state = !st ? '' : engine !== 'local' ? '' : st.installing ? m.sttState.installing : !st.installed ? m.sttState.missing : st.whisper?.phase === 'failed' ? m.sttState.failed : m.sttState.ready;
+      const label = `${fmt(m.stt, { engine: m.engines[engine] || engine })}${state ? ` · ${state}` : ''}`;
+      const missing = st && engine === 'local' && !st.installed && !st.installing;
+      sttBox.replaceChildren(row(label, go(c, m.setup, 'setupEars')), ...(missing ? [buttons(button(m.sttInstall, () => c.host.sttInstall?.().then(() => c.host.sttStatus().then(paintStt))))] : []));
+    };
+    paintStt(null);
+    if (c.host.sttStatus) {
+      // (a fetch says how far it is many times a second: the state is asked for once in a while, not at each word of it)
+      let timer = 0;
+      const ask = () => c.host.sttStatus().then(paintStt).catch(() => {});
+      const refresh = () => { if (!timer) timer = setTimeout(() => { timer = 0; ask(); }, 600); };
+      ask();
+      c.onLeave(() => clearTimeout(timer));
+      c.onLeave(c.host.onWhisper?.(refresh));
+      c.onLeave(c.host.onProvision?.(refresh));
+    }
 
     // the live part
     const cells = [...meter.querySelectorAll('i')];

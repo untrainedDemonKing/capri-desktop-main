@@ -10,7 +10,7 @@
 // that may help.
 //
 //   steps: scan  |  node  |  ollama-find, ollama-run, ollama-model  |  cb-find, cb-python, cb-package, cb-model  |
-//          pp-find, pp-voice, pp-run
+//          pp-find, pp-voice, pp-run  |  ws-find, ws-model, ws-run (her ears: whisper.cpp, which writes down what you say)
 //   a step is { id, group, state: 'pending' | 'running' | 'done' | 'failed' | 'skipped', progress (0..1 or
 //   null), detail (what she says about it), error, heavy (a long job: worth showing), actions, log }
 
@@ -24,6 +24,7 @@ const nodeTools = require('./node-check');
 const hardwareLib = require('./hardware');
 const profiles = require('./profiles');
 const { text } = require('../dialogs/prepare-lines');
+const { engineFor } = require('../voice/stt');
 
 const GB = 1024 ** 3;
 const STEPS = [
@@ -32,6 +33,7 @@ const STEPS = [
   ['ollama-find', 'ollama'], ['ollama-run', 'ollama'], ['ollama-model', 'ollama'],
   ['cb-find', 'voice'], ['cb-python', 'voice'], ['cb-package', 'voice'], ['cb-model', 'voice'],
   ['pp-find', 'voice'], ['pp-voice', 'voice'], ['pp-run', 'voice'],
+  ['ws-find', 'ears'], ['ws-model', 'ears'], ['ws-run', 'ears'],
 ];
 const CB_MODEL_WAIT = 20 * 60 * 1000;
 // about how much pip fetches for the voice, to show how far it is before it says (the packages of chatterbox-tts; then the torch for a graphics card)
@@ -87,7 +89,7 @@ const bytes = (n, lang) => {
 };
 
 class Provision extends EventEmitter {
-  // deps: cfg() the config, save(patch) change it, lang(), ollamaHost, chatterbox, piper, ollamaApi { models, pull },
+  // deps: cfg() the config, save(patch) change it, lang(), ollamaHost, chatterbox, piper, whisper, ollamaApi { models, pull },
   //       installOllama(onLine), downloadOllama(onLine), installPython(onLine), roots(), defaultDir(), onModelsChanged(),
   //       hardware({ force }) a look at this PC, tune(tuning, profileId) what the profile says Ollama is told, tools,
   //       nodeTools, nodeDir() where she fetches Node.js to, platform, record(kind, value) writes down what she put on
@@ -99,13 +101,14 @@ class Provision extends EventEmitter {
   constructor(deps) {
     super();
     this.d = { hardware: () => hardwareLib.scan(), tools, nodeTools, nodeDir: () => '', platform: process.platform, installOllama: null, downloadOllama: null, installPython: null, tune: null, piper: null, onModelsChanged: async () => {}, record: () => {}, ...deps };
-    this.plan = { ollama: false, chatterbox: false, piper: false, node: false, adopt: false };
+    this.plan = { ollama: false, chatterbox: false, piper: false, whisper: false, node: false, adopt: false };
     this.hw = null; // the picture of this PC (hardware.js)
     this.have = {}; // what is on it already
     this.profile = null; // what it gets (profiles.js)
     this.running = false;
     this.finished = false;
     this.ok = false;
+    this.core = false;
     this.attention = false; // something long is going on, or failed: the window is worth showing
     this.abort = null;
     this.cancelled = false;
@@ -244,8 +247,8 @@ class Provision extends EventEmitter {
 
   // what is on this PC already, so the plan counts only what is missing
   async inventory(cfg) {
-    const { ollamaHost, ollamaApi, piper } = this.d;
-    const have = { ollama: false, models: [], chatterbox: false, piper: false, node: false };
+    const { ollamaHost, ollamaApi, piper, whisper } = this.d;
+    const have = { ollama: false, models: [], chatterbox: false, piper: false, whisper: false, node: false };
     try {
       have.ollama = Boolean(await ollamaHost.versionFn?.()) || Boolean(await ollamaHost.locate(cfg));
     } catch { /* not there */ }
@@ -254,6 +257,9 @@ class Provision extends EventEmitter {
     } catch { /* not answering */ }
     try {
       have.piper = Boolean(piper?.locate(cfg)) && Boolean(piper.voices(cfg).length);
+    } catch { /* not there */ }
+    try {
+      have.whisper = Boolean(whisper?.locate(cfg)) && Boolean(whisper.models(cfg).length);
     } catch { /* not there */ }
     try {
       const dir = findFolder(cfg, this.d.roots());
@@ -280,7 +286,9 @@ class Provision extends EventEmitter {
     // (and the model you picked in her main menu is Ollama's whatever the PC would have taken)
     // (and not a mind you have taken off the disk: it is not fetched again until you choose it in her main menu)
     const ollama = cfg.autoMind !== false && (cfg.provider || 'ollama') === 'ollama' && (prof.mind.kind === 'ollama' || (prof.auto && Boolean(have.ollama)) || Boolean(cfg.wantModel));
-    return { ollama, chatterbox: engine === 'chatterbox', piper: engine === 'piper', node: cfg.autoNode !== false, adopt, engine };
+    // (her ears: the recogniser on this PC, unless you set a cloud one up with a key of its own, or there is no program of it for this system)
+    const whisper = cfg.autoEars !== false && Boolean(prof.ears) && engineFor(cfg, cfg.apiKeys || {}) === 'local';
+    return { ollama, chatterbox: engine === 'chatterbox', piper: engine === 'piper', whisper, node: cfg.autoNode !== false, adopt, engine };
   }
 
   // The look at the PC and what is on it, with the plan for it, and nothing started or fetched (her main menu
@@ -336,6 +344,7 @@ class Provision extends EventEmitter {
       if (this.plan.ollama) jobs.push(this.group(() => this.runOllama()));
       if (this.plan.chatterbox) jobs.push(this.group(() => this.runChatterbox()));
       if (this.plan.piper) jobs.push(this.group(() => this.runPiper()));
+      if (this.plan.whisper) jobs.push(this.group(() => this.runWhisper()));
       // (a voice that is the system's, or a mind that is a cloud one: nothing to get ready, but it is her voice from now on)
       if (!this.plan.chatterbox && !this.plan.piper && this.plan.adopt) this.d.save({ provisioned: true });
       await Promise.all(jobs);
@@ -352,12 +361,14 @@ class Provision extends EventEmitter {
     }
     this.running = false;
     this.finished = true;
-    this.ok = this.steps.every((s) => s.state === 'done' || s.state === 'skipped');
-    if (this.cancelled) this.ok = false;
+    const good = (s) => s.state === 'done' || s.state === 'skipped';
+    this.ok = this.steps.every(good);
+    this.core = this.steps.filter((s) => s.group !== 'ears').every(good); // (her mind and her voice: the ears failing is no reason to keep her quiet)
+    if (this.cancelled) this.ok = this.core = false;
     this.repair = false;
     this.d.cleanTemp?.(); // (what a stopped download left behind)
     this.emit('change', this.snapshot());
-    this.emit('finish', { ok: this.ok, plan: this.plan, attention: this.attention, profile: this.profile?.id, cancelled: this.cancelled });
+    this.emit('finish', { ok: this.ok, core: this.core, plan: this.plan, attention: this.attention, profile: this.profile?.id, cancelled: this.cancelled });
   }
 
   wanted(step) {
@@ -365,6 +376,7 @@ class Provision extends EventEmitter {
     if (step.group === 'ollama') return this.plan.ollama;
     if (step.id.startsWith('cb-')) return this.plan.chatterbox;
     if (step.id.startsWith('pp-')) return this.plan.piper;
+    if (step.id.startsWith('ws-')) return this.plan.whisper;
     return true;
   }
 
@@ -870,6 +882,65 @@ class Provision extends EventEmitter {
     this.done('pp-run', this.t('ppReady', { voice: piper.status().voice }));
   }
 
+  // ---- her ears: whisper.cpp ----
+
+  async runWhisper() {
+    const { whisper } = this.d;
+    const cfg = () => this.d.cfg();
+    const lang = this.d.lang();
+    const tier = this.profile?.ears?.tier || cfg().whisperTier || 'small';
+    // the server program
+    this.begin('ws-find');
+    let loc = whisper.locate(cfg());
+    if (!loc) {
+      if (String(cfg().whisperDir || '').trim()) this.fail('ws-find', this.t('wsFolderGone', { path: cfg().whisperDir }), ['retry', 'choose-whisper']);
+      this.begin('ws-find', { heavy: true, progress: 0, detail: this.t('wsFetching') });
+      try {
+        loc = await whisper.install({
+          signal: this.abort.signal,
+          onProgress: ({ completed, total }) => this.update('ws-find', { heavy: true, progress: total ? Math.min(1, completed / total) : null, detail: this.t('wsFetchingOf', { done: bytes(completed, lang), total: total ? bytes(total, lang) : '?' }) }),
+        });
+      } catch (err) {
+        this.fail('ws-find', this.t('wsFetchFailed', { error: err.message }), ['retry', 'choose-whisper']);
+      }
+      this.d.record('whisper', { dir: loc.root }); // hers: she can take it off again
+    }
+    this.done('ws-find', this.t('wsFoundAt', { path: loc.exe }));
+    // a model that suits this PC (any that lies there already is taken as it is)
+    this.begin('ws-model');
+    let model = whisper.modelFor({ ...cfg(), whisperTier: tier }, tier);
+    if (!model) {
+      this.begin('ws-model', { heavy: true, progress: 0, detail: this.t('wsModelFetching') });
+      try {
+        await whisper.fetchModel(cfg(), tier, {
+          signal: this.abort.signal,
+          onProgress: ({ completed, total }) => this.update('ws-model', { heavy: true, progress: total ? Math.min(1, completed / total) : null, detail: this.t('wsModelFetchingOf', { done: bytes(completed, lang), total: total ? bytes(total, lang) : '?' }) }),
+        });
+      } catch (err) {
+        this.fail('ws-model', this.t('wsModelFailed', { error: err.message }), ['retry', 'choose-whisper']);
+      }
+      model = whisper.modelFor({ ...cfg(), whisperTier: tier }, tier);
+      if (!model) this.fail('ws-model', this.t('wsModelFailed', { error: 'the model file is not there after the download' }), ['retry', 'choose-whisper']);
+      this.d.save({ whisperTier: tier });
+    }
+    this.done('ws-model', this.t('wsModelHave', { model: model.name }));
+    // it works: it is started and asked about a second of quiet (once for this program and model, it is written down: starting
+    // a model of hundreds of megabytes at every start would cost memory and a moment, and it is not needed until you talk)
+    const checked = `${loc.exe}|${model.file}`;
+    if (this.d.cfg().earsChecked !== checked) {
+      this.begin('ws-run', { bar: true, detail: this.t('wsChecking') });
+      try {
+        await this.raceStop(whisper.check(cfg()));
+      } catch (err) {
+        if (err.cancelled) throw err;
+        this.fail('ws-run', this.t('wsFailed', { error: err.message }), ['retry', 'choose-whisper'], whisper.status().log);
+      }
+      this.d.save({ earsChecked: checked });
+    }
+    if (cfg().sttEngine !== 'local') this.d.save({ sttEngine: 'local' });
+    this.done('ws-run', this.t('wsReady', { model: model.name }));
+  }
+
   // ---- for the window and the bug reports ----
 
   report() {
@@ -886,9 +957,11 @@ class Provision extends EventEmitter {
     const ol = this.d.ollamaHost?.status?.();
     const cb = this.d.chatterbox?.status?.();
     const pp = this.d.piper?.status?.();
+    const ws = this.d.whisper?.status?.();
     if (ol) lines.push(`ollama: ${JSON.stringify({ phase: ol.phase, exe: ol.exe, models: ol.modelsDir, error: ol.error })}`, ...ol.log.map((l) => `    | ${l}`));
     if (cb) lines.push(`chatterbox: ${JSON.stringify({ phase: cb.phase, dir: cb.dir, python: cb.python, device: cb.device, error: cb.error })}`, ...cb.log.map((l) => `    | ${l}`));
     if (pp) lines.push(`piper: ${JSON.stringify({ phase: pp.phase, exe: pp.exe, voice: pp.voice, error: pp.error })}`, ...pp.log.map((l) => `    | ${l}`));
+    if (ws) lines.push(`whisper: ${JSON.stringify({ phase: ws.phase, exe: ws.exe, model: ws.model, error: ws.error })}`, ...ws.log.map((l) => `    | ${l}`));
     lines.push(`os: ${process.platform} ${os.release()}, ram ${Math.round(os.totalmem() / GB)} GB`);
     return lines.join('\n');
   }

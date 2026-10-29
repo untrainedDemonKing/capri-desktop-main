@@ -24,6 +24,7 @@ const { OllamaHost } = require('../../src/main/ai/ollama-host.js');
 const tools = require('../../src/main/voice/chatterbox-setup.js');
 const hardware = require('../../src/main/setup/hardware.js');
 const { Piper, assetFor, RELEASE, VOICES } = require('../../src/main/voice/piper.js');
+const { Whisper } = require('../../src/main/voice/whisper.js');
 const ollama = require('../../src/main/ai/ollama.js');
 const tts = require('../../src/main/voice/tts.js');
 
@@ -65,6 +66,16 @@ function ollamaFolder(root) {
   return dir;
 }
 
+// her ears next to her: the stand-in of whisper.cpp's server and a model (the real fetch is tested with the program itself)
+function whisperFolder(root) {
+  const dir = path.join(root, 'whisper');
+  fs.mkdirSync(path.join(dir, 'models'), { recursive: true });
+  fs.copyFileSync(path.join(__dirname, '..', 'fixtures', 'fake-whisper.js'), path.join(dir, 'whisper-server'));
+  fs.chmodSync(path.join(dir, 'whisper-server'), 0o755);
+  fs.writeFileSync(path.join(dir, 'models', 'ggml-small-q5_1.bin'), `lmgg${'.'.repeat(100)}`);
+  return dir;
+}
+
 const GB = 1024 ** 3;
 const goodCard = () => hardware.make({ ram: 16 * GB, gpus: [{ name: 'NVIDIA GeForce RTX 3060', vram: 12 * GB, driver: '552.22', compute: 8.6 }], disk: { path: '', free: 300 * GB, total: 500 * GB } });
 
@@ -73,6 +84,7 @@ test('a fresh PC with a good card: she gets her mind and her voice (Chatterbox) 
   const userData = path.join(tmp, 'userdata');
   fs.mkdirSync(root, { recursive: true });
   ollamaFolder(root);
+  whisperFolder(root);
   const wheels = buildWheel(path.join(tmp, 'wheels'));
   const port = await freePort();
   const cbLog = path.join(tmp, 'chatterbox-calls.jsonl');
@@ -87,11 +99,12 @@ test('a fresh PC with a good card: she gets her mind and her voice (Chatterbox) 
   const roots = () => [root, userData];
   const chatterbox = new Chatterbox({ roots, pollMs: 100 });
   const ollamaHost = new OllamaHost({ roots, pollMs: 100, whichFn: async () => null, places: () => [] });
+  const whisper = new Whisper({ roots, defaultDir: () => path.join(userData, 'whisper') });
   const provision = new Provision({
     cfg: () => cfg,
     save: (patch) => { saved.push(patch); Object.assign(cfg, patch); },
     lang: () => 'ru',
-    ollamaHost, chatterbox,
+    ollamaHost, chatterbox, whisper,
     tools: { ...tools, findSystemPython: () => ({ cmd: python.cmd, pre: python.pre, version: 'the one with numpy' }) },
     ollamaApi: { models: () => ollama.models(), pull: (name, onProgress, signal) => ollama.pull(name, onProgress, signal) },
     roots,
@@ -108,6 +121,9 @@ test('a fresh PC with a good card: she gets her mind and her voice (Chatterbox) 
     assert.equal(steps.scan, 'done');
     assert.deepEqual(['ollama-find', 'ollama-run', 'ollama-model', 'cb-find', 'cb-python', 'cb-package', 'cb-model'].map((id) => steps[id]), Array(7).fill('done'));
     assert.deepEqual(['pp-find', 'pp-voice', 'pp-run'].map((id) => steps[id]), ['skipped', 'skipped', 'skipped'], 'no Piper on a PC that can carry Chatterbox');
+    assert.deepEqual(['ws-find', 'ws-model', 'ws-run'].map((id) => steps[id]), ['done', 'done', 'done'], 'her ears: the program next to her is found and tried');
+    assert.equal(whisper.status().phase, 'ready');
+    assert.equal(cfg.sttEngine, 'local');
     assert.equal(provision.profile.id, 'strong');
     // the mind
     assert.equal(ollamaHost.status().ours, true);
@@ -146,9 +162,10 @@ test('a fresh PC with a good card: she gets her mind and her voice (Chatterbox) 
     // the second start-up: everything is there, nothing is fetched or installed, no window is called for
     chatterbox.stop();
     ollamaHost.stop();
+    whisper.stop();
     const before = fs.readFileSync(olLog, 'utf8').split('\n').filter((l) => /"url":"\/api\/pull"/.test(l)).length;
     const again = new Provision({
-      cfg: () => cfg, save: (p) => Object.assign(cfg, p), lang: () => 'ru', ollamaHost, chatterbox,
+      cfg: () => cfg, save: (p) => Object.assign(cfg, p), lang: () => 'ru', ollamaHost, chatterbox, whisper,
       ollamaApi: { models: () => ollama.models(), pull: () => { throw new Error('should not fetch'); } },
       roots, defaultDir: () => path.join(userData, 'chatterbox'), hardware: async () => goodCard(), onModelsChanged: async () => {},
     });
@@ -160,6 +177,7 @@ test('a fresh PC with a good card: she gets her mind and her voice (Chatterbox) 
   } finally {
     chatterbox.stop();
     ollamaHost.stop();
+    whisper.stop();
     for (const k of ['PYTHONPATH', 'OLLAMA_HOST', 'FAKE_OLLAMA_LOG', 'CB_E2E_LOG', 'PIP_NO_INDEX', 'PIP_FIND_LINKS', 'PIP_DISABLE_PIP_VERSION_CHECK']) delete process.env[k];
   }
 });
@@ -173,6 +191,7 @@ test('a plain PC: she fetches Piper and a voice, starts it, a question is answer
   const userData = path.join(tmp, 'plain-userdata');
   fs.mkdirSync(root, { recursive: true });
   ollamaFolder(root);
+  whisperFolder(root);
   const port = await freePort();
   const piperLog = path.join(tmp, 'piper-asked.jsonl');
   const olLog = path.join(tmp, 'plain-ollama.jsonl');
@@ -207,11 +226,12 @@ test('a plain PC: she fetches Piper and a voice, starts it, a question is answer
   const chatterbox = new Chatterbox({ roots, pollMs: 100 });
   const ollamaHost = new OllamaHost({ roots, pollMs: 100, whichFn: async () => null, places: () => [] });
   const piper = new Piper({ roots, fetchFn, defaultDir: () => path.join(userData, 'piper') });
+  const whisper = new Whisper({ roots, defaultDir: () => path.join(userData, 'whisper') });
   const make = () => new Provision({
     cfg: () => cfg,
     save: (patch) => Object.assign(cfg, patch),
     lang: () => 'ru',
-    ollamaHost, chatterbox, piper,
+    ollamaHost, chatterbox, piper, whisper,
     ollamaApi: { models: () => ollama.models(), pull: (name, onProgress, signal) => ollama.pull(name, onProgress, signal) },
     roots,
     defaultDir: () => path.join(userData, 'chatterbox'),
@@ -234,6 +254,7 @@ test('a plain PC: she fetches Piper and a voice, starts it, a question is answer
     assert.ok(fs.existsSync(path.join(userData, 'piper', 'voices', 'ru_RU-irina-medium.onnx')), 'and the voice of her language');
     assert.equal(fs.existsSync(path.join(userData, 'chatterbox')), false, 'nothing of Chatterbox was made');
     assert.equal(piper.status().phase, 'ready');
+    assert.deepEqual(['ws-find', 'ws-model', 'ws-run'].map((id) => steps[id]), ['done', 'done', 'done'], 'and her ears');
 
     // a question: the mind answers (with the context the profile gave it), and the answer is said by Piper
     const answer = await ollama.chat({ model: cfg.chatModel, messages: [{ role: 'user', content: 'Как тебя зовут?' }] }, () => {}, AbortSignal.timeout(10000));
@@ -250,6 +271,7 @@ test('a plain PC: she fetches Piper and a voice, starts it, a question is answer
     // the second start: everything is there, nothing is fetched or installed, no window is called for
     piper.stop();
     ollamaHost.stop();
+    whisper.stop();
     fetched.length = 0;
     const pulls = requests.filter((r) => r.url === '/api/pull').length;
     const again = make();
@@ -261,6 +283,7 @@ test('a plain PC: she fetches Piper and a voice, starts it, a question is answer
   } finally {
     piper.stop();
     ollamaHost.stop();
+    whisper.stop();
     ollama.tune({});
     for (const k of ['OLLAMA_HOST', 'FAKE_OLLAMA_LOG', 'FAKE_PIPER_LOG']) delete process.env[k];
   }

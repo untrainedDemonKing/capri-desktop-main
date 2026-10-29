@@ -12,13 +12,14 @@
   let seq = 0; // the preview asked last
   let preview = null;
   const open = new Set(); // steps whose log is open
-  const sel = { mind: 'ollama', model: '', voice: 'piper', cloud: null, node: true };
+  const sel = { mind: 'ollama', model: '', voice: 'piper', cloud: null, node: true, ears: true, perms: { ears: true, converse: true, vision: true, hands: true, rhythm: true } };
 
   const ACTIONS = {
     retry: () => ({ label: ui.retry, run: () => window.hub.retry() }),
     'choose-ollama': () => ({ label: ui.chooseOllama, run: () => window.hub.choose('ollama') }),
     'choose-chatterbox': () => ({ label: ui.chooseChatterbox, run: () => window.hub.choose('chatterbox') }),
     'choose-piper': () => ({ label: ui.choosePiper, run: () => window.hub.choose('piper') }),
+    'choose-whisper': () => ({ label: ui.chooseWhisper, run: () => window.hub.choose('whisper') }),
     'repair-ollama': () => ({ label: ui.repairOllama, run: () => window.hub.repairOllama() }),
     'open-ollama-site': () => ({ label: ui.openOllamaSite, run: () => window.hub.open('https://ollama.com/download') }),
     'open-node-site': () => ({ label: ui.openNodeSite, run: () => window.hub.open('https://nodejs.org/en/download') }),
@@ -270,6 +271,64 @@
     }
   }
 
+  // ---- what she may do (the senses and the hands), each with a switch ----
+
+  const PERMS = [
+    { id: 'ears', needsWindows: false },
+    { id: 'converse', sub: 'ears' },
+    { id: 'vision' },
+    { id: 'hands', needsWindows: true },
+    { id: 'rhythm', needsWindows: true },
+  ];
+
+  function buildPerms() {
+    const here = data.perms;
+    // the first time every permission is offered on (what this system can do); after that the page shows what is set
+    for (const p of PERMS) {
+      const can = !p.needsWindows || here.windows;
+      sel.perms[p.id] = can && (data.first ? true : here[p.id]);
+    }
+    const nodes = [];
+    for (const p of PERMS) {
+      const can = !p.needsWindows || here.windows;
+      const label = el('label', 'check');
+      label.htmlFor = `perm-${p.id}`;
+      if (p.sub) label.style.marginLeft = '24px';
+      const box = el('input');
+      box.type = 'checkbox';
+      box.id = `perm-${p.id}`;
+      box.checked = sel.perms[p.id];
+      box.dataset.locked = String(!can);
+      box.addEventListener('change', () => { sel.perms[p.id] = box.checked; syncPerms(); });
+      label.append(box, document.createTextNode(' '), el('span', '', ui[`perm${p.id[0].toUpperCase()}${p.id.slice(1)}`] + (can ? '' : ` (${ui.permNotHere})`)));
+      const what = el('p', 'check__what', ui[`perm${p.id[0].toUpperCase()}${p.id.slice(1)}What`]);
+      if (p.sub) what.style.marginLeft = '48px';
+      nodes.push(label, what);
+    }
+    $('permList').replaceChildren(...nodes);
+    syncPerms();
+  }
+
+  // a switch is off-limits while something is being set up, or where this system cannot do it
+  function lockPerms() {
+    for (const input of $('permList').querySelectorAll('input')) input.disabled = running() || input.dataset.locked === 'true';
+  }
+
+  // listening all the time makes sense only while she listens at all
+  function syncPerms() {
+    const box = $('perm-converse');
+    if (!box) return;
+    box.dataset.locked = String(!sel.perms.ears);
+    if (!sel.perms.ears) { box.checked = false; sel.perms.converse = false; }
+    lockPerms();
+    // the mic is no use without something to understand speech with: her ears get set up with it (the box in the set-up)
+    if (sel.perms.ears && !running() && data.ears.supported && !sel.ears && data.first) {
+      sel.ears = true;
+      $('earsBox').checked = true;
+      refreshPlan();
+    }
+  }
+
   // ---- what will be done ----
 
   function showPanels() {
@@ -283,7 +342,7 @@
 
   async function refreshPlan() {
     const mine = ++seq;
-    const choice = { mind: sel.mind, model: sel.mind === 'ollama' ? sel.model : '', voice: voiceValue(), node: sel.node };
+    const choice = { mind: sel.mind, model: sel.mind === 'ollama' ? sel.model : '', voice: voiceValue(), node: sel.node, ears: sel.ears, perms: sel.perms };
     const res = await window.hub.preview(choice).catch(() => null);
     if (mine !== seq || !res) return;
     preview = res;
@@ -361,7 +420,7 @@
       box.replaceChildren(el('p', 'inv__empty', ui.invEmpty));
     } else {
       const nodes = [];
-      for (const group of ['mind', 'voice', 'tools']) {
+      for (const group of ['mind', 'voice', 'ears', 'tools']) {
         const here = items.filter((i) => i.group === group);
         if (!here.length) continue;
         nodes.push(el('h3', 'inv__group', ui[`invGroup-${group}`]));
@@ -622,6 +681,8 @@
     // while it works, the choices are not to be changed
     for (const id of ['mindChoices', 'voiceChoices', 'models']) for (const input of $(id).querySelectorAll('input')) input.disabled = running();
     $('nodeBox').disabled = running();
+    $('earsBox').disabled = running() || !data?.ears.supported;
+    lockPerms();
     for (const b of $('providers').children) b.disabled = running();
     if (inv && was !== running()) renderInventory(); // (the delete buttons wait while something is fetched; not redrawn at every step)
     if (data?.tune && was !== running()) renderTune(); // (the button that checks again waits too)
@@ -714,6 +775,11 @@
     } else sel.voice = data.recommended.voice.engine;
     sel.node = data.node.auto;
     $('nodeBox').checked = sel.node;
+    buildPerms();
+    sel.ears = data.ears.supported && data.ears.auto;
+    $('earsBox').checked = sel.ears;
+    $('earsBox').disabled = !data.ears.supported;
+    $('earsBox').parentElement.hidden = $('earsWhat').hidden = !data.ears.supported;
   }
 
   async function load(fresh, { keepInventory = false } = {}) {
@@ -789,6 +855,11 @@
     $('folderReset').textContent = ui.folderReset;
     $('nodeLabel').textContent = ui.nodeLabel;
     $('nodeWhat').textContent = ui.nodeWhat;
+    $('earsLabel').textContent = ui.earsLabel;
+    $('earsWhat').textContent = ui.earsWhat;
+    $('earsBox').addEventListener('change', (e) => { sel.ears = e.target.checked; refreshPlan(); });
+    numbered($('permsTitle'), ui.permsTitle);
+    $('permsSub').textContent = ui.permsSub;
     $('nodeBox').addEventListener('change', (e) => { sel.node = e.target.checked; refreshPlan(); });
     $('stop').textContent = ui.stop;
     $('retry').textContent = ui.retry;
@@ -805,7 +876,7 @@
       if (working) return; // (something is being taken off)
       applied = true;
       $('go').disabled = true;
-      await window.hub.apply({ mind: sel.mind, model: sel.mind === 'ollama' ? sel.model : '', voice: voiceValue(), node: sel.node });
+      await window.hub.apply({ mind: sel.mind, model: sel.mind === 'ollama' ? sel.model : '', voice: voiceValue(), node: sel.node, ears: sel.ears, perms: sel.perms });
       renderProgress();
     });
     $('retune').addEventListener('click', retune);

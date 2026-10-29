@@ -25,6 +25,7 @@ const tts = require('./voice/tts');
 const { Chatterbox, findPython } = require('./voice/chatterbox');
 const chatterboxSetup = require('./voice/chatterbox-setup');
 const { Piper } = require('./voice/piper');
+const { Whisper } = require('./voice/whisper');
 const hardware = require('./setup/hardware');
 const { needsRaise } = require('./system/stacking');
 const { OllamaHost } = require('./ai/ollama-host');
@@ -77,10 +78,12 @@ const folder = createFolder({
   appDirs: [path.dirname(process.execPath), process.resourcesPath].filter(Boolean),
   diskOf: (dir) => hardware.diskOf(dir),
   busy: () => somethingRunning(),
-  // Piper is looked for in the folder in use, nowhere else: the one she fetched before stays found by being named in her settings
+  // Piper and whisper.cpp are looked for in the folder in use, nowhere else: the ones she fetched before stay found by being named in her settings
   leaving: (oldRoot) => {
-    const there = path.join(oldRoot, 'piper');
-    if (!String(config.load().piperDir || '').trim() && fs.existsSync(there)) updateConfig({ piperDir: there });
+    for (const [name, key] of [['piper', 'piperDir'], ['whisper', 'whisperDir']]) {
+      const there = path.join(oldRoot, name);
+      if (!String(config.load()[key] || '').trim() && fs.existsSync(there)) updateConfig({ [key]: there });
+    }
   },
 });
 const placesNextToHer = () => {
@@ -105,6 +108,13 @@ const piper = new Piper({
   is64: hardware.systemIs64(),
 });
 piper.on('change', (status) => toOverlay('piper:status', status));
+// her ears (whisper.cpp): the recogniser of speech she fetches and runs on this PC (voice/whisper.js, used by voice/stt.js)
+const whisper = new Whisper({
+  roots: placesNextToHer,
+  defaultDir: () => folder.sub('whisper'),
+  is64: hardware.systemIs64(),
+});
+whisper.on('change', (status) => toOverlay('whisper:status', status));
 // A look at this PC (hardware.js). It is kept for two weeks (PowerShell takes a second or two, and this PC does
 // not change), unless she is asked to look again; the free space of the disk is measured every time.
 const LOOK_KEEPS = 14 * 24 * 3600 * 1000;
@@ -127,6 +137,7 @@ const provision = new Provision({
   ollamaHost,
   chatterbox,
   piper,
+  whisper,
   ollamaApi: { models: () => ollama.models(), pull: (name, onProgress, signal) => ollama.pull(name, onProgress, signal), probe: (name, signal) => ollama.probe(name, signal) },
   // the tray program of Ollama and its server, ended before it is put in again over itself (a repair)
   killOllama: async () => {
@@ -167,6 +178,7 @@ const theCleanup = () => (cleanupTool ||= new Cleanup({
   ollamaHost,
   chatterbox,
   piper,
+  whisper,
   nodeTools: nodeCheck,
   provision,
   blocked: () => Boolean(relocateTool?.busy),
@@ -180,7 +192,7 @@ const theRelocate = () => (relocateTool ||= new Relocate({
   installed,
   // her programs let go of their files, then start again by themselves once it is over
   stop: () => {
-    for (const stop of [() => chatterbox.stop(), () => piper.stop(), () => ollamaHost.stop()]) {
+    for (const stop of [() => chatterbox.stop(), () => piper.stop(), () => whisper.stop(), () => ollamaHost.stop()]) {
       try { stop(); } catch (err) { console.error('[capri] stopping before a move:', err.message); }
     }
   },
@@ -196,14 +208,18 @@ const theRelocate = () => (relocateTool ||= new Relocate({
 let prepare = null; // her preparation window (prepare.js), made once the app is ready
 let hub = null; // her main menu (hub.js), the same
 provision.on('change', (snapshot) => toOverlay('provision:status', snapshot));
-provision.on('finish', async ({ ok, plan, attention, profile }) => {
+provision.on('finish', async ({ ok, core, plan, attention, profile }) => {
   await refreshModels();
   rebuildTray();
-  if (ok) tuneSoon(); // the set-up is done: how the model really does here is measured, once
+  // (core: her mind and her voice are ready; her ears failing to install is told in the preparation window, and is no reason to keep the rest back)
+  if (core) tuneSoon(); // the set-up is done: how the model really does here is measured, once
   // a PC that cannot carry a local mind: the first time, she opens the tab where a cloud one is picked
-  if (ok && plan.adopt && profile === 'cloud' && (config.load().provider || 'ollama') === 'ollama') sendCommand('ring', { tab: 'ai' });
+  if (core && plan.adopt && profile === 'cloud' && (config.load().provider || 'ollama') === 'ollama') sendCommand('ring', { tab: 'ai' });
   // she says so, the first time and after anything long: a line in her own voice is the proof it all works
-  if (ok && (attention || plan.adopt)) sendCommand('testVoice');
+  if (core && (attention || plan.adopt)) sendCommand('testVoice');
+  // her ears are ready: the overlay tells you so (and the model is loaded for the first words)
+  if (plan.whisper && whisper.status().phase === 'ready') toOverlay('stt:ready', { model: whisper.status().model });
+  if (ok) warmEars(); // (if she is to listen: the recogniser is made ready for the first words)
 });
 const STT_KEYS = { groq: 'groq', openai: 'openai', custom: 'stt' };
 
@@ -470,6 +486,10 @@ function updateConfig(patch) {
   if (did('chatModel', 'provider')) { applyTuning(); tuneSoon(); } // (another model: another measurement)
   if (did('ollamaDir')) ollamaHost.stop(false);
   if (did('piperDir')) piper.stop(false);
+  if (did('whisperDir', 'whisperModel', 'whisperTier')) whisper.stop(false);
+  // switching the microphone on with nothing on this PC to understand speech with: it is fetched (the mic's own consent)
+  if (did('ears', 'sttEngine') && config.load().ears) earsNeeded();
+  if (did('ears', 'sttEngine')) warmEars();
   // picking Ollama, Chatterbox or Piper (here, in her menu or in her ring), or a language that needs another Piper voice,
   // gets what they need ready, by herself
   const voice = config.load().ttsEngine;
@@ -876,6 +896,26 @@ function tuneSoon(ms = 6000) {
   clearTimeout(tuneTimer);
   tuneTimer = setTimeout(() => tuneMind().catch(() => {}), ms);
   tuneTimer.unref?.();
+}
+
+// ---- her ears (voice/whisper.js, voice/stt.js) ----
+
+// Whether speech is turned into text by the recogniser on this PC, and whether it is there (a program and a model)
+const earsLocal = () => stt.engineFor(config.load(), setup.openKeys(config.load().apiKeys)) === 'local';
+const earsInstalled = () => Boolean(whisper.locate(config.load()) && whisper.models(config.load()).length);
+
+// The microphone was switched on, and nothing on this PC understands speech: it is fetched now, as part of that switch (the
+// preparation window shows how far it is when it takes long). Once taken off, it is fetched again only for this reason.
+function earsNeeded() {
+  if (!earsLocal() || earsInstalled()) return;
+  if (config.load().autoEars === false) config.save({ autoEars: true });
+  if (!provision.running) provision.run();
+}
+
+// The recogniser is started a moment after the mic is switched on, so that the first words are not waiting for a model to load
+function warmEars() {
+  if (!config.load().ears || !earsLocal() || !earsInstalled() || provision.running) return;
+  whisper.ready(config.load()).catch((err) => console.error('[capri] speech recogniser:', err.message));
 }
 
 // The models of whoever answers her, asked of them. `cached`: a list from the last minute is good
@@ -1351,11 +1391,23 @@ function registerIpc() {
   ipcMain.handle('stt:transcribe', async (_e, { audio, mime, lang, hint }) => {
     const cfg = config.load();
     try {
-      const text = await stt.transcribe(cfg, setup.openKeys(cfg.apiKeys), { audio: Buffer.from(audio), mime, lang, hint });
+      const text = await stt.transcribe(cfg, setup.openKeys(cfg.apiKeys), { audio: Buffer.from(audio), mime, lang, hint }, { whisper });
       return { ok: true, text };
     } catch (err) {
-      return { ok: false, error: err.message, code: err.code || null };
+      return { ok: false, error: err.message, code: err.code || null, installing: Boolean(err.code === 'nolocal' && provision.running && provision.plan.whisper) };
     }
+  });
+  // how her ears are: which recogniser answers, whether it is there, whether it is being fetched (her menu's Senses tab)
+  ipcMain.handle('stt:status', () => {
+    const cfg = config.load();
+    const engine = stt.engineFor(cfg, setup.openKeys(cfg.apiKeys));
+    return { engine, installed: engine !== 'local' || earsInstalled(), installing: provision.running && provision.plan.whisper, whisper: whisper.status() };
+  });
+  // fetch the recogniser of this PC now (she asks for it when the mic is used with none there; her menu has the button too)
+  ipcMain.handle('stt:install', () => {
+    updateConfig({ sttEngine: 'local', autoEars: true });
+    if (!earsInstalled() && !provision.running) provision.run();
+    return { ok: true, installing: provision.running };
   });
   ipcMain.on('stt:keyPage', (_e, engine) => stt.KEY_PAGES[engine] && shell.openExternal(stt.KEY_PAGES[engine]));
   // which speech-to-text service, and its key or address (the key kept encrypted, like her chat's)
@@ -1532,7 +1584,7 @@ function removeEverythingAndQuit() {
       console.error('[capri] taking off what she installed:', err.message);
     }
     clearTimeout(cap);
-    for (const stop of [() => ollamaHost.stop(false), () => chatterbox.stop(), () => piper.stop(), () => config.flush()]) {
+    for (const stop of [() => ollamaHost.stop(false), () => chatterbox.stop(), () => piper.stop(), () => whisper.stop(), () => config.flush()]) {
       try { stop(); } catch { /* not running */ }
     }
     app.exit(0);
@@ -1579,7 +1631,7 @@ function main() {
     allowLoopbackAudio();
     registerPushToTalk();
     prepare = createPrepare({
-      BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, ollamaHost, chatterbox, piper,
+      BrowserWindow, ipcMain, dialog, shell, clipboard, provision, config, updateConfig, ollamaHost, chatterbox, piper, whisper,
       openAiTab: () => sendCommand('ring', { tab: 'ai' }),
       isHubOpen: () => Boolean(hub?.isOpen()),
       lang: () => resolveLang(config.load().lang),
@@ -1629,7 +1681,7 @@ function main() {
   app.on('will-quit', () => {
     config.flush(); // the last changes, written now
     // what she started goes with her (each on its own: one failing must not leave the other running)
-    for (const stop of [() => relocateTool?.cancel(), () => provision.cancel(), () => chatterbox.stop(), () => piper.stop(), () => ollamaHost.stop()]) {
+    for (const stop of [() => relocateTool?.cancel(), () => provision.cancel(), () => chatterbox.stop(), () => piper.stop(), () => whisper.stop(), () => ollamaHost.stop()]) {
       try { stop(); } catch (err) { console.error('[capri] stopping what she started:', err.message); }
     }
     clearTimeout(trayTimer);

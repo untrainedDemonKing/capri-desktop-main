@@ -14,6 +14,7 @@
 // Nothing here touches the machine: it is a function from a picture to a plan, tested on a table of PCs.
 
 const { GB } = require('./hardware');
+const whisper = require('../voice/whisper');
 
 const IDS = ['cloud', 'light', 'standard', 'strong'];
 
@@ -48,6 +49,7 @@ const SIZE = {
   chatterboxCpu: 6 * GB, // the Python environment with torch (the plain one) and the model
   chatterboxCuda: 10 * GB, // and torch with the card's libraries
   node: 0.04 * GB, // the portable Node.js (a zip of about 30 MB)
+  whisperProgram: 0.02 * GB, // whisper.cpp's server (the zip of its releases)
 };
 const VOICE_VRAM = 6.5 * GB; // Chatterbox on a card
 const CHATTERBOX_MIN_VRAM = 8 * GB;
@@ -56,6 +58,13 @@ const APPLE_MIN_RAM = 15 * GB;
 // where the piece of the voice can run: Piper has a program for 64-bit Windows, Linux and macOS
 function piperWorks(hw) {
   return hw.os.is64 && ['win32', 'linux', 'darwin'].includes(hw.os.platform);
+}
+
+// The ears: whisper.cpp on the processor, with the model that suits this PC (whisper.js). { tier, bytes } or null where it has no program.
+function earsFor(hw) {
+  if (hw.os.platform !== 'win32') return null; // (the program she fetches is a Windows one; elsewhere she uses one that is put next to her)
+  const tier = whisper.tierFor(hw);
+  return { tier, bytes: SIZE.whisperProgram + whisper.TIERS[tier].bytes };
 }
 
 // 'cuda' (an NVIDIA card with room for the voice), 'mps' (an Apple chip with the memory), else 'cpu'
@@ -137,7 +146,7 @@ function tuningFor(id, hw) {
 }
 
 // what a set-up of this profile fetches, in pieces (`have` says which she has already)
-function downloads({ mind, voice, device, have = {} }) {
+function downloads({ mind, voice, device, ears = null, have = {} }) {
   const items = [];
   if (mind.kind === 'ollama') {
     if (!have.ollama) items.push({ id: 'ollama', bytes: SIZE.ollama });
@@ -145,10 +154,11 @@ function downloads({ mind, voice, device, have = {} }) {
   }
   if (voice === 'chatterbox' && !have.chatterbox) items.push({ id: 'chatterbox', bytes: device === 'cuda' ? SIZE.chatterboxCuda : SIZE.chatterboxCpu });
   if (voice === 'piper' && !have.piper) items.push({ id: 'piper', bytes: SIZE.piper });
+  if (ears && !have.whisper) items.push({ id: 'whisper', name: ears.tier, bytes: ears.bytes });
   return { items, total: items.reduce((n, i) => n + i.bytes, 0), need: items.length ? items.reduce((n, i) => n + i.bytes, 0) * 1.1 + 1 * GB : 0 };
 }
 
-function build(id, hw, have, { forced = false, voiceOverride = '' } = {}) {
+function build(id, hw, have, { forced = false, voiceOverride = '', ears: wantEars = true } = {}) {
   const notes = [];
   const device = chatterboxDevice(hw);
   let mind = { kind: 'ollama', model: '', bytes: 0, vision: false };
@@ -178,12 +188,13 @@ function build(id, hw, have, { forced = false, voiceOverride = '' } = {}) {
     if (voice.engine === 'chatterbox' && device === 'cpu') notes.push('slowVoice');
   }
   const tuning = tuningFor(id, hw);
-  const download = downloads({ mind, voice: voice.engine, device: voice.device, have });
+  const ears = wantEars ? earsFor(hw) : null;
+  const download = downloads({ mind, voice: voice.engine, device: voice.device, ears, have });
   const g = hw.gpu;
   if (mind.kind === 'ollama' && g && !g.integrated && g.vendor !== 'nvidia' && !g.unified) notes.push('cardMaybe'); // AMD, Intel Arc: Ollama may use it, may not
   if (mind.kind === 'ollama' && !mind.vision) notes.push('noEyes');
   if (id === 'cloud') notes.push(!hw.os.is64 ? 'os32' : hw.ram < 3.5 * GB ? 'ramLow' : 'diskLow');
-  return { id, forced, mind, voice, tuning, download, notes, disk: { free: hw.disk.free, need: download.need, ok: hw.disk.free >= download.need } };
+  return { id, forced, mind, voice, ears, tuning, download, notes, disk: { free: hw.disk.free, need: download.need, ok: hw.disk.free >= download.need } };
 }
 
 // The profile that fits: what the PC is able to carry, and never more than the disk has room for.
@@ -201,10 +212,10 @@ function classify(hw, have) {
 // The plan for this PC. `choice`: 'auto' or one of IDS, what you picked. `have`: what is on the PC already
 // ({ ollama, models, chatterbox, piper }), so that only what is missing counts. `voice`: an engine to use
 // instead of the profile's (the folder of one that you put next to her).
-function plan(hw, { choice = 'auto', have = {}, voice = '' } = {}) {
+function plan(hw, { choice = 'auto', have = {}, voice = '', ears = true } = {}) {
   const forced = IDS.includes(choice);
   const { id, wanted } = forced ? { id: choice, wanted: choice } : classify(hw, have);
-  const result = build(id, hw, have, { forced, voiceOverride: voice });
+  const result = build(id, hw, have, { forced, voiceOverride: voice, ears });
   if (id !== wanted) result.notes.push('diskLighter');
   if (forced && !result.disk.ok) result.notes.push('diskShort');
   return { ...result, auto: !forced, wanted, choices: IDS };
@@ -212,7 +223,7 @@ function plan(hw, { choice = 'auto', have = {}, voice = '' } = {}) {
 
 // The pieces of a set-up, each with its size and whether it is there already (what you pick in her main menu:
 // a mind, a model, a voice): [{ id, name?, bytes, have }]. The total to fetch is that of the ones that are not.
-function components({ mind, model = '', voice, device = 'cpu', node = false, have = {} }) {
+function components({ mind, model = '', voice, device = 'cpu', node = false, ears = null, have = {} }) {
   const out = [];
   if (node) out.push({ id: 'node', bytes: SIZE.node, have: Boolean(have.node) });
   if (mind === 'ollama') {
@@ -221,6 +232,7 @@ function components({ mind, model = '', voice, device = 'cpu', node = false, hav
   }
   if (voice === 'chatterbox') out.push({ id: 'chatterbox', bytes: device === 'cuda' ? SIZE.chatterboxCuda : SIZE.chatterboxCpu, have: Boolean(have.chatterbox) });
   if (voice === 'piper') out.push({ id: 'piper', bytes: SIZE.piper, have: Boolean(have.piper) });
+  if (ears) out.push({ id: 'whisper', name: ears.tier, bytes: ears.bytes, have: Boolean(have.whisper) });
   const missing = out.filter((c) => !c.have);
   const total = missing.reduce((n, c) => n + c.bytes, 0);
   return { items: out, total, need: missing.length ? total * 1.1 + 1 * GB : 0 };
@@ -228,7 +240,7 @@ function components({ mind, model = '', voice, device = 'cpu', node = false, hav
 
 // The same plan with what it still has to fetch counted again, after the fetching (what was missing is there now)
 function refresh(planned, have) {
-  const download = downloads({ mind: planned.mind, voice: planned.voice.engine, device: planned.voice.device, have });
+  const download = downloads({ mind: planned.mind, voice: planned.voice.engine, device: planned.voice.device, ears: planned.ears, have });
   return { ...planned, download, disk: { free: planned.disk.free, need: download.need, ok: planned.disk.free >= download.need } };
 }
 
@@ -246,4 +258,4 @@ function describe(hw) {
   };
 }
 
-module.exports = { plan, refresh, components, runsWell, recommend, recommendVoice, CATALOG, classify, build, mindFor, tuningFor, chatterboxDevice, piperWorks, describe, downloads, modelInfo, IDS, LADDER, SIZE, VOICE_VRAM };
+module.exports = { plan, refresh, components, runsWell, recommend, recommendVoice, CATALOG, classify, build, mindFor, tuningFor, chatterboxDevice, piperWorks, earsFor, describe, downloads, modelInfo, IDS, LADDER, SIZE, VOICE_VRAM };

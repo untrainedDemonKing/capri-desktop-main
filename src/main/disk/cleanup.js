@@ -65,7 +65,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 class Cleanup {
   // deps: userData (her data folder), home (the user's home folder), cfg(), save(patch), installed (installed.js), blocked()
   //       (a move of what she fetched is going on: nothing is taken off then),
-  //       ollamaApi { list(), remove(name) }, ollamaHost, chatterbox, piper, nodeTools { removeFromUserPath },
+  //       ollamaApi { list(), remove(name) }, ollamaHost, chatterbox, piper, whisper, nodeTools { removeFromUserPath },
   //       provision (to see whether something is being fetched), onModelsChanged(), run(cmd, args) -> { ok, code },
   //       platform, env, fsx, settle (ms to let a stopped program let go of its files)
   constructor(deps) {
@@ -129,6 +129,15 @@ class Cleanup {
     return dir && this.mine(dir) && fsx.existsSync(dir) ? { dir, ours: true } : null;
   }
 
+  whisperPlace() {
+    const { fsx } = this.d;
+    // (as for piper: the folder named in her settings is the one in use; hers when it lies in a folder of hers)
+    const named = String(this.d.cfg().whisperDir || '').trim();
+    if (named && fsx.existsSync(named)) return { dir: named, ours: this.mine(named) };
+    const dir = this.d.whisper?.defaultDir?.();
+    return dir && this.mine(dir) && fsx.existsSync(dir) ? { dir, ours: true } : null;
+  }
+
   chatterboxPlace() {
     const { fsx } = this.d;
     const named = String(this.d.cfg().chatterboxDir || '').trim();
@@ -180,6 +189,8 @@ class Cleanup {
     if (ol) items.push(await sized(ol, { id: 'ollama', group: 'mind', kind: 'ollama', label: 'Ollama', how: ol.how }, { skip: inHers ? [path.join(ol.dir, 'models')] : [] }));
     const pi = this.piperPlace();
     if (pi) items.push(await sized(pi, { id: 'piper', group: 'voice', kind: 'piper', label: 'Piper' }));
+    const ws = this.whisperPlace();
+    if (ws) items.push(await sized(ws, { id: 'whisper', group: 'ears', kind: 'whisper', label: 'whisper.cpp' }));
     const cb = this.chatterboxPlace();
     if (cb) {
       const item = await sized(cb, { id: 'chatterbox', group: 'voice', kind: 'chatterbox', label: 'Chatterbox' });
@@ -252,6 +263,13 @@ class Cleanup {
     const patch = { piperDir: '' };
     if (cfg.ttsEngine === 'piper') Object.assign(patch, { ttsEngine: 'system', provisioned: true });
     this.d.save(patch);
+  }
+
+  async removeWhisper() {
+    const place = this.whisperPlace();
+    this.d.whisper?.stop?.();
+    if (place?.ours) await this.removeDir(place.dir);
+    this.d.save({ whisperDir: '', whisperTier: '', autoEars: false }); // (not fetched again behind your back; the mic asks before it does)
   }
 
   async removeChatterbox() {
@@ -332,6 +350,7 @@ class Cleanup {
   async removeItem(item) {
     if (item.kind === 'model') await this.removeModel(item.label);
     else if (item.kind === 'piper') await this.removePiper();
+    else if (item.kind === 'whisper') await this.removeWhisper();
     else if (item.kind === 'chatterbox') await this.removeChatterbox();
     else if (item.kind === 'node') await this.removeNode();
     else if (item.kind === 'python') await this.removePython();
@@ -387,7 +406,7 @@ class Cleanup {
       // (the models she pulled go through Ollama: it is woken up if it is not answering)
       if (this.d.installed.get().models.length) await this.ensureOllama();
       const { items } = await this.inventory();
-      const order = ['chatterbox', 'piper', 'model', 'ollama', 'node', 'python'];
+      const order = ['chatterbox', 'piper', 'whisper', 'model', 'ollama', 'node', 'python'];
       const hers = items.filter((i) => i.ours && i.removable).sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
       for (const item of hers) {
         try {

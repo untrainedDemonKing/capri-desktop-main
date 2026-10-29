@@ -51,6 +51,7 @@ function world(overrides = {}) {
   const state = {
     ollamaRunning: false, ollamaFound: true, ollamaStartFails: '', models: [], pullFails: '', pulls: [],
     cbPhase: 'off', cbProgress: [], cbFails: '', hasPackage: true, pipFails: false, systemPython: { cmd: 'python3', pre: [], version: '3.11.4' },
+    whisperFound: true, whisperModel: 'ggml-small-q5_1.bin', whisperInstalls: 0, whisperChecks: 0, whisperFetches: [], whisperInstallFails: '', whisperModelFails: '', whisperCheckFails: '', recorded: [],
     installed: [], piperFound: false, piperVoice: '', piperInstallFails: '', piperVoiceFails: '', piperCheckFails: '', piperInstalls: 0, voiceFetches: [],
     nodeFound: true, nodeOld: false, nodeInstalls: [], nodeFails: '', nodePath: [], tuned: [], hardwareCalls: [], hw: { ram: 32 * GB, vram: 8 * GB }, hardwareFails: false, cudaCalls: [], pips: [], torchHasCuda: true,
     ...(overrides.state || {}),
@@ -134,6 +135,35 @@ function world(overrides = {}) {
     check: async () => { if (state.piperCheckFails) throw new Error(state.piperCheckFails); },
     status: () => ({ phase: state.piperCheckFails ? 'failed' : 'ready', voice: state.piperVoice, exe: '/p/piper', log: ['piper log'] }),
   };
+  // her ears (whisper.cpp): there already unless a test says otherwise
+  const whisperModel = () => (state.whisperModel ? { name: state.whisperModel, file: `/w/models/${state.whisperModel}`, bytes: 190e6 } : null);
+  const whisper = {
+    locate: () => (state.whisperFound ? { exe: '/w/whisper-server', dir: '/w', root: '/w' } : null),
+    models: () => (state.whisperModel ? [whisperModel()] : []),
+    modelFor: () => whisperModel(),
+    install: async ({ onProgress }) => {
+      if (state.whisperInstallFails) throw new Error(state.whisperInstallFails);
+      for (const done of [1, 2, 3]) {
+        onProgress({ completed: done * 5e6, total: 1.5e7 });
+        await new Promise((r) => setTimeout(r, 3));
+      }
+      state.whisperFound = true;
+      state.whisperInstalls++;
+      return { exe: '/w/whisper-server', dir: '/w', root: '/w' };
+    },
+    fetchModel: async (_cfg, tier, { onProgress }) => {
+      state.whisperFetches.push(tier);
+      if (state.whisperModelFails) throw new Error(state.whisperModelFails);
+      for (const done of [1, 2]) {
+        onProgress({ completed: done * 6e7, total: 1.2e8 });
+        await new Promise((r) => setTimeout(r, 3));
+      }
+      state.whisperModel = tier === 'base' ? 'ggml-base-q5_1.bin' : tier === 'turbo' ? 'ggml-large-v3-turbo-q5_0.bin' : 'ggml-small-q5_1.bin';
+      return { file: `/w/models/${state.whisperModel}` };
+    },
+    check: async () => { state.whisperChecks++; if (state.whisperCheckFails) throw new Error(state.whisperCheckFails); },
+    status: () => ({ phase: state.whisperCheckFails ? 'failed' : 'ready', model: state.whisperModel, exe: '/w/whisper-server', error: state.whisperCheckFails, log: ['whisper log'] }),
+  };
   const nodeTools = {
     findNode: async () => (state.nodeFound ? { exe: 'C:\\nodejs\\node.exe', version: '22.1.0', where: 'path' } : state.nodeOld ? { tooOld: '16.0.0' } : null),
     install: async ({ dir, arch, onProgress }) => {
@@ -162,7 +192,7 @@ function world(overrides = {}) {
     cfg: () => cfg,
     save: (patch) => { saved.push(patch); Object.assign(cfg, patch); },
     lang: () => 'en',
-    ollamaHost, chatterbox, piper, ollamaApi: api, tools, nodeTools, nodeDir: () => path.join(tmp, 'userdata', 'node'), platform: overrides.platform || 'win32',
+    ollamaHost, chatterbox, piper, whisper, ollamaApi: api, tools, nodeTools, record: (kind, value) => state.recorded.push([kind, value]), nodeDir: () => path.join(tmp, 'userdata', 'node'), platform: overrides.platform || 'win32',
     installOllama: overrides.installOllama === undefined ? async () => { state.installed.push('ollama'); state.ollamaFound = true; return { ok: true }; } : overrides.installOllama,
     downloadOllama: null,
     installPython: async () => { state.installed.push('python'); state.systemPython = { cmd: 'python3', pre: [], version: '3.11.4' }; return { ok: true }; },
@@ -179,7 +209,8 @@ function world(overrides = {}) {
   });
   return { p, cfg, saved, state, piper };
 }
-const states = (p) => Object.fromEntries(p.steps.map((s) => [s.id, s.state]));
+// (the steps of her ears are asked for by the tests of her ears: `states(p, true)`)
+const states = (p, ears = false) => Object.fromEntries(p.steps.filter((s) => ears || s.group !== 'ears').map((s) => [s.id, s.state]));
 
 // (a test that fails must not leave its folder next to her for the next one to find)
 test.afterEach(() => {
@@ -247,7 +278,7 @@ test('what she is not using she does not prepare: Claude for the mind, ElevenLab
   assert.equal(p.ok, true);
   assert.ok(p.steps.filter((s) => !['scan', 'node'].includes(s.id)).every((s) => s.state === 'skipped'));
   assert.equal(p.step('scan').state, 'done', 'she looks at the PC all the same');
-  assert.deepEqual(p.plan, { ollama: false, chatterbox: false, piper: false, node: true, adopt: false, engine: 'elevenlabs' });
+  assert.deepEqual(p.plan, { ollama: false, chatterbox: false, piper: false, whisper: false, node: true, adopt: false, engine: 'elevenlabs' });
   // and a voice she was given before is not taken from you the first time either
   const w = world({ cfg: { provider: 'ollama', ttsEngine: 'openai', provisioned: false }, state: { ollamaRunning: true, models: ['gemma3:4b'] } });
   await w.p.run();
@@ -1205,4 +1236,107 @@ test('the Chatterbox folder she makes has its model\'s cache inside it, and pip 
   await w.p.run();
   assert.ok(fs.existsSync(path.join(w.cfg.chatterboxDir, 'huggingface')), 'the cache folder is made (so the model is kept there)');
   assert.ok(w.state.pips.some((args) => args.includes('--no-cache-dir')), JSON.stringify(w.state.pips));
+});
+
+// ---- her ears: the recogniser of speech on this PC ----
+
+const winPc = (o = {}) => pc({ platform: 'win32', arch: 'x64', env: { PROCESSOR_ARCHITECTURE: 'AMD64' }, ram: 16 * GB, ...o });
+
+test('her ears are made ready with her mind and her voice: the program, the model that suits the PC, a check that it hears; and the recogniser on this PC is the one she uses from then on', async () => {
+  const { p, state, cfg } = world({ cfg: { sttEngine: 'groq' }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
+  const changes = [];
+  p.on('change', (s) => changes.push(s));
+  await p.run();
+  assert.equal(p.ok, true, JSON.stringify(states(p, true)));
+  assert.deepEqual(['ws-find', 'ws-model', 'ws-run'].map((id) => p.step(id).state), ['done', 'done', 'done']);
+  assert.equal(state.whisperInstalls, 1, 'the program was fetched');
+  assert.deepEqual(state.whisperFetches, ['small'], 'and the model of the middle size, for a 16 GB PC');
+  assert.deepEqual(state.recorded.filter(([k]) => k === 'whisper'), [['whisper', { dir: '/w' }]], 'written down as hers, so that she can take it off');
+  assert.equal(cfg.whisperTier, 'small');
+  assert.equal(cfg.earsChecked, '/w/whisper-server|/w/models/ggml-small-q5_1.bin', 'the check is written down');
+  assert.equal(state.whisperChecks, 1);
+  assert.equal(cfg.sttEngine, 'local', 'a cloud recogniser that had no key is not her ears');
+  assert.match(p.step('ws-run').detail, /It hears and understands \(ggml-small-q5_1\.bin\)/);
+  assert.equal(p.attention, true, 'a fetch happened: the window was worth showing');
+  const bar = changes.map((c) => c.steps.find((x) => x.id === 'ws-find')).filter((x) => x.state === 'running' && x.progress !== null).map((x) => x.progress);
+  assert.ok(bar.length >= 3 && bar.at(-1) === 1, `the program's bar went up: ${bar}`);
+  assert.ok(changes.some((c) => /Fetching the speech model: \d+ MB of \d+ MB/.test(c.steps.find((x) => x.id === 'ws-model').detail)));
+  assert.equal(p.snapshot().plan.whisper, true);
+  assert.equal(p.snapshot().profile.download.total, 0, 'after all of it is fetched the plan has nothing left to fetch');
+});
+
+test('the second start: the program and the model are there, nothing is fetched, the window stays shut; a model of her own is taken as it is', async () => {
+  const { p, state } = world({ cfg: { sttEngine: 'local', whisperTier: 'small', earsChecked: '/w/whisper-server|/w/models/ggml-small-q5_1.bin', ttsEngine: 'piper', provisioned: true, chatModel: 'gemma3:4b' }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], piperFound: true, piperVoice: 'en_US-amy-medium' } });
+  await p.run();
+  assert.equal(p.ok, true);
+  assert.equal(p.attention, false);
+  assert.deepEqual([state.whisperInstalls, state.whisperFetches], [0, []]);
+  assert.deepEqual([state.whisperChecks, p.step('ws-run').state], [0, 'done'], 'the check was made once, the first time, and is not made at every start (a model of hundreds of megabytes)');
+  const own = world({ cfg: { ttsEngine: 'piper', provisioned: true }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], piperFound: true, piperVoice: 'en_US-amy-medium', whisperModel: 'ggml-medium.bin' } });
+  await own.p.run();
+  assert.deepEqual(own.state.whisperFetches, [], 'a model that lies there is not fetched over');
+  assert.match(own.p.step('ws-model').detail, /ggml-medium\.bin/);
+});
+
+test('the model is picked by the PC: a small one for 4 GB, a big one for a strong PC; a 32-bit Windows gets the small one too', async () => {
+  const tier = async (hw) => {
+    const w = world({ state: { hw, ollamaRunning: true, models: ['gemma3:1b', 'gemma3:4b'], whisperFound: false, whisperModel: '' } });
+    await w.p.run();
+    return w.state.whisperFetches[0];
+  };
+  assert.equal(await tier(winPc({ ram: 4 * GB })), 'base');
+  assert.equal(await tier(winPc({ ram: 32 * GB, cpu: { name: '', cores: 12, threads: 24 } })), 'turbo');
+  assert.equal(await tier(winPc({ arch: 'ia32', env: { PROCESSOR_ARCHITECTURE: 'x86' }, ram: 16 * GB })), 'base');
+});
+
+test('her ears are not prepared where they are not wanted: a cloud recogniser with its key, ears turned off, a system with no program of hers', async () => {
+  const keyed = world({ cfg: { sttEngine: 'groq', apiKeys: { groq: 'sealed' } }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
+  await keyed.p.run();
+  assert.equal(keyed.p.plan.whisper, false);
+  assert.deepEqual(['ws-find', 'ws-model', 'ws-run'].map((id) => keyed.p.step(id).state), ['skipped', 'skipped', 'skipped']);
+  assert.equal(keyed.state.whisperInstalls, 0);
+  const off = world({ cfg: { autoEars: false }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
+  await off.p.run();
+  assert.equal(off.p.plan.whisper, false, 'taken off, she does not fetch it again behind your back');
+  const linux = world({ state: { hw: pc({ platform: 'linux', ram: 16 * GB }), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
+  await linux.p.run();
+  assert.equal(linux.p.plan.whisper, false);
+  assert.equal(linux.p.ok, true);
+});
+
+test('her ears failing say where, with the buttons that help, and do not keep the rest back: her mind and voice are ready, the voice is tried', async () => {
+  const finished = [];
+  const down = world({ state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '', whisperInstallFails: 'github.com answered 503 for whisper-bin-x64.zip' } });
+  down.p.on('finish', (f) => finished.push(f));
+  await down.p.run();
+  assert.equal(down.p.step('ws-find').state, 'failed');
+  assert.match(down.p.step('ws-find').error, /Could not get the speech recogniser: github\.com answered 503/);
+  assert.deepEqual(down.p.step('ws-find').actions, ['retry', 'choose-whisper']);
+  assert.equal(down.p.step('ws-model').state, 'pending', 'the steps after the failed one wait');
+  assert.equal(down.p.ok, false);
+  assert.equal(finished[0].ok, false);
+  assert.equal(finished[0].core, true, 'her mind and her voice are ready all the same');
+  // the model failing, then the check failing
+  const model = world({ state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperModel: '', whisperModelFails: 'huggingface.co answered 403' } });
+  await model.p.run();
+  assert.match(model.p.step('ws-model').error, /Could not fetch the speech model: huggingface\.co answered 403/);
+  const check = world({ state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperCheckFails: 'this processor lacks an instruction the program needs' } });
+  await check.p.run();
+  assert.equal(check.p.step('ws-run').state, 'failed');
+  assert.match(check.p.step('ws-run').error, /did not start: this processor lacks an instruction/);
+  assert.deepEqual(check.p.step('ws-run').log, ['whisper log'], 'the program\'s own lines come with it for the report');
+  assert.match(check.p.report(), /whisper: .*"phase":"failed"/);
+  // retrying goes on from there
+  down.state.whisperInstallFails = '';
+  await down.p.retry();
+  assert.equal(down.p.ok, true, JSON.stringify(states(down.p, true)));
+});
+
+test('the folder named for her ears that is gone is told as that, with a button to pick another', async () => {
+  const w = world({ cfg: { whisperDir: '/gone/whisper' }, state: { hw: winPc(), ollamaRunning: true, models: ['gemma3:4b'], whisperFound: false, whisperModel: '' } });
+  await w.p.run();
+  assert.equal(w.p.step('ws-find').state, 'failed');
+  assert.match(w.p.step('ws-find').error, /The folder \/gone\/whisper is not there/);
+  assert.deepEqual(w.p.step('ws-find').actions, ['retry', 'choose-whisper']);
+  assert.equal(w.state.whisperInstalls, 0);
 });

@@ -73,6 +73,9 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
       cloud: cloudState(cfg),
       voiceKeys: { openai: Boolean(cfg.apiKeys?.openai), elevenlabs: Boolean(cfg.apiKeys?.elevenlabs) },
       node: { auto: cfg.autoNode !== false },
+      ears: { auto: cfg.autoEars !== false, supported: Boolean(profile.ears) },
+      // what she may do: the settings now (the first time, the page offers them all that this system can)
+      perms: { ears: cfg.ears === true, converse: cfg.converse === true, vision: cfg.vision === true, hands: cfg.hands === true, rhythm: cfg.rhythm === true, windows: hw.os.platform === 'win32' },
       folder: folderInfo(),
       move: relocate ? relocate.snapshot() : null,
       tune: mind ? mind.status() : null,
@@ -82,10 +85,10 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
   }
 
   // What the picked set-up is made of, what of it is to be fetched, and whether the disk has room
-  async function preview({ mind, model, voice, node } = {}) {
+  async function preview({ mind, model, voice, node, ears } = {}) {
     const { hw, have } = await look();
     const device = profiles.chatterboxDevice(hw);
-    const parts = profiles.components({ mind: MINDS.includes(mind) ? mind : 'skip', model: String(model || ''), voice: VOICES.includes(voice) ? voice : 'system', device, node: node === true, have });
+    const parts = profiles.components({ mind: MINDS.includes(mind) ? mind : 'skip', model: String(model || ''), voice: VOICES.includes(voice) ? voice : 'system', device, node: node === true, ears: ears === true ? profiles.earsFor(hw) : null, have });
     const free = Number.isFinite(hw.disk.free) ? hw.disk.free : Infinity;
     const notes = [];
     if (voice === 'chatterbox' && device === 'cpu') notes.push('slowVoice');
@@ -97,9 +100,17 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
 
   // The config of the picked set-up. A model that is there already is taken as it is; one that is not is asked
   // of the preparation (wantModel). The voice she runs herself is set in the end by the preparation, when it works.
-  function patchFor({ mind, model, voice, node }, cfg, installed) {
+  function patchFor({ mind, model, voice, node, ears, perms }, cfg, installed, { card = false } = {}) {
     const patch = { hubDone: true, autoSetup: true };
     if (typeof node === 'boolean') patch.autoNode = node;
+    if (typeof ears === 'boolean') patch.autoEars = ears;
+    if (perms && typeof perms === 'object') {
+      for (const key of ['ears', 'vision', 'hands', 'rhythm']) if (typeof perms[key] === 'boolean') patch[key] = perms[key];
+      // (listening all the time is for when she listens at all)
+      if (typeof perms.converse === 'boolean') patch.converse = perms.converse && (typeof perms.ears === 'boolean' ? perms.ears : cfg.ears === true);
+      // (looking at the screen by herself is a model's work every minute: on a card it is cheap, on a processor only when asked)
+      if (perms.vision === true && cfg.vision !== true && !card) patch.visionEvery = 0;
+    }
     if (mind === 'ollama') {
       patch.provider = 'ollama';
       patch.autoMind = true;
@@ -119,12 +130,12 @@ function createHub({ BrowserWindow, ipcMain, shell, clipboard, provision, config
     if (cleanup?.busy) return { ok: false, error: 'removing' }; // (something is being taken off: not a moment to fetch)
     if (relocate?.busy) return { ok: false, error: 'moving' }; // (and not while it is being moved)
     const cfg = config.load();
-    const { have } = await look();
+    const { have, hw } = await look();
     if (provision.running) {
       provision.cancel();
       await provision.job?.catch(() => {});
     }
-    const patch = patchFor(choice, cfg, have.models || []);
+    const patch = patchFor(choice, cfg, have.models || [], { card: Boolean(hw?.gpu && (hw.gpu.vendor === 'nvidia' || hw.gpu.unified) && hw.gpu.vram >= 4 * GB) });
     applied = true;
     updateConfig(patch);
     last = null;

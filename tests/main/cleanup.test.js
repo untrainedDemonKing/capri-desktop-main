@@ -20,7 +20,7 @@ const put = (file, bytes) => {
 };
 
 // a PC with her data folder, the user's home, and stand-ins for Ollama and the programs she stops
-function world({ cfg = {}, models = null, win = false, ollamaUp = true, canStart = true, runOk = true, record = {} } = {}) {
+function world({ cfg = {}, models = null, win = false, ollamaUp = true, canStart = true, runOk = true, record = {}, ears = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'capri-clean-'));
   const userData = path.join(root, 'userdata');
   const home = path.join(root, 'home');
@@ -31,6 +31,10 @@ function world({ cfg = {}, models = null, win = false, ollamaUp = true, canStart
   put(path.join(userData, 'chatterbox', 'venv', 'lib.bin'), 2000);
   put(path.join(userData, 'chatterbox', 'huggingface', 'hub', 'models--ResembleAI--chatterbox', 'w.bin'), 500);
   put(path.join(userData, 'node', 'node.exe'), 300);
+  if (ears) {
+    put(path.join(userData, 'whisper', 'Release', 'whisper-server.exe'), 100);
+    put(path.join(userData, 'whisper', 'models', 'ggml-small-q5_1.bin'), 700);
+  }
   put(path.join(userData, 'ollama', 'ollama.exe'), 400);
   put(path.join(userData, 'ollama', 'models', 'blobs', 'b1'), 800);
   put(path.join(userData, 'config.json'), 50); // her own data: not in the list
@@ -60,6 +64,7 @@ function world({ cfg = {}, models = null, win = false, ollamaUp = true, canStart
     },
     chatterbox: { stop: () => state.stops.push('chatterbox') },
     piper: { stop: () => state.stops.push('piper'), defaultDir: () => path.join(userData, 'piper') },
+    whisper: { stop: () => state.stops.push('whisper'), defaultDir: () => path.join(userData, 'whisper') },
     nodeTools: { removeFromUserPath: (d) => state.paths.push(d) },
     provision: { running: false },
     onModelsChanged: async () => { state.refreshed++; },
@@ -152,6 +157,31 @@ test('Piper: stopped, its folder gone, and the voice is the system\'s again (not
   const v = world({ cfg: { ttsEngine: 'openai' } });
   await v.cleanup.remove('piper');
   assert.equal(v.state.cfg.ttsEngine, 'openai');
+});
+
+test('her ears (whisper.cpp): listed with the voice ones, stopped and gone with the folder, and not fetched again behind your back', async () => {
+  const w = world({ ears: true, cfg: { sttEngine: 'local', whisperTier: 'small', whisperDir: '' } });
+  const list = await w.cleanup.inventory({ fresh: true });
+  const item = list.items.find((i) => i.id === 'whisper');
+  assert.deepEqual([item.group, item.kind, item.ours, item.removable, item.bytes], ['ears', 'whisper', true, true, 800]);
+  const res = await w.cleanup.remove('whisper');
+  assert.deepEqual([res.ok, res.freed], [true, 800]);
+  assert.ok(!w.exists('whisper'));
+  assert.ok(w.state.stops.includes('whisper'));
+  assert.deepEqual([w.state.cfg.autoEars, w.state.cfg.whisperDir, w.state.cfg.whisperTier], [false, '', ''], 'the choice is written down: the mic asks before it fetches it');
+  assert.equal(w.state.cfg.sttEngine, 'local', 'the engine stays the one she asks for');
+  // one in a folder you named that is not hers: shown, never removed
+  const yours = world({ ears: true });
+  const mine = path.join(yours.outside, 'whisper-cpp');
+  put(path.join(mine, 'whisper-server.exe'), 50);
+  yours.state.cfg.whisperDir = mine;
+  const shown = (await yours.cleanup.inventory({ fresh: true })).items.find((i) => i.id === 'whisper');
+  assert.deepEqual([shown.ours, shown.removable, shown.path], [false, false, mine]);
+  // and with all the rest
+  const all = world({ ears: true });
+  const done = await all.cleanup.removeAll();
+  assert.ok(done.removed.includes('whisper'));
+  assert.ok(!all.exists('whisper'));
 });
 
 test('Chatterbox: stopped, the folder with its model gone, an older cache of its model too (and only that)', async () => {
