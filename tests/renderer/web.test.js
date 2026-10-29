@@ -218,3 +218,11 @@ test('her mind is told of the tags, and that they wait for a button', async () =
   assert.match(text, /\[\[video: WHAT TO PLAY\]\]/);
   assert.match(text, /never say it is already open/);
 });
+
+test('a tag in an answer that is full of unfinished tags is read quickly (the scan is bounded)', async () => {
+  const { parseWebTag } = await load('web.js');
+  const started = Date.now();
+  assert.equal(parseWebTag('[[search: '.repeat(20000)), null);
+  assert.ok(Date.now() - started < 300, `${Date.now() - started} ms`);
+  assert.deepEqual(parseWebTag('Вот. [[search: yandex | погода]]'), { kind: 'search', engine: 'yandex', query: 'погода' });
+});

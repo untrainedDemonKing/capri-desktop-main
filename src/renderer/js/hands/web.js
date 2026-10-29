@@ -109,7 +109,7 @@ function search(engine, query) {
 
 // A tag her AI added: [[search: engine | what]], [[search: what]] (Google), [[video: what]]. Returns the intent, or null.
 export function parseWebTag(raw) {
-  const text = String(raw || '');
+  const text = String(raw || '').slice(0, 4000); // (a tag is a few words: a very long answer full of "[[search:" would take the scan quadratic time)
   const video = /\[\[\s*video\s*:\s*([^\]]+)\]\]/i.exec(text);
   if (video) {
     const query = clean(video[1]);
