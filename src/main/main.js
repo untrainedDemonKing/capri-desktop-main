@@ -1605,6 +1605,7 @@ function removeEverythingAndQuit() {
 // `--selftest=<folder>`: she looks at herself (system/selftest.js), writes <folder>/electron.json and quits. Never left hanging.
 function startSelftest() {
   const log = (text) => console.log(`[selftest] ${text}`);
+  process.on('exit', (code) => selftest.mark(SELFTEST, `exit ${code}`));
   const cap = setTimeout(() => { log('too long, leaving'); app.exit(2); }, selftest.WHOLE_LIMIT);
   selftest.execute({
     app, dir: SELFTEST, root: ROOT, errors: selftestErrors, log,
@@ -1643,12 +1644,18 @@ function main() {
   if (process.platform === 'win32') app.setAppUserModelId('capri.desktop');
 
   app.whenReady().then(() => {
+    const mark = SELFTEST ? (text) => selftest.mark(SELFTEST, text) : () => {};
+    mark(`ready: ${app.getName()} ${app.getVersion()}, packaged ${app.isPackaged}`);
     if (!['codex', 'claude'].includes(config.load().assistant)) config.save({ assistant: activeAssistant().id });
     serveProtocol();
     registerIpc();
+    mark('protocol and ipc set');
     createOverlay();
+    mark('her window created');
     createTray();
+    mark('tray created');
     watchWindows();
+    mark('window watch started');
     mover = createMover({
       screen,
       bounds: () => overlay.getBounds(),
@@ -1718,6 +1725,7 @@ function main() {
     // after sleep or a locked screen, once Windows has settled
     powerMonitor.on('resume', () => setTimeout(rearmOverlay, 2000));
     powerMonitor.on('unlock-screen', () => setTimeout(rearmOverlay, 1000));
+    mark('everything started');
     if (SELFTEST) startSelftest();
   });
 

@@ -69,6 +69,12 @@ async function runOnce(ctx, found, name, extra) {
     child.on('close', (c) => { clearTimeout(timer); resolve(c); });
   });
   ctx.write(`logs/app-${name}.output.txt`, out);
+  let trail = '';
+  try {
+    trail = fs.readFileSync(path.join(dir, 'selftest.log'), 'utf8').trim().split(/\r?\n/).slice(-4).join(' | ');
+  } catch {
+    // she wrote no log: she did not start as far as the first line
+  }
   let report = null;
   try {
     report = JSON.parse(fs.readFileSync(path.join(dir, 'electron.json'), 'utf8'));
@@ -77,7 +83,7 @@ async function runOnce(ctx, found, name, extra) {
   }
   // her data folder of the run is not part of the results (it has her settings file and the Chromium caches)
   fs.rmSync(path.join(dir, 'userdata'), { recursive: true, force: true });
-  return { name, dir, code, ms: Date.now() - started, report, output: out };
+  return { name, dir, code, ms: Date.now() - started, report, output: out, trail };
 }
 
 const step = (report, name) => (report.steps || []).find((s) => s.name === name);
@@ -90,7 +96,7 @@ function judge(ctx, run, label) {
     const hex = typeof run.code === 'number' && run.code > 0x7fffffff ? ` (0x${(run.code >>> 0).toString(16).toUpperCase()})` : '';
     ctx.add('app', `Капри запускается${where}`, 'fail', run.code === 'timeout'
       ? 'не закончила проверку за 3 минуты'
-      : `закрылась, не написав отчёта; код выхода ${run.code}${hex}. Либо это версия Капри без режима проверки (поставьте новую), либо она упала на старте`, { log: `logs/app-${run.name}.output.txt` });
+      : `закрылась, не написав отчёта; код выхода ${run.code}${hex}. ${run.trail ? `Последнее в её журнале: ${run.trail}` : 'Журнала нет совсем: это версия Капри без режима проверки (поставьте новую) или она упала в самом начале'}`, { log: `logs/app-${run.name}.output.txt` });
     return { drawn: false, ran: false };
   }
   const bad = (report.steps || []).filter((s) => !s.ok);

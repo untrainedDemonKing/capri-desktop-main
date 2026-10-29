@@ -65,10 +65,11 @@ test('in main.js the data folder is chosen before anything reads it, and nothing
     assert.ok(text.indexOf(early) > isolate, `${early} comes after the data folder is set`);
   }
   assert.ok(text.indexOf('const PORT =') > isolate, 'the port is read after the check set its own');
-  const whenReady = text.slice(text.indexOf('app.whenReady().then(() => {\n    if (!['));
+  const whenReady = text.slice(text.indexOf('app.whenReady().then(() => {\n    const mark'));
   assert.match(whenReady, /if \(SELFTEST\) \{\s*\/\/[^\n]*\n\s*\} else if \(firstTime/, 'no main menu opens by itself, no set-up runs, nothing is synced');
   assert.match(whenReady, /if \(!SELFTEST\) \{\s*adoptBundledVoice\(\);\s*refreshModels\(\);/, 'no voice adopted, no models asked for, no launch scan');
   assert.match(whenReady, /if \(SELFTEST\) startSelftest\(\);/);
+  assert.match(whenReady, /mark\('her window created'\)/, 'where she has got to is written down as she goes');
 });
 
 test('a picture in numbers: nothing drawn, drawn, and drawn black (a window a graphics driver painted over)', () => {
@@ -141,6 +142,16 @@ function ctxFor(dir, { failHardware = false } = {}) {
     shown: () => hubShown,
   };
 }
+
+test('where she has got to is written to a file of its own as she goes, and a failing write is no matter', () => {
+  const dir = temp();
+  selftest.mark(dir, 'first');
+  selftest.mark(dir, 'second');
+  const lines = fs.readFileSync(path.join(dir, 'selftest.log'), 'utf8').trim().split('\n');
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /^\d{4}-\d\d-\d\dT[\d:.]+Z first$/);
+  assert.doesNotThrow(() => selftest.mark(path.join(dir, 'no', 'such', 'folder'), 'x'));
+});
 
 test('every look is made and written, with the two pictures, and the exit says whether all went well', async () => {
   const dir = temp();

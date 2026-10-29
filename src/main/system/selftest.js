@@ -89,6 +89,16 @@ async function step(name, fn, limit = STEP_LIMIT) {
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// A line in <folder>/selftest.log with the time: where she had got to, for the case that she is stopped or dies on the way (the check
+// folder reads it back and shows the last lines). Never throws.
+function mark(dir, text) {
+  try {
+    fs.appendFileSync(path.join(dir, 'selftest.log'), `${new Date().toISOString()} ${text}\n`);
+  } catch {
+    // no place to write it
+  }
+}
+
 // What her page is asked in its own window (executeJavaScript): what the screen's drawing and the sound can do here.
 const RENDERER_PROBE = String.raw`(async () => {
   const out = { errors: [] };
@@ -198,9 +208,11 @@ async function run(ctx) {
   const errors = ctx.errors || [];
   const add = async (name, fn, limit) => {
     log(`step ${name}`);
+    mark(dir, `step ${name}`);
     const r = await step(name, fn, limit);
     results.push(r);
     log(`step ${name} ${r.ok ? 'ok' : `FAILED ${r.error}`} (${r.ms} ms)`);
+    mark(dir, `step ${name} ${r.ok ? 'ok' : `FAILED ${r.error}`} (${r.ms} ms)`);
     if (ctx.progress) ctx.progress({ done: false, ok: null, steps: results, errors: errors.slice(0, 80) }); // (what is found so far stays, if she is stopped)
     return r;
   };
@@ -379,4 +391,4 @@ async function execute(ctx) {
   return report.ok ? 0 : 1;
 }
 
-module.exports = { dirFrom, renderFrom, isolate, nonBlank, step, run, execute, listen, probeScript, writable, FILES, UNPACKED, STEP_LIMIT, WHOLE_LIMIT };
+module.exports = { dirFrom, renderFrom, mark, isolate, nonBlank, step, run, execute, listen, probeScript, writable, FILES, UNPACKED, STEP_LIMIT, WHOLE_LIMIT };
